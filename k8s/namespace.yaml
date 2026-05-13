@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: hpa-eval
+  labels:
+    project: kubernetes-hpa-evaluation
+    owner: sriram-madduri

@@ -1,0 +1,41 @@
+---
+# Service for fixed-replica experiment
+apiVersion: v1
+kind: Service
+metadata:
+  name: hpa-eval-fixed-svc
+  namespace: hpa-eval
+  labels:
+    app: hpa-eval
+    experiment: fixed
+spec:
+  # Use LoadBalancer for GKE; for minikube use NodePort (see deploy_local.sh patch)
+  type: LoadBalancer
+  selector:
+    app: hpa-eval
+    experiment: fixed
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8000
+      protocol: TCP
+---
+# Service for HPA experiment
+apiVersion: v1
+kind: Service
+metadata:
+  name: hpa-eval-hpa-svc
+  namespace: hpa-eval
+  labels:
+    app: hpa-eval
+    experiment: hpa
+spec:
+  type: LoadBalancer
+  selector:
+    app: hpa-eval
+    experiment: hpa
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8000
+      protocol: TCP
