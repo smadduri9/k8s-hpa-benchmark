@@ -1,0 +1,23 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hpa-eval-fixed
+  namespace: hpa-eval
+spec:
+  template:
+    spec:
+      containers:
+        - name: hpa-eval-app
+          imagePullPolicy: IfNotPresent
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hpa-eval-hpa
+  namespace: hpa-eval
+spec:
+  template:
+    spec:
+      containers:
+        - name: hpa-eval-app
+          imagePullPolicy: IfNotPresent
