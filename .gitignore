@@ -2,10 +2,5 @@ __pycache__/
 *.pyc
 .DS_Store
 *.log
-__pycache__/
-*.pyc
-.DS_Store
-*.log
-__pycache__/
-*.pyc
-.DS_Store
+.env
+results/

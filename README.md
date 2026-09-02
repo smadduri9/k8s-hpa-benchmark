@@ -2,6 +2,24 @@
 
 Personal benchmark project that evaluates Kubernetes Horizontal Pod Autoscaler (HPA) behavior on bursty traffic patterns.
 
+## Quick Start
+
+See [HANDOFF.md](HANDOFF.md) for the full reproducible runbook.
+
+**Smoke validation (kind, not performance-comparable to GKE):**
+```bash
+bash scripts/smoke_test.sh --check harness
+bash scripts/smoke_test.sh --full
+```
+
+**GKE benchmark:**
+```bash
+bash scripts/preflight.sh --env-file .env --require-gke
+nohup bash scripts/run_benchmark.sh --env-file .env --repetitions 1 > results/latest.nohup.log 2>&1 &
+```
+
+Prior committed artifacts were superseded to `superseded/sample_data-2026-03/` (see `DATA_PROVENANCE.md`).
+
 ## Overview
 
 This project compares two deployment strategies for the same FastAPI workload:
