@@ -79,7 +79,17 @@ def load_csv(path: str) -> list[dict]:
 
 def extract(rows: list[dict], key: str) -> tuple[np.ndarray, np.ndarray]:
     t = np.array([r["elapsed_seconds"] for r in rows])
-    v = np.array([r[key] if r[key] is not None else np.nan for r in rows])
+    values = []
+    for r in rows:
+        val = r.get(key)
+        if val in (None, "", "MISSING"):
+            values.append(np.nan)
+        else:
+            try:
+                values.append(float(val))
+            except (TypeError, ValueError):
+                values.append(np.nan)
+    v = np.array(values)
     return t, v
 
 
@@ -300,23 +310,45 @@ def print_summary(fixed: list[dict], hpa: list[dict]):
 # Entry point
 # ---------------------------------------------------------------------------
 
+def guard_inputs(fixed_path: str, hpa_path: str, locust_hpa_stats: str | None = None, allow_synthetic: bool = False) -> None:
+    for path in [fixed_path, hpa_path]:
+        if not os.path.exists(path):
+            print(f"ERROR: required metrics file missing: {path}", file=sys.stderr)
+            sys.exit(1)
+
+    if locust_hpa_stats and not os.path.exists(locust_hpa_stats):
+        print("ASSERTION FAILED: publication blocked; locust_hpa_stats.csv is absent", file=sys.stderr)
+        sys.exit(1)
+
+    for path in [fixed_path, hpa_path]:
+        with open(path, newline="") as handle:
+            reader = csv.DictReader(handle)
+            rows = list(reader)
+            if not rows:
+                print(f"ERROR: empty metrics file: {path}", file=sys.stderr)
+                sys.exit(1)
+            if not allow_synthetic and "data_source" in rows[0] and any(r.get("data_source") == "SYNTHETIC" for r in rows):
+                print("ERROR: synthetic data detected; pass --allow-synthetic to analyze", file=sys.stderr)
+                sys.exit(1)
+
+
 def main():
     parser = argparse.ArgumentParser(description="Analyze HPA evaluation results")
     base_dir = Path(__file__).parent.parent / "sample_data"
     parser.add_argument("--fixed", default=str(base_dir / "fixed_metrics.csv"))
     parser.add_argument("--hpa",   default=str(base_dir / "hpa_metrics.csv"))
+    parser.add_argument("--output-dir", default=None)
+    parser.add_argument("--locust-hpa-stats", default=None)
+    parser.add_argument("--allow-synthetic", action="store_true")
     args = parser.parse_args()
 
-    for path in [args.fixed, args.hpa]:
-        if not os.path.exists(path):
-            print(f"ERROR: {path} not found. Run 'python3 analysis/simulate_results.py' first.", file=sys.stderr)
-            sys.exit(1)
+    guard_inputs(args.fixed, args.hpa, args.locust_hpa_stats, args.allow_synthetic)
 
     fixed = load_csv(args.fixed)
     hpa   = load_csv(args.hpa)
     print(f"Loaded: {len(fixed)} fixed rows, {len(hpa)} HPA rows")
 
-    out_dir = Path(args.fixed).parent / "figures"
+    out_dir = Path(args.output_dir) if args.output_dir else Path(args.fixed).parent / "figures"
     out_dir.mkdir(parents=True, exist_ok=True)
 
     print("Generating figures...")
