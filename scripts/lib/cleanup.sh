@@ -4,9 +4,9 @@
 
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=common.sh
-source "${SCRIPT_DIR}/common.sh"
+source "${LIB_DIR}/common.sh"
 CLEANUP_PF_PIDS=()
 CLEANUP_HEARTBEAT_PIDS=()
 

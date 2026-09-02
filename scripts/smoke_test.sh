@@ -7,6 +7,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/common.sh
 source "${SCRIPT_DIR}/lib/common.sh"
+# shellcheck source=lib/cold_start.sh
+source "${SCRIPT_DIR}/lib/cold_start.sh"
 
 ENV_FILE=""
 CHECK=""
@@ -23,7 +25,7 @@ usage() {
 Usage:
   bash scripts/smoke_test.sh --check harness
   bash scripts/smoke_test.sh --check coldstart|fixed-metrics|label-isolation|locust-authority|preflight-traps|handoff-docs
-  bash scripts/smoke_test.sh --negative-test fixed-replica-assert
+  bash scripts/smoke_test.sh --negative-test fixed-replica-assert|coldstart-readiness
   bash scripts/smoke_test.sh --full
 EOF
 }
@@ -78,6 +80,8 @@ deploy_smoke_stack() {
 }
 
 verify_hpa_percentage() {
+  # HARNESS SETUP ONLY: wait up to 240s for metrics-server/HPA to populate after reinstall.
+  # This tolerance is NOT used during benchmark runs (see scripts/run_benchmark.sh / collect_metrics.py).
   local line=""
   local attempt
   for attempt in $(seq 1 24); do
@@ -118,18 +122,42 @@ check_harness() {
 }
 
 check_coldstart() {
-  setup_harness
-  kubectl scale deployment hpa-eval-fixed --replicas=0 -n "${NAMESPACE}"
-  while [[ "$(kubectl get pods -n "${NAMESPACE}" -l app=hpa-eval,experiment=fixed --no-headers 2>/dev/null | wc -l | tr -d ' ')" != "0" ]]; do
-    sleep 1
-  done
-  echo "PODS_AT_ZERO_CONFIRMED"
-  kubectl scale deployment hpa-eval-fixed --replicas=2 -n "${NAMESPACE}"
-  kubectl rollout status deployment/hpa-eval-fixed -n "${NAMESPACE}" --timeout=120s
-  local ready
-  ready="$(kubectl get deployment hpa-eval-fixed -n "${NAMESPACE}" -o jsonpath='{.status.readyReplicas}')"
-  echo "READY_REPLICAS_MATCH_DECLARED ready=${ready}"
-  echo "LOAD_START t0=$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+  kubectl config use-context "kind-${CLUSTER_NAME}" >/dev/null 2>&1 || true
+  # Assume harness already deployed on live cluster; ensure fixed arm has running pods.
+  kubectl wait --for=condition=Available deployment/hpa-eval-fixed -n "${NAMESPACE}" --timeout=120s
+  bash "${SCRIPT_DIR}/run_benchmark.sh" --smoke --cold-start-only --arm fixed --run-id t1-a-coldstart-verify
+  cat "${REPO_ROOT}/results/runs/t1-a-coldstart-verify/manifest.json"
+}
+
+negative_coldstart_readiness() {
+  kubectl config use-context "kind-${CLUSTER_NAME}" >/dev/null 2>&1 || true
+  kubectl wait --for=condition=Available deployment/hpa-eval-fixed -n "${NAMESPACE}" --timeout=120s
+
+  # Restore baseline probe before/after negative test.
+  kubectl patch deployment hpa-eval-fixed -n "${NAMESPACE}" --type='json' -p='[
+    {"op":"replace","path":"/spec/template/spec/containers/0/readinessProbe/httpGet/path","value":"/health"}
+  ]' >/dev/null
+
+  kubectl patch deployment hpa-eval-fixed -n "${NAMESPACE}" --type='json' -p='[
+    {"op":"replace","path":"/spec/template/spec/containers/0/readinessProbe/httpGet/path","value":"/does-not-exist"}
+  ]' >/dev/null
+  kubectl rollout status deployment/hpa-eval-fixed -n "${NAMESPACE}" --timeout=120s || true
+
+  set +e
+  COLD_START_READINESS_TIMEOUT_SEC=30 \
+    bash -c "source '${SCRIPT_DIR}/lib/common.sh'; source '${SCRIPT_DIR}/lib/cold_start.sh'; cold_start_arm hpa-eval-fixed 'app=hpa-eval,experiment=fixed' '${NAMESPACE}' '' fixed 30 false" 2>&1
+  local rc=$?
+  set -e
+
+  kubectl patch deployment hpa-eval-fixed -n "${NAMESPACE}" --type='json' -p='[
+    {"op":"replace","path":"/spec/template/spec/containers/0/readinessProbe/httpGet/path","value":"/health"}
+  ]' >/dev/null
+  kubectl rollout status deployment/hpa-eval-fixed -n "${NAMESPACE}" --timeout=180s
+
+  if [[ "${rc}" -eq 0 ]]; then
+    die "negative coldstart test expected failure but passed"
+  fi
+  echo "NEGATIVE_COLDSTART_READINESS_PASS"
 }
 
 check_label_isolation() {
@@ -220,6 +248,7 @@ if [[ "${FULL}" == "true" ]]; then
 elif [[ -n "${NEGATIVE_TEST}" ]]; then
   case "${NEGATIVE_TEST}" in
     fixed-replica-assert) negative_fixed_replica_assert ;;
+    coldstart-readiness) negative_coldstart_readiness ;;
     *) die "unknown negative test: ${NEGATIVE_TEST}" ;;
   esac
 elif [[ -n "${CHECK}" ]]; then

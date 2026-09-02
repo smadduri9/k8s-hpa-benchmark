@@ -5,21 +5,24 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+LIBS_DIR="${SCRIPT_DIR}/lib"
 # shellcheck source=lib/common.sh
-source "${SCRIPT_DIR}/lib/common.sh"
+source "${LIBS_DIR}/common.sh"
 # shellcheck source=lib/cleanup.sh
-source "${SCRIPT_DIR}/lib/cleanup.sh"
+source "${LIBS_DIR}/cleanup.sh"
+# shellcheck source=lib/cold_start.sh
+source "${LIBS_DIR}/cold_start.sh"
 
 ENV_FILE=""
 SMOKE=false
 REPETITIONS=1
 RUN_ID=""
-TARGET="kind"
+COLD_START_ONLY=false
+ARM="both"
 PROMETHEUS_URL="http://localhost:9090"
 LOCUST_FILE="locust/locustfile.py"
 RUN_TIME="18m"
 DURATION_MINUTES=18
-FIXED_REPLICAS=3
 HPA_MAX_REPLICAS=10
 FIXED_HOST=""
 HPA_HOST=""
@@ -27,8 +30,10 @@ HPA_HOST=""
 usage() {
   cat <<'EOF'
 Usage: bash scripts/run_benchmark.sh [--env-file .env] [--smoke] [--repetitions N]
+       bash scripts/run_benchmark.sh --cold-start-only --arm fixed|hpa [--smoke]
 
 Runs fixed then HPA arms with cold-start enforcement and anchored metric collection.
+Declared replica counts are read from each deployment's spec at cold-start time.
 EOF
 }
 
@@ -40,6 +45,8 @@ while [[ $# -gt 0 ]]; do
     --run-id) RUN_ID="$2"; shift 2 ;;
     --fixed-host) FIXED_HOST="$2"; shift 2 ;;
     --hpa-host) HPA_HOST="$2"; shift 2 ;;
+    --cold-start-only) COLD_START_ONLY=true; shift ;;
+    --arm) ARM="$2"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     *) die "unknown argument: $1" ;;
   esac
@@ -51,7 +58,6 @@ if [[ "${SMOKE}" == "true" ]]; then
   LOCUST_FILE="locust/locustfile_smoke.py"
   RUN_TIME="4m"
   DURATION_MINUTES=4
-  FIXED_REPLICAS=2
   HPA_MAX_REPLICAS=3
 fi
 
@@ -61,14 +67,15 @@ fi
 
 RUN_ROOT="${REPO_ROOT}/results/runs/${RUN_ID}"
 mkdir -p "${RUN_ROOT}"
-cat > "${RUN_ROOT}/manifest.json" <<EOF
+MANIFEST_PATH="${RUN_ROOT}/manifest.json"
+cat > "${MANIFEST_PATH}" <<EOF
 {
   "run_id": "${RUN_ID}",
   "smoke": ${SMOKE},
   "repetitions": ${REPETITIONS},
   "duration_minutes": ${DURATION_MINUTES},
-  "fixed_replicas": ${FIXED_REPLICAS},
-  "hpa_max_replicas": ${HPA_MAX_REPLICAS}
+  "hpa_max_replicas": ${HPA_MAX_REPLICAS},
+  "arms": {}
 }
 EOF
 
@@ -76,37 +83,6 @@ cleanup_on_exit() {
   cleanup_background_jobs
 }
 trap cleanup_on_exit EXIT INT TERM
-
-wait_pods_zero() {
-  local selector="$1"
-  local count
-  while true; do
-    count="$(kubectl get pods -n "${NAMESPACE}" -l "${selector}" --no-headers 2>/dev/null | wc -l | tr -d ' ')"
-    if [[ "${count}" == "0" ]]; then
-      echo "PODS_AT_ZERO_CONFIRMED selector=${selector}"
-      return 0
-    fi
-    sleep 2
-  done
-}
-
-cold_start_arm() {
-  local deployment="$1"
-  local selector="$2"
-  local desired="$3"
-
-  kubectl scale deployment "${deployment}" --replicas=0 -n "${NAMESPACE}"
-  wait_pods_zero "${selector}"
-  kubectl scale deployment "${deployment}" --replicas="${desired}" -n "${NAMESPACE}"
-  kubectl rollout status "deployment/${deployment}" -n "${NAMESPACE}" --timeout=180s
-
-  local ready
-  ready="$(kubectl get deployment "${deployment}" -n "${NAMESPACE}" -o jsonpath='{.status.readyReplicas}')"
-  if [[ "${ready}" != "${desired}" ]]; then
-    die "READY_REPLICAS_MATCH_DECLARED failed deployment=${deployment} expected=${desired} ready=${ready:-0}"
-  fi
-  echo "READY_REPLICAS_MATCH_DECLARED deployment=${deployment} ready=${ready}"
-}
 
 run_locust_arm() {
   local arm="$1"
@@ -120,6 +96,7 @@ run_locust_arm() {
   local t0_file="${rep_dir}/t0_${arm}.txt"
   echo "LOAD_START t0=${t0}" | tee -a "${rep_dir}/run.log"
   echo "${t0}" > "${t0_file}"
+  manifest_set_load_start_t0 "${MANIFEST_PATH}" "${arm}" "${t0}"
 
   local hb_pid
   hb_pid="$(heartbeat_start "${rep_dir}/run.log" "locust-${arm}")"
@@ -143,8 +120,14 @@ collect_arm_metrics() {
   local start_iso="$2"
   local end_iso="$3"
   local output="$4"
-  local assert_replicas="${5:-}"
-  local max_replicas="${6:-}"
+  local max_replicas="${5:-}"
+
+  local declared
+  if [[ "${mode}" == "fixed" ]]; then
+    declared="$(deployment_declared_replicas hpa-eval-fixed "${NAMESPACE}")"
+  else
+    declared="$(deployment_declared_replicas hpa-eval-hpa "${NAMESPACE}")"
+  fi
 
   local args=(
     python3 "${REPO_ROOT}/analysis/collect_metrics.py"
@@ -157,20 +140,37 @@ collect_arm_metrics() {
     --run-id "${RUN_ID}"
     --cluster-name "${CLUSTER_NAME:-kind-smoke}"
     --output "${output}"
+    --assert-replicas "${declared}"
   )
-  if [[ -n "${assert_replicas}" ]]; then
-    args+=(--assert-replicas "${assert_replicas}")
-  fi
   if [[ -n "${max_replicas}" ]]; then
     args+=(--max-replicas "${max_replicas}")
   fi
   "${args[@]}"
 }
 
+run_cold_start_only() {
+  case "${ARM}" in
+    fixed)
+      cold_start_arm "hpa-eval-fixed" "app=hpa-eval,experiment=fixed" "${NAMESPACE}" "${MANIFEST_PATH}" "fixed" "${COLD_START_READINESS_TIMEOUT_SEC}" "true"
+      ;;
+    hpa)
+      cold_start_arm "hpa-eval-hpa" "app=hpa-eval,experiment=hpa" "${NAMESPACE}" "${MANIFEST_PATH}" "hpa" "${COLD_START_READINESS_TIMEOUT_SEC}" "true"
+      ;;
+    *)
+      die "unsupported --arm value for --cold-start-only: ${ARM}"
+      ;;
+  esac
+}
+
 run_one_repetition() {
   local rep="$1"
   local rep_dir="${RUN_ROOT}/rep-${rep}"
   mkdir -p "${rep_dir}"
+
+  if [[ "${COLD_START_ONLY}" == "true" ]]; then
+    run_cold_start_only | tee "${rep_dir}/coldstart.log"
+    return 0
+  fi
 
   local status="PASS"
   local reason="ok"
@@ -183,19 +183,19 @@ run_one_repetition() {
     register_port_forward_pid "${pf_pid}"
     sleep 3
 
-    cold_start_arm "hpa-eval-fixed" "app=hpa-eval,experiment=fixed" "${FIXED_REPLICAS}"
+    cold_start_arm "hpa-eval-fixed" "app=hpa-eval,experiment=fixed" "${NAMESPACE}" "${MANIFEST_PATH}" "fixed"
     local t0_fixed
     t0_fixed="$(run_locust_arm fixed "${FIXED_HOST}" "${rep_dir}/locust_fixed" "${rep_dir}/run.log" "${rep_dir}")"
     local t1_fixed
     t1_fixed="$(iso_now)"
-    collect_arm_metrics fixed "${t0_fixed}" "${t1_fixed}" "${rep_dir}/fixed_metrics.csv" "${FIXED_REPLICAS}"
+    collect_arm_metrics fixed "${t0_fixed}" "${t1_fixed}" "${rep_dir}/fixed_metrics.csv"
 
-    cold_start_arm "hpa-eval-hpa" "app=hpa-eval,experiment=hpa" 1
+    cold_start_arm "hpa-eval-hpa" "app=hpa-eval,experiment=hpa" "${NAMESPACE}" "${MANIFEST_PATH}" "hpa"
     local t0_hpa
     t0_hpa="$(run_locust_arm hpa "${HPA_HOST}" "${rep_dir}/locust_hpa" "${rep_dir}/run.log" "${rep_dir}")"
     local t1_hpa
     t1_hpa="$(iso_now)"
-    collect_arm_metrics hpa "${t0_hpa}" "${t1_hpa}" "${rep_dir}/hpa_metrics.csv" 1 "${HPA_MAX_REPLICAS}"
+    collect_arm_metrics hpa "${t0_hpa}" "${t1_hpa}" "${rep_dir}/hpa_metrics.csv" "${HPA_MAX_REPLICAS}"
 
     python3 "${REPO_ROOT}/analysis/ingest_locust.py" \
       --fixed-stats "${rep_dir}/locust_fixed_stats.csv" \
@@ -228,11 +228,15 @@ main() {
   local attempted=0 passed=0
   local rep
   for ((rep=1; rep<=REPETITIONS; rep++)); do
-  attempted=$((attempted + 1))
+    attempted=$((attempted + 1))
     if [[ "$(run_one_repetition "${rep}")" == "PASS" ]]; then
       passed=$((passed + 1))
     fi
   done
+
+  if [[ "${COLD_START_ONLY}" == "true" ]]; then
+    return 0
+  fi
 
   local final_state="COMPLETE"
   local final_reason="all repetitions passed"

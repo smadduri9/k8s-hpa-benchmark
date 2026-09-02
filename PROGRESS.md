@@ -76,11 +76,44 @@ METRIC_CONTRACT_VERIFIED
 
 ## t1-a-coldstart
 
-- **Files touched:** `scripts/run_benchmark.sh`, `scripts/lib/common.sh`
-- **Verification command:** `bash scripts/smoke_test.sh --check coldstart` (pending Docker)
-- **Actual output:** cold-start helpers implemented (`PODS_AT_ZERO_CONFIRMED`, `READY_REPLICAS_MATCH_DECLARED`, `LOAD_START t0=`)
-- **Elapsed time:** ~45 min
-- **Surprises:** none
+- **Files touched:** `scripts/lib/cold_start.sh`, `scripts/run_benchmark.sh`, `scripts/lib/cleanup.sh`, `scripts/smoke_test.sh`
+- **Verification command:** `bash scripts/run_benchmark.sh --smoke --cold-start-only --arm fixed --run-id t1-a-coldstart-verify` and `bash scripts/smoke_test.sh --negative-test coldstart-readiness`
+- **Actual output (positive, fixed arm with pods already running):**
+
+```
+SCALE_TO_ZERO_ISSUED deployment=hpa-eval-fixed namespace=hpa-eval previous_declared=2
+PODS_POLL attempt=1 interval=2s remaining=2
+PODS_POLL attempt=2 interval=2s remaining=0
+PODS_AT_ZERO_CONFIRMED selector=app=hpa-eval,experiment=fixed
+DEPLOY_SCALE_ISSUED deployment=hpa-eval-fixed declared_replicas=2
+READY_REPLICAS_MATCH_DECLARED deployment=hpa-eval-fixed declared=2 ready=2
+LOAD_START t0=2026-09-02T23:34:34Z
+MANIFEST_T0_WRITTEN arm=fixed path=.../results/runs/t1-a-coldstart-verify/manifest.json
+```
+
+```
+$ cat results/runs/t1-a-coldstart-verify/manifest.json
+{
+  "arms": {
+    "fixed": {
+      "load_start_t0": "2026-09-02T23:34:34Z"
+    }
+  }
+}
+```
+
+- **Polling proof (no fixed sleep):** `PODS_POLL` logs show two attempts at 2s interval while `remaining` went 2→0 (termination longer than one poll interval).
+- **Negative test output:**
+
+```
+ERROR: COLD_START_READINESS_TIMEOUT deployment=hpa-eval-fixed declared=2 timeout_sec=30
+NEGATIVE_COLDSTART_READINESS_PASS
+```
+
+- **240s `<unknown>` tolerance scope:** lives only in `scripts/smoke_test.sh` → `verify_hpa_percentage()` (HARNESS SETUP ONLY comment). Not present in `run_benchmark.sh` or `collect_metrics.py`; benchmark runs abort on collection/assertion failures instead of waiting.
+- **t1-b note:** replica assertions read declared count from deployment spec via `deployment_declared_replicas()` (smoke fixed=2, production fixed=3); no hardcoded `3` in cold-start path.
+- **Elapsed time:** ~55 min
+- **Surprises:** `cleanup.sh` overwrote `SCRIPT_DIR` when sourced, breaking lib paths; fixed with `LIBS_DIR` / `LIB_DIR`.
 
 ---
 
