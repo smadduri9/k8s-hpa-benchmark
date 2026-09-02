@@ -117,13 +117,74 @@ NEGATIVE_COLDSTART_READINESS_PASS
 
 ---
 
+## preflight-before-t1-b
+
+- **Files touched:** `scripts/preflight.sh`, `scripts/lib/preflight_python.py`, `scripts/deploy_gke.sh`, `AGENTS.md`, `analysis/analyze_results.py`
+- **Verification command:** `bash scripts/preflight.sh` and `grep -- '--platform linux/amd64' scripts/deploy_gke.sh`
+- **Actual output (live host, kind cluster up):**
+
+```
+kubectl_client=v1.34.1
+kubectl_server=v1.37.0
+kubectl_minor_skew=3
+ERROR: kubectl version skew 3 exceeds policy (max 2 minor versions); client=v1.34.1 server=v1.37.0
+REMEDIATION: brew upgrade kubectl  OR  gcloud components update kubectl
+docker_platform_check=PASS build_script=.../scripts/deploy_gke.sh platform=linux/amd64
+python_version=PASS 3.14.7
+analysis_import=PASS module=collect_metrics
+analysis_import=PASS module=ingest_locust
+analysis_import=PASS module=analyze_results
+analysis_import=PASS module=fill_results
+ERROR: python package import failed package=numpy: No module named 'numpy'
+ERROR: missing required command: locust (or python3 -m locust)
+PREFLIGHT_FAIL
+```
+
+- **deploy_gke.sh:** added `docker build --platform linux/amd64` (was absent).
+- **Python minimum:** 3.9 documented in `AGENTS.md`; `preflight_python.py` imports all `analysis/*.py` plus `numpy`/`matplotlib`.
+- **Cold-start production timeout:** default **180s** (`COLD_START_READINESS_TIMEOUT_SEC` in `scripts/lib/cold_start.sh`). Smoke negative test overrides to **30s** only via `COLD_START_READINESS_TIMEOUT_SEC=30` in `negative_coldstart_readiness`.
+- **Elapsed time:** ~40 min
+- **Surprises:** `parse_k8s_minor` initially parsed major version only (`1` from `v1.34.1`); fixed to extract minor (`34`).
+
+---
+
 ## t1-b-assertions
 
-- **Files touched:** `analysis/collect_metrics.py`, `analysis/analyze_results.py`, `scripts/run_benchmark.sh`
-- **Verification command:** `bash scripts/smoke_test.sh --negative-test fixed-replica-assert` (pending Docker)
-- **Actual output:** assertion messages implemented in collector (`ASSERTION FAILED: fixed arm expected N replicas, observed M`)
-- **Elapsed time:** ~35 min
-- **Surprises:** none
+- **Files touched:** `analysis/collect_metrics.py`, `analysis/analyze_results.py`, `scripts/run_benchmark.sh`, `scripts/smoke_test.sh`, `DONE_CONDITIONS.md`
+- **Verification command:** `bash scripts/smoke_test.sh --check assertions` plus three `--negative-test` targets
+- **Actual output (positive, live `kind-hpa-eval-smoke`):**
+
+```
+DECLARED_REPLICAS_FROM_SPEC deployment=hpa-eval-fixed declared=2
+...
+ASSERTIONS_PASS declared=2 observed_matches_declared=true
+```
+
+- **Negative 1 (mid-run wrong replica count, assert against declared-at-start=2 not hardcoded 3):**
+
+```
+MID_RUN_SCALE_WRONG declared=2 scaled_to=1
+ASSERTION FAILED: fixed arm expected 2 replicas, observed 1
+NEGATIVE_FIXED_REPLICA_ASSERT_PASS
+```
+
+- **Negative 2 (empty required column blocks publication):**
+
+```
+ASSERTION FAILED: required column error_rate has zero populated rows in /tmp/t1-b-empty-col-fixed.csv
+NEGATIVE_EMPTY_METRICS_COLUMN_PASS
+```
+
+- **Negative 3 (missing locust_hpa_stats.csv):**
+
+```
+ASSERTION FAILED: publication blocked; locust_hpa_stats.csv is absent
+NEGATIVE_MISSING_LOCUST_HPA_PASS
+```
+
+- **Replica assertion source:** `deployment_declared_replicas()` at cold-start / check time; fixed arm uses `--assert-replicas` from captured declared count; HPA arm uses `--max-replicas` only (no exact-replica assert during scale-up).
+- **Elapsed time:** ~50 min
+- **Surprises:** `error_rate` PromQL returns zero series when no non-200 traffic; collector now allows empty `error_rate` series. `analyze_results` runs `guard_inputs` before loading numpy/matplotlib so publication guards fire without plot deps installed.
 
 ---
 

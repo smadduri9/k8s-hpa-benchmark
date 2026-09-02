@@ -24,8 +24,9 @@ usage() {
   cat <<'EOF'
 Usage:
   bash scripts/smoke_test.sh --check harness
-  bash scripts/smoke_test.sh --check coldstart|fixed-metrics|label-isolation|locust-authority|preflight-traps|handoff-docs
-  bash scripts/smoke_test.sh --negative-test fixed-replica-assert|coldstart-readiness
+  bash scripts/smoke_test.sh --check coldstart|assertions|fixed-metrics|label-isolation|locust-authority|preflight-traps|handoff-docs
+  bash scripts/smoke_test.sh --negative-test fixed-replica-assert|empty-metrics-column|missing-locust-hpa|coldstart-readiness
+  bash scripts/smoke_test.sh --check assertions
   bash scripts/smoke_test.sh --full
 EOF
 }
@@ -218,27 +219,165 @@ check_handoff_docs() {
   echo "HANDOFF_TRUST_CHECKS_PRESENT"
 }
 
-negative_fixed_replica_assert() {
-  setup_harness
-  if python3 "${REPO_ROOT}/analysis/collect_metrics.py" \
+smoke_warm_fixed_traffic() {
+  kubectl port-forward svc/hpa-eval-fixed-svc 18080:80 -n "${NAMESPACE}" >/dev/null 2>&1 &
+  local app_pf=$!
+  sleep 2
+  local i
+  for i in $(seq 1 25); do
+    curl -sf "http://127.0.0.1:18080/cpu?intensity=low" >/dev/null 2>&1 || true
+  done
+  kill "${app_pf}" 2>/dev/null || true
+  wait "${app_pf}" 2>/dev/null || true
+  sleep 20
+}
+
+check_assertions() {
+  kubectl config use-context "kind-${CLUSTER_NAME}" >/dev/null 2>&1 || true
+  kubectl wait --for=condition=Available deployment/hpa-eval-fixed -n "${NAMESPACE}" --timeout=120s
+
+  local declared
+  declared="$(deployment_declared_replicas hpa-eval-fixed "${NAMESPACE}")"
+  echo "DECLARED_REPLICAS_FROM_SPEC deployment=hpa-eval-fixed declared=${declared}"
+
+  kubectl port-forward svc/prometheus 9090:9090 -n "${NAMESPACE}" >/dev/null 2>&1 &
+  local pf=$!
+  sleep 3
+
+  smoke_warm_fixed_traffic
+
+  python3 "${REPO_ROOT}/analysis/collect_metrics.py" \
     --mode fixed \
     --prometheus-url http://localhost:9090 \
-    --start "$(date -u -v-2M '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || date -u -d '2 minutes ago' '+%Y-%m-%dT%H:%M:%SZ')" \
+    --start "$(date -u -v-90S '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || date -u -d '90 seconds ago' '+%Y-%m-%dT%H:%M:%SZ')" \
     --end "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" \
-    --output /tmp/negative.csv \
-    --assert-replicas 3 2>&1; then
-    die "negative test expected failure but passed"
+    --step 15 \
+    --output /tmp/t1-b-positive-fixed.csv \
+    --assert-replicas "${declared}"
+
+  kill "${pf}" 2>/dev/null || true
+  echo "ASSERTIONS_PASS declared=${declared} observed_matches_declared=true"
+}
+
+negative_fixed_replica_assert() {
+  kubectl config use-context "kind-${CLUSTER_NAME}" >/dev/null 2>&1 || true
+  kubectl wait --for=condition=Available deployment/hpa-eval-fixed -n "${NAMESPACE}" --timeout=120s
+
+  local declared wrong
+  declared="$(deployment_declared_replicas hpa-eval-fixed "${NAMESPACE}")"
+  wrong=$((declared - 1))
+  if [[ "${wrong}" -lt 1 ]]; then
+    wrong=$((declared + 1))
   fi
+
+  echo "MID_RUN_SCALE_WRONG declared=${declared} scaled_to=${wrong}"
+  kubectl scale deployment hpa-eval-fixed --replicas="${wrong}" -n "${NAMESPACE}"
+  kubectl rollout status deployment/hpa-eval-fixed -n "${NAMESPACE}" --timeout=120s || true
+
+  kubectl port-forward svc/prometheus 9090:9090 -n "${NAMESPACE}" >/dev/null 2>&1 &
+  local pf=$!
+  sleep 3
+
+  smoke_warm_fixed_traffic
+
+  set +e
+  python3 "${REPO_ROOT}/analysis/collect_metrics.py" \
+    --mode fixed \
+    --prometheus-url http://localhost:9090 \
+    --start "$(date -u -v-90S '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || date -u -d '90 seconds ago' '+%Y-%m-%dT%H:%M:%SZ')" \
+    --end "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" \
+    --step 15 \
+    --output /tmp/t1-b-negative-replica.csv \
+    --assert-replicas "${declared}" 2>&1
+  local rc=$?
+  set -e
+
+  kill "${pf}" 2>/dev/null || true
+
+  kubectl scale deployment hpa-eval-fixed --replicas="${declared}" -n "${NAMESPACE}"
+  kubectl rollout status deployment/hpa-eval-fixed -n "${NAMESPACE}" --timeout=180s
+
+  if [[ "${rc}" -eq 0 ]]; then
+    die "negative fixed-replica test expected failure but passed"
+  fi
+  echo "NEGATIVE_FIXED_REPLICA_ASSERT_PASS"
+}
+
+negative_empty_metrics_column() {
+  local fixed_csv="/tmp/t1-b-empty-col-fixed.csv"
+  local hpa_csv="/tmp/t1-b-empty-col-hpa.csv"
+  cat > "${fixed_csv}" <<'EOF'
+timestamp,elapsed_seconds,experiment,data_source,run_id,cluster_name,collection_timestamp,replicas,cpu_utilization_pct,latency_p50_ms,latency_p95_ms,latency_p99_ms,rps,error_rate
+2026-09-02T00:00:00+00:00,0,fixed,MEASURED,test,kind,2026-09-02T00:00:00+00:00,2,1.0,10.0,20.0,30.0,5.0,
+EOF
+  cat > "${hpa_csv}" <<'EOF'
+timestamp,elapsed_seconds,experiment,data_source,run_id,cluster_name,collection_timestamp,replicas,cpu_utilization_pct,latency_p50_ms,latency_p95_ms,latency_p99_ms,rps,error_rate
+2026-09-02T00:00:00+00:00,0,hpa,MEASURED,test,kind,2026-09-02T00:00:00+00:00,1,1.0,10.0,20.0,30.0,5.0,0.0
+EOF
+
+  set +e
+  local output
+  output="$(python3 "${REPO_ROOT}/analysis/analyze_results.py" \
+    --fixed "${fixed_csv}" \
+    --hpa "${hpa_csv}" \
+    --output-dir /tmp/t1-b-empty-col-figures 2>&1)"
+  local rc=$?
+  set -e
+  echo "${output}"
+
+  if [[ "${rc}" -eq 0 ]]; then
+    die "negative empty-metrics-column test expected failure but passed"
+  fi
+  if ! echo "${output}" | grep -q "ASSERTION FAILED: required column error_rate has zero populated rows"; then
+    die "negative empty-metrics-column test missing expected assertion message"
+  fi
+  echo "NEGATIVE_EMPTY_METRICS_COLUMN_PASS"
+}
+
+negative_missing_locust_hpa() {
+  local fixed_csv="/tmp/t1-b-missing-locust-fixed.csv"
+  local hpa_csv="/tmp/t1-b-missing-locust-hpa.csv"
+  cat > "${fixed_csv}" <<'EOF'
+timestamp,elapsed_seconds,experiment,data_source,run_id,cluster_name,collection_timestamp,replicas,cpu_utilization_pct,latency_p50_ms,latency_p95_ms,latency_p99_ms,rps,error_rate
+2026-09-02T00:00:00+00:00,0,fixed,MEASURED,test,kind,2026-09-02T00:00:00+00:00,2,1.0,10.0,20.0,30.0,5.0,0.0
+EOF
+  cat > "${hpa_csv}" <<'EOF'
+timestamp,elapsed_seconds,experiment,data_source,run_id,cluster_name,collection_timestamp,replicas,cpu_utilization_pct,latency_p50_ms,latency_p95_ms,latency_p99_ms,rps,error_rate
+2026-09-02T00:00:00+00:00,0,hpa,MEASURED,test,kind,2026-09-02T00:00:00+00:00,1,1.0,10.0,20.0,30.0,5.0,0.0
+EOF
+
+  set +e
+  local output
+  output="$(python3 "${REPO_ROOT}/analysis/analyze_results.py" \
+    --fixed "${fixed_csv}" \
+    --hpa "${hpa_csv}" \
+    --locust-hpa-stats /tmp/does-not-exist-locust_hpa_stats.csv \
+    --output-dir /tmp/t1-b-missing-locust-figures 2>&1)"
+  local rc=$?
+  set -e
+  echo "${output}"
+
+  if [[ "${rc}" -eq 0 ]]; then
+    die "negative missing-locust-hpa test expected failure but passed"
+  fi
+  if ! echo "${output}" | grep -q "ASSERTION FAILED: publication blocked; locust_hpa_stats.csv is absent"; then
+    die "negative missing-locust-hpa test missing expected assertion message"
+  fi
+  echo "NEGATIVE_MISSING_LOCUST_HPA_PASS"
 }
 
 run_full_suite() {
   check_harness
   check_coldstart
+  check_assertions
   check_fixed_metrics
   check_label_isolation
   check_locust_authority
   check_preflight_traps
-  negative_fixed_replica_assert || echo "NEGATIVE_ASSERTION_TEST_PASS"
+  negative_fixed_replica_assert
+  negative_empty_metrics_column
+  negative_missing_locust_hpa
+  echo "NEGATIVE_ASSERTION_TEST_PASS"
   echo "ALL_TIER1_ASSERTIONS_EXERCISED"
   echo "SMOKE_SUITE_PASS"
 }
@@ -248,6 +387,8 @@ if [[ "${FULL}" == "true" ]]; then
 elif [[ -n "${NEGATIVE_TEST}" ]]; then
   case "${NEGATIVE_TEST}" in
     fixed-replica-assert) negative_fixed_replica_assert ;;
+    empty-metrics-column) negative_empty_metrics_column ;;
+    missing-locust-hpa) negative_missing_locust_hpa ;;
     coldstart-readiness) negative_coldstart_readiness ;;
     *) die "unknown negative test: ${NEGATIVE_TEST}" ;;
   esac
@@ -259,7 +400,7 @@ elif [[ -n "${CHECK}" ]]; then
     label-isolation) check_label_isolation ;;
     locust-authority) check_locust_authority ;;
     preflight-traps) check_preflight_traps ;;
-    handoff-docs) check_handoff_docs ;;
+    assertions) check_assertions ;;
     *) die "unknown check: ${CHECK}" ;;
   esac
 else

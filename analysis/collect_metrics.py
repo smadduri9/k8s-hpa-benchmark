@@ -53,7 +53,6 @@ REQUIRED_VALUE_COLUMNS = [
     "latency_p95_ms",
     "latency_p99_ms",
     "rps",
-    "error_rate",
     "replicas",
 ]
 
@@ -129,8 +128,16 @@ def query_range(
     start: float,
     end: float,
     step: int,
+    allow_empty: bool = False,
 ) -> list[tuple[float, float]]:
     results = query_range_raw(prometheus_url, promql, start, end, step)
+    if len(results) == 0:
+        if allow_empty:
+            return []
+        label_sets: list[dict] = []
+        raise RuntimeError(
+            f"AMBIGUOUS_PROMQL_RESULT expected 1 series got 0 labels={label_sets}"
+        )
     if len(results) != 1:
         label_sets = [item.get("metric", {}) for item in results]
         raise RuntimeError(
@@ -211,7 +218,14 @@ def collect(
     series: dict[str, list[tuple[float, float]]] = {}
     for metric, promql in queries.items():
         print(f"Querying {metric}: {promql}")
-        series[metric] = query_range(prometheus_url, promql, start_ts, end_ts, step)
+        series[metric] = query_range(
+            prometheus_url,
+            promql,
+            start_ts,
+            end_ts,
+            step,
+            allow_empty=(metric == "error_rate"),
+        )
 
     ref = series.get("cpu_utilization_pct") or next(v for v in series.values() if v)
     deployment = DEPLOYMENT_BY_MODE[mode]

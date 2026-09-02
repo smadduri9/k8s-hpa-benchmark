@@ -64,7 +64,8 @@ gcloud container clusters get-credentials "${CLUSTER_NAME}" \
 # Step 3: Build and push Docker image
 # ---------------------------------------------------------------------------
 echo "[3/7] Building and pushing Docker image to GCR..."
-docker build -t "${IMAGE_NAME}:${IMAGE_TAG}" ./app/
+# GKE nodes are linux/amd64; explicit platform avoids arm64 host building wrong arch.
+docker build --platform linux/amd64 -t "${IMAGE_NAME}:${IMAGE_TAG}" ./app/
 docker push "${IMAGE_NAME}:${IMAGE_TAG}"
 
 # ---------------------------------------------------------------------------

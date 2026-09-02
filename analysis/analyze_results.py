@@ -15,18 +15,48 @@ Usage:
   python3 analysis/analyze_results.py --fixed path/to/fixed.csv --hpa path/to/hpa.csv
 """
 
+from __future__ import annotations
+
 import argparse
 import csv
 import os
 import sys
 from pathlib import Path
 
-import numpy as np
-import matplotlib
-matplotlib.use("Agg")  # non-interactive backend
-import matplotlib.pyplot as plt
-import matplotlib.patches as mpatches
-from matplotlib.gridspec import GridSpec
+MISSING = "MISSING"
+REQUIRED_VALUE_COLUMNS = [
+    "cpu_utilization_pct",
+    "latency_p50_ms",
+    "latency_p95_ms",
+    "latency_p99_ms",
+    "rps",
+    "error_rate",
+    "replicas",
+]
+
+# Plotting deps load after guard_inputs in main() so publication guards run without numpy/matplotlib.
+np = None  # type: ignore[assignment]
+plt = None  # type: ignore[assignment]
+mpatches = None  # type: ignore[assignment]
+GridSpec = None  # type: ignore[assignment]
+
+
+def _import_plot_deps() -> None:
+    global np, plt, mpatches, GridSpec
+    if np is not None:
+        return
+    import numpy as _np
+    import matplotlib as _matplotlib
+
+    _matplotlib.use("Agg")
+    import matplotlib.pyplot as _plt
+    import matplotlib.patches as _mpatches
+    from matplotlib.gridspec import _GridSpec
+
+    np = _np
+    plt = _plt
+    mpatches = _mpatches
+    GridSpec = _GridSpec
 
 # ---------------------------------------------------------------------------
 # Colors and style
@@ -77,7 +107,7 @@ def load_csv(path: str) -> list[dict]:
     return rows
 
 
-def extract(rows: list[dict], key: str) -> tuple[np.ndarray, np.ndarray]:
+def extract(rows: list[dict], key: str):
     t = np.array([r["elapsed_seconds"] for r in rows])
     values = []
     for r in rows:
@@ -330,6 +360,16 @@ def guard_inputs(fixed_path: str, hpa_path: str, locust_hpa_stats: str | None = 
             if not allow_synthetic and "data_source" in rows[0] and any(r.get("data_source") == "SYNTHETIC" for r in rows):
                 print("ERROR: synthetic data detected; pass --allow-synthetic to analyze", file=sys.stderr)
                 sys.exit(1)
+            for col in REQUIRED_VALUE_COLUMNS:
+                populated = sum(
+                    1 for row in rows if row.get(col) not in (MISSING, "", None)
+                )
+                if populated == 0:
+                    print(
+                        f"ASSERTION FAILED: required column {col} has zero populated rows in {path}",
+                        file=sys.stderr,
+                    )
+                    sys.exit(1)
 
 
 def main():
@@ -343,6 +383,7 @@ def main():
     args = parser.parse_args()
 
     guard_inputs(args.fixed, args.hpa, args.locust_hpa_stats, args.allow_synthetic)
+    _import_plot_deps()
 
     fixed = load_csv(args.fixed)
     hpa   = load_csv(args.hpa)

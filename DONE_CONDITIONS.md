@@ -8,7 +8,7 @@ Format: `item_id | verification_command | expected_output`
 
 `t1-a-coldstart | bash scripts/smoke_test.sh --check coldstart | log contains "PODS_AT_ZERO_CONFIRMED", then "READY_REPLICAS_MATCH_DECLARED", then "LOAD_START t0=" in this exact order`
 
-`t1-b-assertions | bash scripts/smoke_test.sh --negative-test fixed-replica-assert | exits non-zero and stderr contains "ASSERTION FAILED: fixed arm expected 3 replicas, observed"`
+`t1-b-assertions | bash scripts/smoke_test.sh --check assertions && bash scripts/smoke_test.sh --negative-test fixed-replica-assert && bash scripts/smoke_test.sh --negative-test empty-metrics-column && bash scripts/smoke_test.sh --negative-test missing-locust-hpa | positive: DECLARED_REPLICAS_FROM_SPEC and ASSERTIONS_PASS; negative replica: ASSERTION FAILED with declared count from spec (not hardcoded 3); negative empty column: ASSERTION FAILED required column; negative locust: publication blocked locust_hpa_stats.csv absent`
 
 `t1-c-fixed-metrics | bash scripts/smoke_test.sh --check fixed-metrics | output contains "FIXED_METRICS_REQUIRED_COLUMNS_POPULATED"; output contains "ERROR_RATE_COLUMN_POPULATED"; output contains no empty-string placeholders for required columns; output contains "ANCHOR_WINDOW_ENFORCED start=<ISO8601> end=<ISO8601>"`
 

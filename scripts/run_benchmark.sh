@@ -121,13 +121,7 @@ collect_arm_metrics() {
   local end_iso="$3"
   local output="$4"
   local max_replicas="${5:-}"
-
-  local declared
-  if [[ "${mode}" == "fixed" ]]; then
-    declared="$(deployment_declared_replicas hpa-eval-fixed "${NAMESPACE}")"
-  else
-    declared="$(deployment_declared_replicas hpa-eval-hpa "${NAMESPACE}")"
-  fi
+  local expected_replicas="${6:-}"
 
   local args=(
     python3 "${REPO_ROOT}/analysis/collect_metrics.py"
@@ -140,8 +134,14 @@ collect_arm_metrics() {
     --run-id "${RUN_ID}"
     --cluster-name "${CLUSTER_NAME:-kind-smoke}"
     --output "${output}"
-    --assert-replicas "${declared}"
   )
+  if [[ "${mode}" == "fixed" ]]; then
+    if [[ -z "${expected_replicas}" ]]; then
+      expected_replicas="$(deployment_declared_replicas hpa-eval-fixed "${NAMESPACE}")"
+    fi
+    args+=(--assert-replicas "${expected_replicas}")
+    echo "ASSERT_REPLICAS_SOURCE=deployment_spec deployment=hpa-eval-fixed declared=${expected_replicas}"
+  fi
   if [[ -n "${max_replicas}" ]]; then
     args+=(--max-replicas "${max_replicas}")
   fi
@@ -183,12 +183,14 @@ run_one_repetition() {
     register_port_forward_pid "${pf_pid}"
     sleep 3
 
+    local expected_fixed
     cold_start_arm "hpa-eval-fixed" "app=hpa-eval,experiment=fixed" "${NAMESPACE}" "${MANIFEST_PATH}" "fixed"
+    expected_fixed="$(deployment_declared_replicas hpa-eval-fixed "${NAMESPACE}")"
     local t0_fixed
     t0_fixed="$(run_locust_arm fixed "${FIXED_HOST}" "${rep_dir}/locust_fixed" "${rep_dir}/run.log" "${rep_dir}")"
     local t1_fixed
     t1_fixed="$(iso_now)"
-    collect_arm_metrics fixed "${t0_fixed}" "${t1_fixed}" "${rep_dir}/fixed_metrics.csv"
+    collect_arm_metrics fixed "${t0_fixed}" "${t1_fixed}" "${rep_dir}/fixed_metrics.csv" "" "${expected_fixed}"
 
     cold_start_arm "hpa-eval-hpa" "app=hpa-eval,experiment=hpa" "${NAMESPACE}" "${MANIFEST_PATH}" "hpa"
     local t0_hpa
@@ -205,7 +207,8 @@ run_one_repetition() {
     python3 "${REPO_ROOT}/analysis/analyze_results.py" \
       --fixed "${rep_dir}/fixed_metrics.csv" \
       --hpa "${rep_dir}/hpa_metrics.csv" \
-      --output-dir "${rep_dir}/figures" || true
+      --locust-hpa-stats "${rep_dir}/locust_hpa_stats.csv" \
+      --output-dir "${rep_dir}/figures"
   } > "${rep_dir}/rep.log" 2>&1 || {
     status="FAIL"
     reason="$(tail -n 1 "${rep_dir}/rep.log" 2>/dev/null || echo unknown)"
