@@ -1,16 +1,12 @@
 #!/usr/bin/env bash
-# run_experiment.sh — Run both fixed and HPA experiments sequentially
-# Usage: bash scripts/run_experiment.sh [HOST_IP]
-#
-# Runs fixed experiment → collects metrics → switches to HPA → runs again → analyzes
+# OS/arch assumptions: macOS (darwin) or Linux, bash 4+, kubectl, locust, python3.
+# run_experiment.sh — legacy wrapper; prefer scripts/run_benchmark.sh
 
 set -euo pipefail
 
 NAMESPACE="hpa-eval"
 HOST="${1:-}"
 PROMETHEUS_URL="http://localhost:9090"
-LOCUST_USERS=200
-LOCUST_SPAWN_RATE=10
 EXPERIMENT_DURATION="18m"
 
 # ---------------------------------------------------------------------------
@@ -73,14 +69,14 @@ log "========================================"
 wait_for_pods "app=hpa-eval,experiment=fixed"
 
 log "Starting Locust load test against fixed deployment..."
+# LoadTestShape controls users/spawn-rate; do not pass --users or --spawn-rate.
 locust -f locust/locustfile.py \
     --host "${FIXED_HOST}" \
     --headless \
-    --users "${LOCUST_USERS}" \
-    --spawn-rate "${LOCUST_SPAWN_RATE}" \
     --run-time "${EXPERIMENT_DURATION}" \
-    --csv=sample_data/locust_fixed \
-    --logfile=sample_data/locust_fixed.log
+    --csv=results/legacy/locust_fixed \
+    --csv-full-history \
+    --logfile=results/legacy/locust_fixed.log
 
 log "Collecting metrics from Prometheus..."
 sleep 5  # brief pause for final metrics to settle
@@ -105,14 +101,14 @@ log "HPA deployment reset to 1 replica. Waiting 30s for stability..."
 sleep 30
 
 log "Starting Locust load test against HPA deployment..."
+# LoadTestShape controls users/spawn-rate; do not pass --users or --spawn-rate.
 locust -f locust/locustfile.py \
     --host "${HPA_HOST}" \
     --headless \
-    --users "${LOCUST_USERS}" \
-    --spawn-rate "${LOCUST_SPAWN_RATE}" \
     --run-time "${EXPERIMENT_DURATION}" \
-    --csv=sample_data/locust_hpa \
-    --logfile=sample_data/locust_hpa.log
+    --csv=results/legacy/locust_hpa \
+    --csv-full-history \
+    --logfile=results/legacy/locust_hpa.log
 
 log "Collecting metrics from Prometheus..."
 sleep 5
