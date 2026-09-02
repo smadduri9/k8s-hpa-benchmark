@@ -36,11 +36,41 @@ Before starting any item, re-read this file and `DONE_CONDITIONS.md`.
 
 ## t1-0-kind-harness-gate
 
-- **Files touched:** `kind/kind-config.yaml`, `k8s/smoke/*`, `locust/locustfile_smoke.py`, `scripts/smoke_test.sh`
-- **Verification command:** `bash scripts/smoke_test.sh --check harness`
-- **Actual output:** BLOCKED — Docker daemon not running (`Cannot connect to the Docker daemon at unix:///Users/srirammadduri/.docker/run/docker.sock`). kind installed via brew after initial attempt.
-- **Elapsed time:** ~20 min (implementation); smoke gate not executed end-to-end in this environment
-- **Surprises:** Docker Desktop must be running before harness gate can pass.
+- **Files touched:** `k8s/smoke/metrics-server.yaml` (pinned v0.9.0), `scripts/smoke_test.sh`, `AGENTS.md`
+- **Verification command:** four kubectl checks + `bash scripts/smoke_test.sh --check harness`
+- **Actual output:**
+
+```
+$ kubectl -n kube-system get pods -l k8s-app=metrics-server
+NAME                              READY   STATUS    RESTARTS   AGE
+metrics-server-78cbbf96dd-62r5w   1/1     Running   0          36s
+
+$ kubectl top nodes
+NAME                           CPU(cores)   CPU(%)   MEMORY(bytes)   MEMORY(%)   
+hpa-eval-smoke-control-plane   146m         1%       814Mi           10%         
+hpa-eval-smoke-worker          50m          0%       448Mi           5%          
+
+$ kubectl top pods -n hpa-eval
+NAME                              CPU(cores)   MEMORY(bytes)   
+hpa-eval-fixed-6f677b6856-4rjml   3m           35Mi            
+hpa-eval-fixed-6f677b6856-hfdnq   3m           35Mi            
+hpa-eval-hpa-84fb5b745f-fcxvp     3m           35Mi            
+prometheus-6d96f7cbb6-77hh7       2m           27Mi            
+
+$ kubectl get hpa -n hpa-eval
+NAME           REFERENCE                 TARGETS       MINPODS   MAXPODS   REPLICAS   AGE
+hpa-eval-hpa   Deployment/hpa-eval-hpa   cpu: 3%/60%   1         3         1          2m8s
+
+$ bash scripts/smoke_test.sh --check harness
+KIND_CLUSTER_READY
+KIND_IMAGE_LOADED image=hpa-eval-app:smoke
+METRICS_SERVER_READY
+HPA_UTILIZATION_PRESENT hpa-eval-hpa   Deployment/hpa-eval-hpa   cpu: 3%/60%   1     3     1     2m47s
+METRIC_CONTRACT_VERIFIED
+```
+
+- **Elapsed time:** ~45 min (fix + verify on existing `hpa-eval-smoke` cluster; cluster not recreated)
+- **Surprises:** Root cause confirmed — wholesale args patch dropped `--secure-port=10250`; vendored manifest fix required delete-then-apply, not another patch. HPA shows `<unknown>` for ~30–50s after metrics-server reinstall; harness now polls up to 240s. Metric contract probe uses `python3` inside pod (no `wget` in image).
 
 ---
 

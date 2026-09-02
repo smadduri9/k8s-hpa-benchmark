@@ -7,3 +7,4 @@
 - Destructive cloud operations must verify expected cluster name AND project before executing.
 - Commit after every completed item with the item ID in the message. Cursor checkpoints do not track bash-created files, so git is the only real undo.
 - Locust invocation is exactly: `--headless --csv <base> --csv-full-history`. Never add `--processes` (crashes with `--csv-full-history`, locust#2908). Never pass `--users` or `--spawn-rate` (`LoadTestShape` overrides them; they are inert).
+- Never patch a container's args array wholesale. Vendor the full manifest or append. Replacing args silently drops upstream defaults — this caused the t1-0 gate failure.

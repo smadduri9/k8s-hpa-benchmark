@@ -61,39 +61,41 @@ build_and_load_image() {
 }
 
 install_metrics_server() {
-  kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
-  kubectl patch deployment metrics-server -n kube-system --type='json' -p='[
-    {"op":"add","path":"/spec/template/spec/containers/0/args","value":[
-      "--kubelet-insecure-tls",
-      "--cert-dir=/tmp",
-      "--kubelet-preferred-address-types=InternalIP,ExternalIP,Hostname",
-      "--kubelet-use-node-status-port",
-      "--metric-resolution=15s"
-    ]}
-  ]' || true
+  # Delete broken rollout entirely; do not patch args in place.
+  kubectl delete deployment metrics-server -n kube-system --ignore-not-found=true
+  while kubectl get pods -n kube-system -l k8s-app=metrics-server --no-headers 2>/dev/null | grep -q .; do
+    sleep 2
+  done
+
+  kubectl apply -f "${REPO_ROOT}/k8s/smoke/metrics-server.yaml"
   kubectl rollout status deployment/metrics-server -n kube-system --timeout=180s
   echo "METRICS_SERVER_READY"
 }
 
 deploy_smoke_stack() {
-  kubectl apply -k "${REPO_ROOT}/k8s/smoke"
+  kubectl kustomize "${REPO_ROOT}/k8s/smoke" --load-restrictor LoadRestrictionsNone | kubectl apply -f -
   kubectl wait --for=condition=Available deployment --all -n "${NAMESPACE}" --timeout=300s
 }
 
 verify_hpa_percentage() {
-  local line
-  line="$(kubectl get hpa hpa-eval-hpa -n "${NAMESPACE}" --no-headers)"
-  if echo "${line}" | grep -q '<unknown>'; then
-    die "HPA utilization is <unknown>: ${line}"
-  fi
-  echo "HPA_UTILIZATION_PRESENT ${line}"
+  local line=""
+  local attempt
+  for attempt in $(seq 1 24); do
+    line="$(kubectl get hpa hpa-eval-hpa -n "${NAMESPACE}" --no-headers)"
+    if ! echo "${line}" | grep -q '<unknown>'; then
+      echo "HPA_UTILIZATION_PRESENT ${line}"
+      return 0
+    fi
+    sleep 10
+  done
+  die "HPA utilization is <unknown> after 240s: ${line}"
 }
 
 verify_metric_contract() {
   local pod
   pod="$(kubectl get pods -n "${NAMESPACE}" -l app=hpa-eval,experiment=fixed -o jsonpath='{.items[0].metadata.name}')"
   local raw
-  raw="$(kubectl exec -n "${NAMESPACE}" "${pod}" -- wget -qO- http://127.0.0.1:8000/metrics)"
+  raw="$(kubectl exec -n "${NAMESPACE}" "${pod}" -- python3 -c "import urllib.request; print(urllib.request.urlopen('http://127.0.0.1:8000/metrics').read().decode())")"
   echo "${raw}" | grep -q 'app_requests_total'
   echo "${raw}" | grep -q 'app_cpu_usage_percent'
   echo "${raw}" | grep -q 'app_request_latency_seconds_bucket'
