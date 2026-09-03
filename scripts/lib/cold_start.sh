@@ -6,6 +6,7 @@ set -euo pipefail
 
 # Poll interval while waiting for pods to terminate (seconds). Not a readiness sleep.
 COLD_START_PODS_POLL_INTERVAL="${COLD_START_PODS_POLL_INTERVAL:-2}"
+COLD_START_PODS_ZERO_TIMEOUT_SEC="${COLD_START_PODS_ZERO_TIMEOUT_SEC:-300}"
 COLD_START_READINESS_TIMEOUT_SEC="${COLD_START_READINESS_TIMEOUT_SEC:-180}"
 
 deployment_declared_replicas() {
@@ -17,8 +18,10 @@ deployment_declared_replicas() {
 wait_pods_zero() {
   local selector="$1"
   local namespace="${2:-hpa-eval}"
+  local timeout_sec="${3:-${COLD_START_PODS_ZERO_TIMEOUT_SEC}}"
   local attempt=0
   local count
+  local deadline=$((SECONDS + timeout_sec))
   while true; do
     attempt=$((attempt + 1))
     count="$(kubectl get pods -n "${namespace}" -l "${selector}" --no-headers 2>/dev/null | wc -l | tr -d ' ')"
@@ -26,6 +29,10 @@ wait_pods_zero() {
     if [[ "${count}" == "0" ]]; then
       echo "PODS_AT_ZERO_CONFIRMED selector=${selector}"
       return 0
+    fi
+    if (( SECONDS >= deadline )); then
+      echo "ERROR: PODS_ZERO_TIMEOUT selector=${selector} timeout_sec=${timeout_sec} remaining=${count}" >&2
+      return 1
     fi
     sleep "${COLD_START_PODS_POLL_INTERVAL}"
   done

@@ -51,7 +51,7 @@ def _import_plot_deps() -> None:
     _matplotlib.use("Agg")
     import matplotlib.pyplot as _plt
     import matplotlib.patches as _mpatches
-    from matplotlib.gridspec import _GridSpec
+    from matplotlib.gridspec import GridSpec as _GridSpec
 
     np = _np
     plt = _plt

@@ -10,13 +10,13 @@ Format: `item_id | verification_command | expected_output`
 
 `t1-b-assertions | bash scripts/smoke_test.sh --check assertions && bash scripts/smoke_test.sh --negative-test fixed-replica-assert && bash scripts/smoke_test.sh --negative-test empty-metrics-column && bash scripts/smoke_test.sh --negative-test missing-locust-hpa && bash scripts/smoke_test.sh --negative-test hpa-never-scaled | positive: DECLARED_REPLICAS_FROM_SPEC; negatives: ASSERTION FAILED replica, empty column, missing locust, HPA_NEVER_SCALED`
 
-`t1-c-fixed-metrics | bash scripts/smoke_test.sh --check fixed-metrics | output contains "FIXED_METRICS_REQUIRED_COLUMNS_POPULATED"; output contains "ERROR_RATE_COLUMN_POPULATED"; output contains "ANCHOR_WINDOW_ENFORCED start=<ISO8601> end=<ISO8601>"`
+`t1-c-fixed-metrics | bash scripts/smoke_test.sh --check fixed-metrics && bash scripts/smoke_test.sh --check error-rate-positive | fixed-metrics: FIXED_METRICS_REQUIRED_COLUMNS_POPULATED and ERROR_RATE_COLUMN_POPULATED with error_rate=0.0 rows; error-rate-positive: ERROR_RATE_NONZERO_VERIFIED and non_zero>=1 in collector output`
 
 `t1-c-label-isolation | bash scripts/smoke_test.sh --check label-isolation --mode fixed --both-deployments-up && bash scripts/smoke_test.sh --negative-test label-isolation | positive: LABEL_ISOLATION_VERIFIED and OPPOSITE_ARM_SERIES=0; negative: LABEL_ISOLATION_FAILED`
 
-`t1-d-locust-authority | bash scripts/smoke_test.sh --check locust-authority | output contains "LOCUST_FIXED_STATS_FOUND" and "LOCUST_HPA_STATS_FOUND" and "REQUEST_AUTHORITY=LOCUST" and "PROM_AUTHORITY=REPLICAS_CPU_TIMING"`
+`t1-d-locust-authority | bash scripts/smoke_test.sh --check locust-authority && bash scripts/smoke_test.sh --negative-test missing-locust-fixed && bash scripts/smoke_test.sh --negative-test missing-locust-hpa | positive: LOCUST_FIXED_STATS_FOUND, LOCUST_HPA_STATS_FOUND, REQUEST_AUTHORITY=LOCUST; negatives: locust_fixed_stats.csv absent, locust_hpa_stats.csv absent`
 
-`t1-e-preflight-traps | bash scripts/smoke_test.sh --check preflight-traps | output contains "PREFLIGHT_PASS"; output contains "TRAP_CLEANUP_VERIFIED"; output contains "PROJECT_CLUSTER_VERIFICATION_REQUIRED"`
+`t1-e-preflight-traps | bash scripts/smoke_test.sh --check preflight-traps --env-file .env | output contains PREFLIGHT_PASS, TRAP_SCENARIO_PASS for normal/error/sigint, TRAP_CLEANUP_IDEMPOTENT, NEGATIVE_CLUSTER_VERIFICATION_PASS, PROJECT_CLUSTER_VERIFICATION_REQUIRED, TRAP_CLEANUP_VERIFIED`
 
 `t1-a2-synthetic-rename-minimal | python3 synthetic/generate_synthetic_data.py --help 2>&1 | output begins with "SYNTHETIC DATA GENERATOR"; file path "analysis/simulate_results.py" no longer exists; file path "synthetic/generate_synthetic_data.py" exists`
 

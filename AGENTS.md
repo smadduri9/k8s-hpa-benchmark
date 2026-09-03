@@ -14,3 +14,5 @@
 - kubectl client/server minor-version skew: preflight **WARN** when skew > 1, **FAIL** when skew > 2 (Kubernetes supported skew is one minor version).
 - On arm64 hosts, GKE image builds in `scripts/deploy_gke.sh` must pass `docker build --platform linux/amd64`; preflight fails if the flag is absent.
 - HPA arm collection aborts with `HPA_NEVER_SCALED` if peak observed replicas never exceeds `minReplicas` during the anchored window.
+- No operation may block indefinitely. Every wait has an explicit timeout and a named error on expiry.
+- Locust invocations must pass explicit `--run-time`, verify load-target reachability before start (`LOAD_TARGET_UNREACHABLE` on failure), and run under a wall-clock guard (`LOCUST_TIMEOUT` on expiry). Never capture Locust stdout via command substitution.

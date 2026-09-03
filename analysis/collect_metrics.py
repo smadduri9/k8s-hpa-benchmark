@@ -54,6 +54,7 @@ REQUIRED_VALUE_COLUMNS = [
     "latency_p99_ms",
     "rps",
     "replicas",
+    "error_rate",
 ]
 
 DEPLOYMENT_BY_MODE = {
@@ -78,11 +79,33 @@ def build_queries(mode: str) -> dict[str, str]:
             f"histogram_quantile(0.99, sum(rate(app_request_latency_seconds_bucket{{{label}}}[1m])) by (le)) * 1000"
         ),
         "rps": f'sum(rate(app_requests_total{{{label},status_code="200"}}[1m]))',
-        "error_rate": (
-            f'sum(rate(app_requests_total{{{label},status_code!="200"}}[1m])) / '
-            f"sum(rate(app_requests_total{{{label}}}[1m]))"
+    }
+
+
+def build_error_rate_queries(mode: str) -> dict[str, str]:
+    label = f'experiment="{mode}"'
+    return {
+        "request_total_rate": f"sum(rate(app_requests_total{{{label}}}[1m]))",
+        "request_failure_rate": (
+            f'sum(rate(app_requests_total{{{label},status_code!="200"}}[1m]))'
         ),
     }
+
+
+def compute_error_rate_value(
+    total_val: float | None,
+    failure_val: float | None,
+    failures_series_present: bool,
+) -> str | float:
+    """failures/total; 0.0 when total>0 and failures=0; MISSING when total unavailable."""
+    if total_val is None:
+        return MISSING
+    if total_val > 0:
+        failures = failure_val if failure_val is not None else 0.0
+        return round(failures / total_val, 4)
+    if failures_series_present and failure_val is not None and failure_val > 0:
+        return MISSING
+    return 0.0
 
 
 def parse_iso8601(value: str) -> float:
@@ -270,6 +293,7 @@ def collect(
         print(f"HPA_SCALE_FLOOR_CHECK peak={peak_replicas} minReplicas={min_replicas}")
 
     queries = build_queries(mode)
+    error_queries = build_error_rate_queries(mode)
     series: dict[str, list[tuple[float, float]]] = {}
     for metric, promql in queries.items():
         print(f"Querying {metric}: {promql}")
@@ -279,8 +303,32 @@ def collect(
             start_ts,
             end_ts,
             step,
-            allow_empty=(metric == "error_rate"),
         )
+
+    print(f"Querying error_rate components: {error_queries['request_total_rate']}")
+    total_rate_series = query_range(
+        prometheus_url,
+        error_queries["request_total_rate"],
+        start_ts,
+        end_ts,
+        step,
+        allow_empty=True,
+    )
+    print(f"Querying error_rate components: {error_queries['request_failure_rate']}")
+    failure_rate_raw = query_range_raw(
+        prometheus_url,
+        error_queries["request_failure_rate"],
+        start_ts,
+        end_ts,
+        step,
+        retries=1,
+    )
+    failures_series_present = len(failure_rate_raw) > 0
+    failure_rate_series = (
+        [(float(ts), float(val)) for ts, val in failure_rate_raw[0].get("values", [])]
+        if failures_series_present
+        else []
+    )
 
     ref = series.get("cpu_utilization_pct") or next(v for v in series.values() if v)
     rows: list[dict] = []
@@ -311,6 +359,13 @@ def collect(
         for metric, values in series.items():
             val = next((v for t, v in values if abs(t - ts) < step), None)
             row[metric] = round(val, 4) if val is not None else MISSING
+        total_val = next((v for t, v in total_rate_series if abs(t - ts) < step), None)
+        failure_val = next((v for t, v in failure_rate_series if abs(t - ts) < step), None)
+        row["error_rate"] = compute_error_rate_value(
+            total_val,
+            failure_val,
+            failures_series_present,
+        )
         rows.append(row)
 
     for col in REQUIRED_VALUE_COLUMNS:
@@ -377,11 +432,18 @@ def main() -> None:
         writer.writerows(rows)
 
     populated_error = sum(1 for row in rows if row.get("error_rate") not in (MISSING, "", None))
+    nonzero_error = sum(
+        1
+        for row in rows
+        if row.get("error_rate") not in (MISSING, "", None) and float(row["error_rate"]) > 0
+    )
     print(f"FIXED_METRICS_REQUIRED_COLUMNS_POPULATED rows={len(rows)}")
-    if populated_error > 0:
-        print("ERROR_RATE_COLUMN_POPULATED")
-    else:
-        print("ERROR_RATE_COLUMN_POPULATED=0 (no non-200 /cpu traffic observed)")
+    print(
+        f"ERROR_RATE_COLUMN_POPULATED rows={populated_error}/{len(rows)} "
+        f"non_zero={nonzero_error} missing={len(rows) - populated_error}"
+    )
+    if populated_error == 0:
+        raise RuntimeError("ASSERTION FAILED: error_rate column has zero populated rows")
 
     print(f"Wrote {len(rows)} rows to {args.output}")
 

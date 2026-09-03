@@ -12,6 +12,8 @@ source "${LIBS_DIR}/common.sh"
 source "${LIBS_DIR}/cleanup.sh"
 # shellcheck source=lib/cold_start.sh
 source "${LIBS_DIR}/cold_start.sh"
+# shellcheck source=lib/locust_run.sh
+source "${LIBS_DIR}/locust_run.sh"
 
 ENV_FILE=""
 SMOKE=false
@@ -89,31 +91,30 @@ run_locust_arm() {
   local arm="$1"
   local host="$2"
   local csv_base="$3"
-  local log_file="$4"
+  local harness_log="$4"
   local rep_dir="$5"
 
   local t0
   t0="$(iso_now)"
   local t0_file="${rep_dir}/t0_${arm}.txt"
-  echo "LOAD_START t0=${t0}" | tee -a "${rep_dir}/run.log"
+  local locust_log="${rep_dir}/locust_${arm}.log"
+  echo "LOAD_START t0=${t0}" | tee -a "${harness_log}"
   echo "${t0}" > "${t0_file}"
   manifest_set_load_start_t0 "${MANIFEST_PATH}" "${arm}" "${t0}"
 
-  local hb_pid
-  hb_pid="$(heartbeat_start "${rep_dir}/run.log" "locust-${arm}")"
+  heartbeat_start "${harness_log}" "locust-${arm}"
+  local hb_pid=$!
   register_heartbeat_pid "${hb_pid}"
 
-  # LoadTestShape controls users/spawn-rate; do not pass --users or --spawn-rate.
-  locust_cmd -f "${REPO_ROOT}/${LOCUST_FILE}" \
-    --host "${host}" \
-    --headless \
-    --run-time "${RUN_TIME}" \
-    --csv "${csv_base}" \
-    --csv-full-history \
-    --logfile "${log_file}"
+  run_locust_bounded \
+    "${REPO_ROOT}/${LOCUST_FILE}" \
+    "${host}" \
+    "${RUN_TIME}" \
+    "${csv_base}" \
+    "${locust_log}" \
+    "${harness_log}"
 
   heartbeat_stop "${hb_pid}"
-  cat "${t0_file}"
 }
 
 collect_arm_metrics() {
@@ -181,9 +182,12 @@ run_one_repetition() {
 
   local status="PASS"
   local reason="ok"
+  local rep_rc=0
 
+  set +e
   {
     echo "RUN_ID=${RUN_ID} REP=${rep} SMOKE=${SMOKE}"
+    echo "LOCUST_FILE=${LOCUST_FILE} RUN_TIME=${RUN_TIME} FIXED_HOST=${FIXED_HOST} HPA_HOST=${HPA_HOST}"
 
     kubectl port-forward svc/prometheus 9090:9090 -n "${NAMESPACE}" >/dev/null 2>&1 &
     local pf_pid=$!
@@ -193,15 +197,17 @@ run_one_repetition() {
     local expected_fixed
     cold_start_arm "hpa-eval-fixed" "app=hpa-eval,experiment=fixed" "${NAMESPACE}" "${MANIFEST_PATH}" "fixed"
     expected_fixed="$(deployment_declared_replicas hpa-eval-fixed "${NAMESPACE}")"
+    run_locust_arm fixed "${FIXED_HOST}" "${rep_dir}/locust_fixed" "${rep_dir}/run.log" "${rep_dir}"
     local t0_fixed
-    t0_fixed="$(run_locust_arm fixed "${FIXED_HOST}" "${rep_dir}/locust_fixed" "${rep_dir}/run.log" "${rep_dir}")"
+    t0_fixed="$(<"${rep_dir}/t0_fixed.txt")"
     local t1_fixed
     t1_fixed="$(iso_now)"
     collect_arm_metrics fixed "${t0_fixed}" "${t1_fixed}" "${rep_dir}/fixed_metrics.csv" "" "${expected_fixed}"
 
     cold_start_arm "hpa-eval-hpa" "app=hpa-eval,experiment=hpa" "${NAMESPACE}" "${MANIFEST_PATH}" "hpa"
+    run_locust_arm hpa "${HPA_HOST}" "${rep_dir}/locust_hpa" "${rep_dir}/run.log" "${rep_dir}"
     local t0_hpa
-    t0_hpa="$(run_locust_arm hpa "${HPA_HOST}" "${rep_dir}/locust_hpa" "${rep_dir}/run.log" "${rep_dir}")"
+    t0_hpa="$(<"${rep_dir}/t0_hpa.txt")"
     local t1_hpa
     t1_hpa="$(iso_now)"
     collect_arm_metrics hpa "${t0_hpa}" "${t1_hpa}" "${rep_dir}/hpa_metrics.csv" "${HPA_MAX_REPLICAS}"
@@ -216,10 +222,15 @@ run_one_repetition() {
       --hpa "${rep_dir}/hpa_metrics.csv" \
       --locust-hpa-stats "${rep_dir}/locust_hpa_stats.csv" \
       --output-dir "${rep_dir}/figures"
-  } > "${rep_dir}/rep.log" 2>&1 || {
+  } >> "${rep_dir}/rep.log" 2>&1
+  rep_rc=$?
+  set -e
+  cat "${rep_dir}/rep.log"
+
+  if [[ "${rep_rc}" -ne 0 ]]; then
     status="FAIL"
     reason="$(tail -n 1 "${rep_dir}/rep.log" 2>/dev/null || echo unknown)"
-  }
+  fi
 
   printf '{"status":"%s","reason":"%s"}\n' "${status}" "${reason}" > "${rep_dir}/status.json"
   echo "${status}"

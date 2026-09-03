@@ -70,13 +70,13 @@ hpa_min_replicas() {
 heartbeat_start() {
   local log_file="$1"
   local label="$2"
-  (
-    while true; do
-      echo "[$(iso_now)] HEARTBEAT ${label}" >> "${log_file}"
+  { while true; do
+      local line="[$(iso_now)] HEARTBEAT ${label}"
+      echo "${line}" >> "${log_file}"
+      echo "${line}" >&2
       sleep 60
     done
-  ) &
-  echo $!
+  } &
 }
 
 heartbeat_stop() {

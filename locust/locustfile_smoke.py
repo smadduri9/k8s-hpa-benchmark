@@ -41,4 +41,6 @@ class SmokeLoadShape(LoadTestShape):
         for end_time, users, spawn_rate in self.stages:
             if run_time <= end_time:
                 return (users, spawn_rate)
+        if self.runner is not None:
+            self.runner.quit()
         return None

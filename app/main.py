@@ -121,6 +121,17 @@ async def cpu_load(
         ACTIVE_REQUESTS.dec()
 
 
+@app.get("/fail")
+async def fail_request():
+    """Intentional non-200 for error_rate validation (records 404 in Prometheus)."""
+    endpoint = "/fail"
+    start = time.perf_counter()
+    REQUEST_COUNT.labels(method="GET", endpoint=endpoint, status_code=404).inc()
+    REQUEST_LATENCY.labels(endpoint=endpoint).observe(time.perf_counter() - start)
+    CPU_USAGE.set(psutil.cpu_percent(interval=None))
+    return PlainTextResponse(status_code=404, content="intentional failure for benchmark validation")
+
+
 @app.get("/health")
 async def health():
     """Kubernetes liveness and readiness probe endpoint."""

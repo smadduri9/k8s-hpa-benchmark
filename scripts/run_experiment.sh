@@ -7,7 +7,16 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/common.sh
 source "${SCRIPT_DIR}/lib/common.sh"
+# shellcheck source=lib/cleanup.sh
+source "${SCRIPT_DIR}/lib/cleanup.sh"
+# shellcheck source=lib/locust_run.sh
+source "${SCRIPT_DIR}/lib/locust_run.sh"
 require_venv
+
+cleanup_on_exit() {
+  cleanup_background_jobs
+}
+trap cleanup_on_exit EXIT INT TERM
 
 NAMESPACE="hpa-eval"
 HOST="${1:-}"
@@ -61,6 +70,7 @@ log "Starting Prometheus port-forward..."
 kubectl port-forward svc/prometheus "${PROMETHEUS_URL##*:}:9090" \
     -n "${NAMESPACE}" &
 PF_PID=$!
+register_port_forward_pid "${PF_PID}"
 sleep 3
 log "Prometheus available at ${PROMETHEUS_URL}"
 
@@ -74,14 +84,13 @@ log "========================================"
 wait_for_pods "app=hpa-eval,experiment=fixed"
 
 log "Starting Locust load test against fixed deployment..."
-# LoadTestShape controls users/spawn-rate; do not pass --users or --spawn-rate.
-locust_cmd -f "${REPO_ROOT}/locust/locustfile.py" \
-    --host "${FIXED_HOST}" \
-    --headless \
-    --run-time "${EXPERIMENT_DURATION}" \
-    --csv="${REPO_ROOT}/results/legacy/locust_fixed" \
-    --csv-full-history \
-    --logfile="${REPO_ROOT}/results/legacy/locust_fixed.log"
+LOCUST_WALL_MARGIN_SEC=120 run_locust_bounded \
+    "${REPO_ROOT}/locust/locustfile.py" \
+    "${FIXED_HOST}" \
+    "${EXPERIMENT_DURATION}" \
+    "${REPO_ROOT}/results/legacy/locust_fixed" \
+    "${REPO_ROOT}/results/legacy/locust_fixed.log" \
+    ""
 
 log "Collecting metrics from Prometheus..."
 sleep 5  # brief pause for final metrics to settle
@@ -106,14 +115,13 @@ log "HPA deployment reset to 1 replica. Waiting 30s for stability..."
 sleep 30
 
 log "Starting Locust load test against HPA deployment..."
-# LoadTestShape controls users/spawn-rate; do not pass --users or --spawn-rate.
-locust_cmd -f "${REPO_ROOT}/locust/locustfile.py" \
-    --host "${HPA_HOST}" \
-    --headless \
-    --run-time "${EXPERIMENT_DURATION}" \
-    --csv="${REPO_ROOT}/results/legacy/locust_hpa" \
-    --csv-full-history \
-    --logfile="${REPO_ROOT}/results/legacy/locust_hpa.log"
+LOCUST_WALL_MARGIN_SEC=120 run_locust_bounded \
+    "${REPO_ROOT}/locust/locustfile.py" \
+    "${HPA_HOST}" \
+    "${EXPERIMENT_DURATION}" \
+    "${REPO_ROOT}/results/legacy/locust_hpa" \
+    "${REPO_ROOT}/results/legacy/locust_hpa.log" \
+    ""
 
 log "Collecting metrics from Prometheus..."
 sleep 5
@@ -131,10 +139,8 @@ log "Running analysis and generating figures..."
 venv_python "${REPO_ROOT}/analysis/analyze_results.py"
 
 # ---------------------------------------------------------------------------
-# Cleanup
+# Cleanup (trap also runs on exit)
 # ---------------------------------------------------------------------------
-kill "${PF_PID}" 2>/dev/null || true
-
 log "========================================"
 log "EXPERIMENTS COMPLETE"
 log "Results in: sample_data/"

@@ -54,6 +54,10 @@ def main() -> None:
     parser.add_argument("--output", required=True)
     args = parser.parse_args()
 
+    if not os.path.isfile(args.fixed_stats):
+        print("ASSERTION FAILED: locust_fixed_stats.csv is absent", file=sys.stderr)
+        sys.exit(1)
+
     if not os.path.isfile(args.hpa_stats):
         print("ASSERTION FAILED: locust_hpa_stats.csv is absent", file=sys.stderr)
         sys.exit(1)

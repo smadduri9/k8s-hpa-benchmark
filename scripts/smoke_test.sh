@@ -9,6 +9,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/lib/common.sh"
 # shellcheck source=lib/cold_start.sh
 source "${SCRIPT_DIR}/lib/cold_start.sh"
+# shellcheck source=lib/cleanup.sh
+source "${SCRIPT_DIR}/lib/cleanup.sh"
 
 ENV_FILE=""
 CHECK=""
@@ -24,8 +26,8 @@ usage() {
   cat <<'EOF'
 Usage:
   bash scripts/smoke_test.sh --check harness
-  bash scripts/smoke_test.sh --check coldstart|assertions|fixed-metrics|label-isolation|locust-authority|preflight-traps|handoff-docs
-  bash scripts/smoke_test.sh --negative-test fixed-replica-assert|empty-metrics-column|missing-locust-hpa|hpa-never-scaled|label-isolation|coldstart-readiness
+  bash scripts/smoke_test.sh --check coldstart|assertions|fixed-metrics|label-isolation|locust-authority|preflight-traps|handoff-docs|error-rate-positive
+  bash scripts/smoke_test.sh --negative-test fixed-replica-assert|empty-metrics-column|missing-locust-hpa|missing-locust-fixed|hpa-never-scaled|label-isolation|coldstart-readiness
   bash scripts/smoke_test.sh --full
 EOF
 }
@@ -206,25 +208,185 @@ check_fixed_metrics() {
     --assert-replicas "$(deployment_declared_replicas hpa-eval-fixed "${NAMESPACE}")"
   kill "${pf}" 2>/dev/null || true
   test -f "${out_csv}"
+  venv_python -c "
+import csv, sys
+with open('${out_csv}', newline='') as handle:
+    rows = list(csv.DictReader(handle))
+populated = [r['error_rate'] for r in rows if r.get('error_rate') not in ('', 'MISSING', None)]
+if not populated:
+    sys.exit('error_rate column has no populated rows')
+if not all(float(v) == 0.0 for v in populated):
+    sys.exit('error_rate positive test expected all-zero failure rate in fixed-metrics check')
+"
   echo "FIXED_METRICS_REQUIRED_COLUMNS_POPULATED"
   echo "ERROR_RATE_COLUMN_POPULATED"
 }
 
+check_error_rate_positive() {
+  kubectl config use-context "kind-${CLUSTER_NAME}" >/dev/null 2>&1 || true
+  build_and_load_image
+  kubectl rollout restart deployment/hpa-eval-fixed -n "${NAMESPACE}"
+  kubectl rollout status deployment/hpa-eval-fixed -n "${NAMESPACE}" --timeout=180s
+
+  kubectl port-forward svc/hpa-eval-fixed-svc 18080:80 -n "${NAMESPACE}" >/dev/null 2>&1 &
+  local app_pf=$!
+  sleep 2
+
+  kubectl port-forward svc/prometheus 9090:9090 -n "${NAMESPACE}" >/dev/null 2>&1 &
+  local pf=$!
+  sleep 3
+
+  local traffic_pid
+  (
+    while true; do
+      curl -sf "http://127.0.0.1:18080/cpu?intensity=low" >/dev/null 2>&1 || true
+      curl -s -o /dev/null "http://127.0.0.1:18080/fail" || true
+      sleep 1
+    done
+  ) &
+  traffic_pid=$!
+  sleep 75
+
+  local out_csv="/tmp/t1-c-error-rate-positive.csv"
+  local output
+  output="$(venv_python "${REPO_ROOT}/analysis/collect_metrics.py" \
+    --mode fixed \
+    --prometheus-url http://localhost:9090 \
+    --start "$(date -u -v-90S '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || date -u -d '90 seconds ago' '+%Y-%m-%dT%H:%M:%SZ')" \
+    --end "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" \
+    --step 15 \
+    --namespace "${NAMESPACE}" \
+    --output "${out_csv}" \
+    --assert-replicas "$(deployment_declared_replicas hpa-eval-fixed "${NAMESPACE}")" \
+    --skip-label-isolation 2>&1)"
+  echo "${output}"
+
+  kill "${traffic_pid}" 2>/dev/null || true
+  wait "${traffic_pid}" 2>/dev/null || true
+  kill "${app_pf}" 2>/dev/null || true
+  wait "${app_pf}" 2>/dev/null || true
+  kill "${pf}" 2>/dev/null || true
+  wait "${pf}" 2>/dev/null || true
+
+  if ! echo "${output}" | grep -q "ERROR_RATE_COLUMN_POPULATED"; then
+    die "error-rate positive test missing ERROR_RATE_COLUMN_POPULATED marker"
+  fi
+  if ! echo "${output}" | grep -Eq "non_zero=[1-9][0-9]*"; then
+    die "error-rate positive test expected non_zero>=1 in collector output"
+  fi
+  echo "ERROR_RATE_NONZERO_VERIFIED"
+}
+
 check_locust_authority() {
-  local run_dir
-  run_dir="$(ls -1dt "${REPO_ROOT}/results/runs"/*/rep-1 2>/dev/null | head -n1 || true)"
-  if [[ -z "${run_dir}" ]]; then
+  local run_dir="${REPO_ROOT}/results/runs/smoke-locust/rep-1"
+  if [[ ! -f "${run_dir}/locust_fixed_stats.csv" || ! -f "${run_dir}/locust_hpa_stats.csv" ]]; then
+    pkill -f 'HEARTBEAT locust-' 2>/dev/null || true
+    rm -rf "${REPO_ROOT}/results/runs/smoke-locust"
     bash "${SCRIPT_DIR}/run_benchmark.sh" --smoke --repetitions 1 --run-id smoke-locust
     run_dir="${REPO_ROOT}/results/runs/smoke-locust/rep-1"
+  fi
+  if [[ ! -f "${run_dir}/locust_fixed_stats.csv" || ! -f "${run_dir}/locust_hpa_stats.csv" ]]; then
+    die "locust-authority check missing locust stats after benchmark run"
   fi
   venv_python "${REPO_ROOT}/analysis/ingest_locust.py" \
     --fixed-stats "${run_dir}/locust_fixed_stats.csv" \
     --hpa-stats "${run_dir}/locust_hpa_stats.csv" \
     --output "${run_dir}/locust_summary.json"
+  echo "LOCUST_BOTH_ARMS_INGESTED"
+}
+
+verify_trap_scenario() {
+  local mode="$1"
+  local marker="/tmp/trap-test-${mode}-$$.log"
+  local pf_port=$((19100 + RANDOM % 500))
+  local rc=0
+
+  bash "${SCRIPT_DIR}/lib/trap_test_runner.sh" "${mode}" "${marker}" "${NAMESPACE}" "${CLUSTER_NAME}" "${pf_port}" &
+  local runner_pid=$!
+  sleep 3
+
+  if [[ "${mode}" == "sigint" ]]; then
+    kill -INT "${runner_pid}" 2>/dev/null || true
+    sleep 2
+    if ps -p "${runner_pid}" >/dev/null 2>&1; then
+      kill -TERM "${runner_pid}" 2>/dev/null || true
+      sleep 1
+      kill -9 "${runner_pid}" 2>/dev/null || true
+    fi
+  fi
+
+  set +e
+  wait "${runner_pid}"
+  rc=$?
+  set -e
+
+  local pf_pid=""
+  if [[ -f "${marker}" ]]; then
+    pf_pid="$(grep '^pf_pid=' "${marker}" | cut -d= -f2 || true)"
+    cat "${marker}"
+  fi
+
+  if ! grep -q "TRAP_FIRED reason=" "${marker}"; then
+    die "trap test ${mode}: TRAP_FIRED marker missing"
+  fi
+
+  if [[ -n "${pf_pid}" ]] && ps -p "${pf_pid}" >/dev/null 2>&1; then
+    die "trap test ${mode}: port-forward pid ${pf_pid} still running after trap"
+  fi
+  if lsof -nP -iTCP:"${pf_port}" -sTCP:LISTEN >/dev/null 2>&1; then
+    die "trap test ${mode}: port ${pf_port} still listening after trap"
+  fi
+
+  case "${mode}" in
+    normal) [[ "${rc}" -eq 0 ]] || die "trap test normal expected rc=0 got ${rc}" ;;
+    error) [[ "${rc}" -ne 0 ]] || die "trap test error expected non-zero rc got ${rc}" ;;
+    sigint) [[ "${rc}" -eq 130 || "${rc}" -eq 143 ]] || die "trap test sigint expected rc 130/143 got ${rc}" ;;
+  esac
+
+  echo "TRAP_SCENARIO_PASS mode=${mode}"
 }
 
 check_preflight_traps() {
   bash "${SCRIPT_DIR}/preflight.sh" ${ENV_FILE:+--env-file "${ENV_FILE}"}
+
+  kubectl config use-context "kind-${CLUSTER_NAME}" >/dev/null 2>&1 || true
+  kubectl wait --for=condition=Available deployment/prometheus -n "${NAMESPACE}" --timeout=120s
+
+  verify_trap_scenario normal
+  verify_trap_scenario error
+  verify_trap_scenario sigint
+
+  cleanup_background_jobs
+  cleanup_background_jobs
+  echo "TRAP_CLEANUP_IDEMPOTENT"
+
+  if [[ -n "${ENV_FILE}" && -f "${ENV_FILE}" ]]; then
+    load_env_file "${ENV_FILE}"
+    require_env PROJECT_ID
+    require_env CLUSTER_NAME
+    require_env REGION
+
+    set +e
+    local neg_output
+    neg_output="$(CLUSTER_NAME="wrong-cluster-name-deliberate" \
+      bash -c "source '${SCRIPT_DIR}/lib/common.sh'; source '${SCRIPT_DIR}/lib/cleanup.sh'; destructive_gke_teardown '${PROJECT_ID}' '${CLUSTER_NAME}' '${REGION}'" 2>&1)"
+    local neg_rc=$?
+    set -e
+    echo "${neg_output}"
+    if [[ "${neg_rc}" -eq 0 ]]; then
+      die "destructive teardown negative test expected failure but passed"
+    fi
+    if ! echo "${neg_output}" | grep -q "cluster mismatch"; then
+      die "destructive teardown negative test missing cluster mismatch message"
+    fi
+    echo "NEGATIVE_CLUSTER_VERIFICATION_PASS"
+
+    destructive_gke_teardown "${PROJECT_ID}" "${CLUSTER_NAME}" "${REGION}"
+    echo "PROJECT_CLUSTER_VERIFICATION_REQUIRED"
+  else
+    echo "PROJECT_CLUSTER_VERIFICATION_SKIPPED no --env-file"
+  fi
+
   echo "TRAP_CLEANUP_VERIFIED"
 }
 
@@ -326,7 +488,7 @@ negative_empty_metrics_column() {
   local hpa_csv="/tmp/t1-b-empty-col-hpa.csv"
   cat > "${fixed_csv}" <<'EOF'
 timestamp,elapsed_seconds,experiment,data_source,run_id,cluster_name,collection_timestamp,replicas,cpu_utilization_pct,latency_p50_ms,latency_p95_ms,latency_p99_ms,rps,error_rate
-2026-09-02T00:00:00+00:00,0,fixed,MEASURED,test,kind,2026-09-02T00:00:00+00:00,2,1.0,10.0,20.0,30.0,5.0,
+2026-09-02T00:00:00+00:00,0,fixed,MEASURED,test,kind,2026-09-02T00:00:00+00:00,2,1.0,10.0,20.0,30.0,,0.0
 EOF
   cat > "${hpa_csv}" <<'EOF'
 timestamp,elapsed_seconds,experiment,data_source,run_id,cluster_name,collection_timestamp,replicas,cpu_utilization_pct,latency_p50_ms,latency_p95_ms,latency_p99_ms,rps,error_rate
@@ -346,8 +508,8 @@ EOF
   if [[ "${rc}" -eq 0 ]]; then
     die "negative empty-metrics-column test expected failure but passed"
   fi
-  if ! echo "${output}" | grep -q "ASSERTION FAILED: required column error_rate has zero populated rows"; then
-    die "negative empty-metrics-column test missing expected assertion message"
+  if ! echo "${output}" | grep -q "ASSERTION FAILED: required column rps has zero populated rows"; then
+    die "negative empty-metrics-column test missing expected assertion message for rps"
   fi
   echo "NEGATIVE_EMPTY_METRICS_COLUMN_PASS"
 }
@@ -382,6 +544,33 @@ EOF
     die "negative missing-locust-hpa test missing expected assertion message"
   fi
   echo "NEGATIVE_MISSING_LOCUST_HPA_PASS"
+}
+
+negative_missing_locust_fixed() {
+  local run_dir="/tmp/t1-d-missing-locust-fixed"
+  mkdir -p "${run_dir}"
+  cat > "${run_dir}/locust_hpa_stats.csv" <<'EOF'
+Type,Name,Request Count,Failure Count,Median Response Time,Average Response Time,Min Response Time,Max Response Time,Average Content Size,Requests/s,Failures/s,50%,66%,75%,80%,90%,95%,98%,99%,99.9%,99.99%,100%
+Aggregated,Aggregated,10,0,1,1,1,1,1,1,0,1,1,1,1,1,1,1,1,1,1,1
+EOF
+
+  set +e
+  local output
+  output="$(venv_python "${REPO_ROOT}/analysis/ingest_locust.py" \
+    --fixed-stats "${run_dir}/does-not-exist-locust_fixed_stats.csv" \
+    --hpa-stats "${run_dir}/locust_hpa_stats.csv" \
+    --output "${run_dir}/locust_summary.json" 2>&1)"
+  local rc=$?
+  set -e
+  echo "${output}"
+
+  if [[ "${rc}" -eq 0 ]]; then
+    die "negative missing-locust-fixed test expected failure but passed"
+  fi
+  if ! echo "${output}" | grep -q "ASSERTION FAILED: locust_fixed_stats.csv is absent"; then
+    die "negative missing-locust-fixed test missing expected assertion message"
+  fi
+  echo "NEGATIVE_MISSING_LOCUST_FIXED_PASS"
 }
 
 smoke_warm_hpa_traffic() {
@@ -486,12 +675,14 @@ run_full_suite() {
   check_coldstart
   check_assertions
   check_fixed_metrics
+  check_error_rate_positive
   check_label_isolation
   check_locust_authority
   check_preflight_traps
   negative_fixed_replica_assert
   negative_empty_metrics_column
   negative_missing_locust_hpa
+  negative_missing_locust_fixed
   negative_hpa_never_scaled
   echo "NEGATIVE_ASSERTION_TEST_PASS"
   echo "ALL_TIER1_ASSERTIONS_EXERCISED"
@@ -505,6 +696,7 @@ elif [[ -n "${NEGATIVE_TEST}" ]]; then
     fixed-replica-assert) negative_fixed_replica_assert ;;
     empty-metrics-column) negative_empty_metrics_column ;;
     missing-locust-hpa) negative_missing_locust_hpa ;;
+    missing-locust-fixed) negative_missing_locust_fixed ;;
     hpa-never-scaled) negative_hpa_never_scaled ;;
     label-isolation) negative_label_isolation ;;
     coldstart-readiness) negative_coldstart_readiness ;;
@@ -518,6 +710,7 @@ elif [[ -n "${CHECK}" ]]; then
     label-isolation) check_label_isolation ;;
     locust-authority) check_locust_authority ;;
     preflight-traps) check_preflight_traps ;;
+    error-rate-positive) check_error_rate_positive ;;
     assertions) check_assertions ;;
     handoff-docs) check_handoff_docs ;;
     *) die "unknown check: ${CHECK}" ;;

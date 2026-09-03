@@ -22,4 +22,23 @@ patches:
   - path: patch-fixed-replicas.yaml
   - path: patch-hpa-max.yaml
   - path: patch-image-pull.yaml
-  - path: patch-services-nodeport.yaml
+  - target:
+      kind: Service
+      name: hpa-eval-fixed-svc
+    patch: |-
+      - op: replace
+        path: /spec/type
+        value: NodePort
+      - op: add
+        path: /spec/ports/0/nodePort
+        value: 30080
+  - target:
+      kind: Service
+      name: hpa-eval-hpa-svc
+    patch: |-
+      - op: replace
+        path: /spec/type
+        value: NodePort
+      - op: add
+        path: /spec/ports/0/nodePort
+        value: 30081
