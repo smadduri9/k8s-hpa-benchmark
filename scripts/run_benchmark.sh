@@ -234,7 +234,7 @@ run_one_repetition() {
   } >> "${rep_dir}/rep.log" 2>&1
   rep_rc=$?
   set -e
-  cat "${rep_dir}/rep.log"
+  cat "${rep_dir}/rep.log" >&2
 
   if [[ "${rep_rc}" -ne 0 ]]; then
     status="FAIL"
@@ -242,7 +242,10 @@ run_one_repetition() {
   fi
 
   printf '{"status":"%s","reason":"%s"}\n' "${status}" "${reason}" > "${rep_dir}/status.json"
-  echo "${status}"
+  if [[ "${status}" == "PASS" ]]; then
+    return 0
+  fi
+  return 1
 }
 
 discover_hosts_kind() {
@@ -259,7 +262,7 @@ main() {
   local rep
   for ((rep=1; rep<=REPETITIONS; rep++)); do
     attempted=$((attempted + 1))
-    if [[ "$(run_one_repetition "${rep}")" == "PASS" ]]; then
+    if run_one_repetition "${rep}"; then
       passed=$((passed + 1))
     fi
   done
@@ -280,6 +283,11 @@ main() {
 
   write_status_file "${RUN_ROOT}" "${final_state}" "${final_reason}"
   echo "SUMMARY attempted=${attempted} passed=${passed}"
+
+  if [[ "${passed}" -eq "${attempted}" && "${attempted}" -gt 0 ]]; then
+    exit 0
+  fi
+  exit 1
 }
 
 main "$@"

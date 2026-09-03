@@ -38,11 +38,10 @@ REQUIRED_VALUE_COLUMNS = [
 np = None  # type: ignore[assignment]
 plt = None  # type: ignore[assignment]
 mpatches = None  # type: ignore[assignment]
-GridSpec = None  # type: ignore[assignment]
 
 
 def _import_plot_deps() -> None:
-    global np, plt, mpatches, GridSpec
+    global np, plt, mpatches
     if np is not None:
         return
     import numpy as _np
@@ -51,12 +50,10 @@ def _import_plot_deps() -> None:
     _matplotlib.use("Agg")
     import matplotlib.pyplot as _plt
     import matplotlib.patches as _mpatches
-    from matplotlib.gridspec import GridSpec as _GridSpec
 
     np = _np
     plt = _plt
     mpatches = _mpatches
-    GridSpec = _GridSpec
 
 # ---------------------------------------------------------------------------
 # Colors and style

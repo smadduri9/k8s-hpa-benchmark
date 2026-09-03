@@ -212,6 +212,7 @@ fi
 
 if [[ -x "${VENV_PYTHON}" ]]; then
   "${VENV_PYTHON}" "${SCRIPT_DIR}/lib/preflight_python.py" || PREFLIGHT_FAILED=true
+  "${VENV_PYTHON}" "${SCRIPT_DIR}/lib/preflight_analyze_plotting.py" || PREFLIGHT_FAILED=true
 fi
 
 if [[ "${REQUIRE_GKE}" == "true" ]]; then

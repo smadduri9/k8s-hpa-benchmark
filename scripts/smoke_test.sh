@@ -278,16 +278,44 @@ check_error_rate_positive() {
 }
 
 check_locust_authority() {
-  local run_dir="${REPO_ROOT}/results/runs/smoke-locust/rep-1"
+  local run_root="${REPO_ROOT}/results/runs/smoke-locust"
+  local run_dir="${run_root}/rep-1"
+  local status_file="${run_root}/STATUS"
+  local needs_run=false
   if [[ ! -f "${run_dir}/locust_fixed_stats.csv" || ! -f "${run_dir}/locust_hpa_stats.csv" ]]; then
-    pkill -f 'HEARTBEAT locust-' 2>/dev/null || true
-    rm -rf "${REPO_ROOT}/results/runs/smoke-locust"
-    bash "${SCRIPT_DIR}/run_benchmark.sh" --smoke --repetitions 1 --run-id smoke-locust
-    run_dir="${REPO_ROOT}/results/runs/smoke-locust/rep-1"
+    needs_run=true
+  elif [[ ! -f "${status_file}" ]] || ! head -n1 "${status_file}" | grep -qx "COMPLETE"; then
+    needs_run=true
+  else
+    local fig
+    for fig in latency_comparison.png throughput_comparison.png cpu_replicas.png cost_performance.png; do
+      if [[ ! -f "${run_dir}/figures/${fig}" ]]; then
+        needs_run=true
+        break
+      fi
+    done
   fi
+
+  if [[ "${needs_run}" == "true" ]]; then
+    pkill -f 'HEARTBEAT locust-' 2>/dev/null || true
+    rm -rf "${run_root}"
+    bash "${SCRIPT_DIR}/run_benchmark.sh" --smoke --repetitions 1 --run-id smoke-locust || die "run_benchmark.sh failed for locust-authority"
+    run_dir="${run_root}/rep-1"
+  fi
+
   if [[ ! -f "${run_dir}/locust_fixed_stats.csv" || ! -f "${run_dir}/locust_hpa_stats.csv" ]]; then
     die "locust-authority check missing locust stats after benchmark run"
   fi
+  if [[ ! -f "${status_file}" ]] || ! head -n1 "${status_file}" | grep -qx "COMPLETE"; then
+    die "locust-authority STATUS not COMPLETE: $(cat "${status_file}" 2>/dev/null || echo MISSING)"
+  fi
+  local fig
+  for fig in latency_comparison.png throughput_comparison.png cpu_replicas.png cost_performance.png; do
+    if [[ ! -f "${run_dir}/figures/${fig}" ]]; then
+      die "locust-authority missing figure ${fig}"
+    fi
+  done
+
   venv_python "${REPO_ROOT}/analysis/ingest_locust.py" \
     --fixed-stats "${run_dir}/locust_fixed_stats.csv" \
     --hpa-stats "${run_dir}/locust_hpa_stats.csv" \

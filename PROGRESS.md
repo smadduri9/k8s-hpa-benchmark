@@ -392,4 +392,35 @@ srirammadduri    60090  19.1  0.1 435287680  35216   ??  U    10:12AM   0:00.13 
 Manifest t0 is **after** run start and **after** locust confirmed running (not before load).
 
 - **Unified log (`rep.log`):** heartbeats, `LOCUST_PID_CONFIRMED`, `LOAD_START`, and `LOCUST_COMPLETE` all appear in `results/runs/smoke-locust/rep-1/rep.log` (single tail target).
-- **Surprises:** `SUMMARY attempted=1 passed=0` because `analyze_results.py` step failed inside the repetition (benchmark ingest still passed); locust-authority check exits 0 on stats + ingest only.
+- **Surprises:** `SUMMARY attempted=1 passed=0` was caused by `$(run_one_repetition)` capturing full `rep.log` stdout (not `analyze_results` failure). Fixed in follow-up commit below.
+
+---
+
+## t1-d-exit-code-contract (re-verified 2026-09-03)
+
+- **Files touched:** `scripts/run_benchmark.sh`, `scripts/smoke_test.sh`, `analysis/analyze_results.py`, `scripts/preflight.sh`, `scripts/lib/preflight_analyze_plotting.py`, `scripts/lib/fixtures/preflight_*_metrics.csv`
+- **Root cause (actual):** `main()` used `if [[ "$(run_one_repetition …)" == "PASS" ]]` but `run_one_repetition` printed the entire `rep.log` to stdout before `PASS`, so `passed` never incremented while `status.json` read `PASS`. `analyze_results.py` completed successfully in the prior run; GridSpec was not the failure (import works on matplotlib 3.11.1; unused import removed).
+- **Verification command:** `bash scripts/smoke_test.sh --check locust-authority`
+- **Elapsed time:** ~8.5 min (512s)
+- **Actual output (tail):**
+
+```
+All figures saved to /Users/srirammadduri/Documents/Personal Projects/k8s-hpa-benchmark/results/runs/smoke-locust/rep-1/figures/
+SUMMARY attempted=1 passed=1
+LOCUST_FIXED_STATS_FOUND
+LOCUST_HPA_STATS_FOUND
+REQUEST_AUTHORITY=LOCUST
+PROM_AUTHORITY=REPLICAS_CPU_TIMING
+LOCUST_BOTH_ARMS_INGESTED
+```
+
+- **STATUS file (`results/runs/smoke-locust/STATUS`):**
+
+```
+COMPLETE
+all repetitions passed
+```
+
+- **Figures written:** `latency_comparison.png`, `throughput_comparison.png`, `cpu_replicas.png`, `cost_performance.png` under `results/runs/smoke-locust/rep-1/figures/`
+- **Preflight plotting check:** `analyze_plotting=PASS figures=4` via `scripts/lib/preflight_analyze_plotting.py`
+- **Surprises:** none
