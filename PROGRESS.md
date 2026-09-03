@@ -520,3 +520,73 @@ all repetitions passed
 - **Figures written:** `latency_comparison.png`, `throughput_comparison.png`, `cpu_replicas.png`, `cost_performance.png` under `results/runs/smoke-locust/rep-1/figures/`
 - **Preflight plotting check:** `analyze_plotting=PASS figures=4` via `scripts/lib/preflight_analyze_plotting.py`
 - **Surprises:** none
+
+---
+
+## t1-c-error-rate (supersedes §t1-c-fixed-metrics error_rate evidence, 2026-09-03)
+
+- **Files touched:** (verification only — `analysis/collect_metrics.py`, `scripts/smoke_test.sh`, `app/main.py` unchanged)
+- **Verification commands:**
+  1. `bash scripts/smoke_test.sh --check fixed-metrics` (zero-failure state)
+  2. `bash scripts/smoke_test.sh --check error-rate-positive` (non-zero failures via `/fail` 404 traffic)
+  3. `compute_error_rate_value` semantics demo (MISSING when request-total rate unavailable)
+- **Elapsed time:** ~2.8 min (fixed-metrics ~77s, error-rate-positive ~96s)
+- **t1-b `error_rate` assertion:** `error_rate` is in `REQUIRED_VALUE_COLUMNS` in `analysis/collect_metrics.py` (same list used by the zero-populated-rows abort at collect time). **No exemption** — if every row is blank/`MISSING`, collect aborts with `ASSERTION FAILED: required column error_rate has zero populated rows`. The t1-b `empty-metrics-column` negative test targets **blank `rps`** in `analyze_results.py` guard input, not `error_rate`; `error_rate` in that fixture is the literal `0.0`. Safe because: zero failures with live `/cpu` traffic produce the literal float `0.0` (not an empty cell); unavailable total-rate PromQL sample produces the literal string `MISSING` (counted in `missing=`); only a fully unqueryable Prometheus aborts with `PROMETHEUS_QUERY_FAILED` before CSV write.
+
+### State 1 — zero failures (`error_rate` = literal `0.0`)
+
+```
+FIXED_METRICS_REQUIRED_COLUMNS_POPULATED rows=7
+ERROR_RATE_COLUMN_POPULATED rows=7/7 non_zero=0 missing=0
+Wrote 7 rows to /tmp/t1-c-fixed-metrics.csv
+FIXED_METRICS_REQUIRED_COLUMNS_POPULATED
+ERROR_RATE_COLUMN_POPULATED
+FIXED_EXIT=0
+```
+
+CSV unique `error_rate` values: `0.0` only (7/7 rows).
+
+### State 2 — real failures present (`error_rate` non-zero from `/fail` + `/cpu` traffic)
+
+Traffic: alternating `curl …/cpu?intensity=low` (200) and `curl …/fail` (404) for 75s before collect.
+
+```
+FIXED_METRICS_REQUIRED_COLUMNS_POPULATED rows=7
+ERROR_RATE_COLUMN_POPULATED rows=7/7 non_zero=4 missing=0
+Wrote 7 rows to /tmp/t1-c-error-rate-positive.csv
+ERROR_RATE_NONZERO_VERIFIED
+POSITIVE_EXIT=0
+```
+
+Sample CSV rows with non-zero `error_rate` (50% failure rate when both streams active):
+
+```
+2026-09-03T19:02:39+00:00,...,0.464,0.5
+2026-09-03T19:02:54+00:00,...,0.6743,0.5
+2026-09-03T19:03:09+00:00,...,0.9097,0.5
+2026-09-03T19:03:24+00:00,...,0.8889,0.5
+```
+
+(3 rows at `0.0`, 4 rows at `0.5` in `/tmp/t1-c-error-rate-positive.csv`.)
+
+### State 3 — query unavailable (`error_rate` = literal `MISSING`)
+
+Per-row semantics (`compute_error_rate_value` when `app_requests_total` rate sample is absent at a timestamp):
+
+```
+ERROR_RATE_STATE non_zero_failures=0.2
+ERROR_RATE_STATE zero_failures=0.0
+ERROR_RATE_STATE query_unavailable='MISSING'
+ERROR_RATE_COLUMN_POPULATED rows=2/3 non_zero=1 missing=1
+```
+
+Distinct from blank column: `missing=1` in collector summary counts literal `MISSING` separately from populated `0.0` and non-zero floats.
+
+Unreachable Prometheus (whole collect aborts — does **not** write a CSV with blank columns):
+
+```
+RuntimeError: PROMETHEUS_QUERY_FAILED after 3 attempts: <urlopen error [Errno 61] Connection refused>
+UNREACHABLE_PROM_EXIT=1
+```
+
+- **Surprises:** none — `/fail` endpoint records `status_code=404` on `app_requests_total`; health checks do not increment request counters.
