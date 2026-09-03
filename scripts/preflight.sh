@@ -7,6 +7,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/common.sh
 source "${SCRIPT_DIR}/lib/common.sh"
+# shellcheck source=lib/preflight_gke.sh
+source "${SCRIPT_DIR}/lib/preflight_gke.sh"
 
 ENV_FILE=""
 REQUIRE_GKE=false
@@ -22,49 +24,26 @@ EOF
 }
 
 preflight_fail() {
-  echo "ERROR: $*" >&2
+  printf '%s\n' "ERROR: $*" >&2
   PREFLIGHT_FAILED=true
 }
 
 preflight_warn() {
-  echo "WARNING: $*" >&2
+  printf '%s\n' "WARNING: $*" >&2
 }
 
-audit_repo_path_quoting() {
-  if [[ "${REPO_ROOT}" != *" "* && "${REPO_ROOT}" != *$'\t'* ]]; then
-    echo "repo_path_whitespace_audit=SKIPPED"
-    return 0
+run_repo_path_whitespace_audit() {
+  local audit_py="${SCRIPT_DIR}/lib/audit_repo_path_quoting.py"
+  local audit_python="${VENV_PYTHON}"
+  if [[ ! -x "${audit_python}" ]]; then
+    audit_python="$(command -v python3 || true)"
   fi
-
-  echo "repo_path_whitespace_audit=ACTIVE path=\"${REPO_ROOT}\""
-  local file line lineno bad=0
-  local repo_root_var='$REPO_ROOT'
-  local repo_root_braced='${REPO_ROOT}'
-  while IFS= read -r -d '' file; do
-    if [[ "${file}" == "${SCRIPT_DIR}/preflight.sh" ]]; then
-      continue
-    fi
-    lineno=0
-    while IFS= read -r line || [[ -n "${line}" ]]; do
-      lineno=$((lineno + 1))
-      if [[ "${line}" =~ ^[[:space:]]*# ]]; then
-        continue
-      fi
-      if [[ "${line}" != *"${repo_root_var}"* && "${line}" != *"${repo_root_braced}"* ]]; then
-        continue
-      fi
-      if [[ "${line}" == *'"${REPO_ROOT}'* ]] || [[ "${line}" == *"'${REPO_ROOT}"* ]] || [[ "${line}" == *'"$REPO_ROOT'* ]] || [[ "${line}" == *"'$REPO_ROOT"* ]]; then
-        continue
-      fi
-      echo "UNQUOTED_REPO_ROOT file=${file} line=${lineno}: ${line}" >&2
-      bad=1
-    done < "${file}"
-  done < <(find "${REPO_ROOT}/scripts" -name '*.sh' -print0)
-
-  if [[ "${bad}" -eq 1 ]]; then
+  if [[ -z "${audit_python}" || ! -f "${audit_py}" ]]; then
+    preflight_fail "missing whitespace audit helper: ${audit_py}"
+    return
+  fi
+  if ! "${audit_python}" "${audit_py}" "${REPO_ROOT}"; then
     preflight_fail "unquoted REPO_ROOT expansions found while repo path contains whitespace"
-  else
-    echo "repo_path_whitespace_audit=PASS"
   fi
 }
 
@@ -92,12 +71,12 @@ load_env_file "${ENV_FILE}"
 
 OS_NAME="$(uname -s)"
 ARCH_NAME="$(uname -m)"
-echo "PREFLIGHT_TABLE_BEGIN"
-echo "os=${OS_NAME}"
-echo "arch=${ARCH_NAME}"
-echo "repo_root=\"${REPO_ROOT}\""
+printf '%s\n' "PREFLIGHT_TABLE_BEGIN"
+printf '%s\n' "os=${OS_NAME}"
+printf '%s\n' "arch=${ARCH_NAME}"
+printf '%s\n' "repo_root=\"${REPO_ROOT}\""
 
-audit_repo_path_quoting
+run_repo_path_whitespace_audit
 
 if [[ "${OS_NAME}" != "Darwin" && "${OS_NAME}" != "Linux" ]]; then
   die "unsupported OS: ${OS_NAME}"
@@ -200,11 +179,11 @@ if kubectl cluster-info >/dev/null 2>&1; then
     echo "kubectl_minor_skew=${skew}"
     if [[ "${skew}" -gt 2 ]]; then
       preflight_fail "kubectl version skew ${skew} exceeds policy (max 2 minor versions); client=${client_ver} server=${server_ver}"
-      echo "REMEDIATION: align kubectl client with cluster (e.g. gcloud components install kubectl, then ensure gcloud bin precedes brew on PATH)" >&2
+      printf '%s\n' "REMEDIATION: align kubectl client with cluster (e.g. gcloud components install kubectl, then ensure gcloud bin precedes brew on PATH)" >&2
     elif [[ "${skew}" -gt 1 ]]; then
       preflight_warn "kubectl version skew ${skew} exceeds recommended max of 1 minor version; client=${client_ver} server=${server_ver}"
-      echo "REMEDIATION: align kubectl client with cluster (e.g. gcloud components install kubectl, then ensure gcloud bin precedes brew on PATH)" >&2
-      echo "kubectl_skew_check=WARN"
+      printf '%s\n' "REMEDIATION: align kubectl client with cluster (e.g. gcloud components install kubectl, then ensure gcloud bin precedes brew on PATH)" >&2
+      printf '%s\n' "kubectl_skew_check=WARN"
     else
       echo "kubectl_skew_check=PASS"
     fi
@@ -223,9 +202,9 @@ if [[ "${ARCH_NAME}" == "arm64" || "${ARCH_NAME}" == "aarch64" ]]; then
     preflight_fail "missing GKE deploy script for platform check: ${deploy_gke}"
   elif ! grep -qE 'docker[[:space:]]+build.*--platform[[:space:]]+linux/amd64' "${deploy_gke}"; then
     preflight_fail "host arch ${ARCH_NAME} requires explicit docker build --platform linux/amd64 in ${deploy_gke}"
-    echo "REMEDIATION: add --platform linux/amd64 to the GKE image build command" >&2
+    printf '%s\n' "REMEDIATION: add --platform linux/amd64 to the GKE image build command" >&2
   else
-    echo "docker_platform_check=PASS build_script=${deploy_gke} platform=linux/amd64"
+    printf '%s\n' "docker_platform_check=PASS build_script=${deploy_gke} platform=linux/amd64"
   fi
 else
   echo "docker_platform_check=SKIPPED arch=${ARCH_NAME}"
@@ -236,21 +215,13 @@ if [[ -x "${VENV_PYTHON}" ]]; then
 fi
 
 if [[ "${REQUIRE_GKE}" == "true" ]]; then
-  require_env PROJECT_ID
-  require_env REGION
-  require_env CLUSTER_NAME
-  require_env ARTIFACT_REGISTRY_REPO
-  echo "PROJECT_ID=${PROJECT_ID}"
-  echo "REGION=${REGION}"
-  echo "CLUSTER_NAME=${CLUSTER_NAME}"
-  echo "ARTIFACT_REGISTRY_REPO=${ARTIFACT_REGISTRY_REPO}"
-  echo "PROJECT_CLUSTER_VERIFICATION_REQUIRED"
+  preflight_require_gke
 fi
 
 if [[ "${PREFLIGHT_FAILED}" == "true" ]]; then
-  echo "PREFLIGHT_FAIL" >&2
+  printf '%s\n' "PREFLIGHT_FAIL" >&2
   exit 1
 fi
 
-echo "PREFLIGHT_PASS"
-echo "PREFLIGHT_TABLE_END"
+printf '%s\n' "PREFLIGHT_PASS"
+printf '%s\n' "PREFLIGHT_TABLE_END"

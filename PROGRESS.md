@@ -230,7 +230,38 @@ NEGATIVE_HPA_NEVER_SCALED_PASS
 
 ---
 
-## t1-c-fixed-metrics
+## whitespace-audit-and-gke-preflight-fix
+
+- **Files touched:** `scripts/lib/audit_repo_path_quoting.py`, `scripts/lib/preflight_gke.sh`, `scripts/preflight.sh`
+- **Verification command:** `PATH="/opt/homebrew/share/google-cloud-sdk/bin:$PATH" bash scripts/preflight.sh` and `bash scripts/preflight.sh --env-file .env --require-gke`
+- **Actual output:**
+
+```
+repo_path_whitespace_audit=ACTIVE path="/Users/srirammadduri/Documents/Personal Projects/k8s-hpa-benchmark"
+repo_path_whitespace_audit=PASS
+kubectl_minor_skew=2
+kubectl_skew_check=WARN
+PREFLIGHT_PASS
+```
+
+```
+PROJECT_ID=hpa-benchmark-2026
+GKE_ACTIVE_ACCOUNT=smadduri290@gmail.com
+GKE_PROJECT_ACCESS=PASS project=hpa-benchmark-2026
+GKE_API_ENABLED=container.googleapis.com
+GKE_API_ENABLED=artifactregistry.googleapis.com
+GKE_ARTIFACT_REGISTRY_REPO=PASS repo=hpa-eval region=us-central1
+PROJECT_CLUSTER_VERIFICATION_REQUIRED
+PREFLIGHT_PASS
+```
+
+- **Audit fix:** Python scanner checks each `$REPO_ROOT` / `${REPO_ROOT}` occurrence with quote + `$(...)` awareness; joins `\` continuations; excludes `run_repo_path_whitespace_audit()` block in `preflight.sh`. Structured lines use `printf '%s\n'` to avoid word-splitting in output.
+- **Elapsed time:** ~30 min
+- **Surprises:** false positives were from nested `"` inside `$(...)` and per-line scanning of `\` continuations.
+
+---
+
+## t1-c-fixed-metrics (re-verified)
 
 - **Files touched:** `analysis/collect_metrics.py`, `scripts/smoke_test.sh`
 - **Verification command:** `bash scripts/smoke_test.sh --check fixed-metrics` and `bash scripts/smoke_test.sh --check label-isolation --mode fixed --both-deployments-up` and `bash scripts/smoke_test.sh --negative-test label-isolation`
