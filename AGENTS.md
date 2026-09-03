@@ -8,7 +8,9 @@
 - Commit after every completed item with the item ID in the message. Cursor checkpoints do not track bash-created files, so git is the only real undo.
 - Locust invocation is exactly: `--headless --csv <base> --csv-full-history`. Never add `--processes` (crashes with `--csv-full-history`, locust#2908). Never pass `--users` or `--spawn-rate` (`LoadTestShape` overrides them; they are inert).
 - Never patch a container's args array wholesale. Vendor the full manifest or append. Replacing args silently drops upstream defaults — this caused the t1-0 gate failure.
-- Minimum supported Python is **3.9**. Analysis modules use `from __future__ import annotations` when typing with PEP 604 unions (`str | None`). Preflight imports every `analysis/*.py` module plus `numpy` and `matplotlib` and fails on the first import error.
+- All Python and Locust invocations use `"${REPO_ROOT}/.venv/bin/python"` and `"${REPO_ROOT}/.venv/bin/locust"`, always quoted. Never call bare `python3` or `locust` in repo scripts. The repo path contains a space; every path expansion must be quoted.
+- Tooling runs in the repo venv at `.venv/` (Python **3.14**). Create with `python3 -m venv .venv` and install `requirements-tooling.txt`. Preflight fails if `.venv` is absent and prints creation commands. Preflight imports every `analysis/*.py` module plus `numpy` and `matplotlib` via the venv interpreter.
 - Cold-start production readiness timeout defaults to **180s** (`COLD_START_READINESS_TIMEOUT_SEC` in `scripts/lib/cold_start.sh`). Smoke negative tests may override to 30s; that override must never be the production default.
 - kubectl client/server minor-version skew: preflight **WARN** when skew > 1, **FAIL** when skew > 2 (Kubernetes supported skew is one minor version).
 - On arm64 hosts, GKE image builds in `scripts/deploy_gke.sh` must pass `docker build --platform linux/amd64`; preflight fails if the flag is absent.
+- HPA arm collection aborts with `HPA_NEVER_SCALED` if peak observed replicas never exceeds `minReplicas` during the anchored window.

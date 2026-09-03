@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# OS/arch assumptions: macOS (darwin) or Linux, bash 4+, kubectl, docker, kind, locust, python3.
+# OS/arch assumptions: macOS (darwin) or Linux, bash 4+, kubectl, docker, kind, repo .venv tooling.
 # Kind smoke harness and slice checks for Tier 1 verification.
 
 set -euo pipefail
@@ -25,8 +25,7 @@ usage() {
 Usage:
   bash scripts/smoke_test.sh --check harness
   bash scripts/smoke_test.sh --check coldstart|assertions|fixed-metrics|label-isolation|locust-authority|preflight-traps|handoff-docs
-  bash scripts/smoke_test.sh --negative-test fixed-replica-assert|empty-metrics-column|missing-locust-hpa|coldstart-readiness
-  bash scripts/smoke_test.sh --check assertions
+  bash scripts/smoke_test.sh --negative-test fixed-replica-assert|empty-metrics-column|missing-locust-hpa|hpa-never-scaled|label-isolation|coldstart-readiness
   bash scripts/smoke_test.sh --full
 EOF
 }
@@ -45,6 +44,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 load_env_file "${ENV_FILE}"
+require_venv
 
 ensure_kind_cluster() {
   if ! command -v kind >/dev/null 2>&1; then
@@ -162,14 +162,21 @@ negative_coldstart_readiness() {
 }
 
 check_label_isolation() {
-  setup_harness
+  if [[ "${BOTH_DEPLOYMENTS_UP}" == "true" ]]; then
+    kubectl config use-context "kind-${CLUSTER_NAME}" >/dev/null 2>&1 || true
+    kubectl wait --for=condition=Available deployment/hpa-eval-fixed -n "${NAMESPACE}" --timeout=120s
+    kubectl wait --for=condition=Available deployment/hpa-eval-hpa -n "${NAMESPACE}" --timeout=120s
+  else
+    setup_harness
+  fi
   kubectl port-forward svc/prometheus 9090:9090 -n "${NAMESPACE}" >/dev/null 2>&1 &
   local pf=$!
   sleep 3
-  python3 "${REPO_ROOT}/analysis/collect_metrics.py" \
+  smoke_warm_fixed_traffic
+  venv_python "${REPO_ROOT}/analysis/collect_metrics.py" \
     --mode "${MODE}" \
     --prometheus-url http://localhost:9090 \
-    --start "$(date -u -v-4M '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || date -u -d '4 minutes ago' '+%Y-%m-%dT%H:%M:%SZ')" \
+    --start "$(date -u -v-90S '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || date -u -d '90 seconds ago' '+%Y-%m-%dT%H:%M:%SZ')" \
     --end "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" \
     --output /tmp/label_isolation.csv \
     --check-label-isolation
@@ -177,17 +184,28 @@ check_label_isolation() {
 }
 
 check_fixed_metrics() {
-  setup_harness
-  bash "${SCRIPT_DIR}/run_benchmark.sh" --smoke --repetitions 1 --run-id smoke-fixed-metrics
-  local latest
-  latest="$(ls -1dt "${REPO_ROOT}/results/runs/smoke-fixed-metrics"/rep-* 2>/dev/null | head -n1)"
-  python3 "${REPO_ROOT}/analysis/collect_metrics.py" \
+  if [[ "${BOTH_DEPLOYMENTS_UP}" == "true" ]]; then
+    kubectl config use-context "kind-${CLUSTER_NAME}" >/dev/null 2>&1 || true
+    kubectl wait --for=condition=Available deployment/hpa-eval-fixed -n "${NAMESPACE}" --timeout=120s
+  else
+    setup_harness
+  fi
+  kubectl port-forward svc/prometheus 9090:9090 -n "${NAMESPACE}" >/dev/null 2>&1 &
+  local pf=$!
+  sleep 3
+  smoke_warm_fixed_traffic
+  local out_csv="/tmp/t1-c-fixed-metrics.csv"
+  venv_python "${REPO_ROOT}/analysis/collect_metrics.py" \
     --mode fixed \
     --prometheus-url http://localhost:9090 \
-    --start "$(date -u -v-4M '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || date -u -d '4 minutes ago' '+%Y-%m-%dT%H:%M:%SZ')" \
+    --start "$(date -u -v-90S '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || date -u -d '90 seconds ago' '+%Y-%m-%dT%H:%M:%SZ')" \
     --end "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" \
-    --output "${latest}/fixed_metrics.csv" || true
-  test -f "${latest}/fixed_metrics.csv"
+    --step 15 \
+    --namespace "${NAMESPACE}" \
+    --output "${out_csv}" \
+    --assert-replicas "$(deployment_declared_replicas hpa-eval-fixed "${NAMESPACE}")"
+  kill "${pf}" 2>/dev/null || true
+  test -f "${out_csv}"
   echo "FIXED_METRICS_REQUIRED_COLUMNS_POPULATED"
   echo "ERROR_RATE_COLUMN_POPULATED"
 }
@@ -199,7 +217,7 @@ check_locust_authority() {
     bash "${SCRIPT_DIR}/run_benchmark.sh" --smoke --repetitions 1 --run-id smoke-locust
     run_dir="${REPO_ROOT}/results/runs/smoke-locust/rep-1"
   fi
-  python3 "${REPO_ROOT}/analysis/ingest_locust.py" \
+  venv_python "${REPO_ROOT}/analysis/ingest_locust.py" \
     --fixed-stats "${run_dir}/locust_fixed_stats.csv" \
     --hpa-stats "${run_dir}/locust_hpa_stats.csv" \
     --output "${run_dir}/locust_summary.json"
@@ -246,7 +264,7 @@ check_assertions() {
 
   smoke_warm_fixed_traffic
 
-  python3 "${REPO_ROOT}/analysis/collect_metrics.py" \
+  venv_python "${REPO_ROOT}/analysis/collect_metrics.py" \
     --mode fixed \
     --prometheus-url http://localhost:9090 \
     --start "$(date -u -v-90S '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || date -u -d '90 seconds ago' '+%Y-%m-%dT%H:%M:%SZ')" \
@@ -281,7 +299,7 @@ negative_fixed_replica_assert() {
   smoke_warm_fixed_traffic
 
   set +e
-  python3 "${REPO_ROOT}/analysis/collect_metrics.py" \
+  venv_python "${REPO_ROOT}/analysis/collect_metrics.py" \
     --mode fixed \
     --prometheus-url http://localhost:9090 \
     --start "$(date -u -v-90S '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || date -u -d '90 seconds ago' '+%Y-%m-%dT%H:%M:%SZ')" \
@@ -317,7 +335,7 @@ EOF
 
   set +e
   local output
-  output="$(python3 "${REPO_ROOT}/analysis/analyze_results.py" \
+  output="$(venv_python "${REPO_ROOT}/analysis/analyze_results.py" \
     --fixed "${fixed_csv}" \
     --hpa "${hpa_csv}" \
     --output-dir /tmp/t1-b-empty-col-figures 2>&1)"
@@ -348,7 +366,7 @@ EOF
 
   set +e
   local output
-  output="$(python3 "${REPO_ROOT}/analysis/analyze_results.py" \
+  output="$(venv_python "${REPO_ROOT}/analysis/analyze_results.py" \
     --fixed "${fixed_csv}" \
     --hpa "${hpa_csv}" \
     --locust-hpa-stats /tmp/does-not-exist-locust_hpa_stats.csv \
@@ -366,6 +384,103 @@ EOF
   echo "NEGATIVE_MISSING_LOCUST_HPA_PASS"
 }
 
+smoke_warm_hpa_traffic() {
+  kubectl port-forward svc/hpa-eval-hpa-svc 18081:80 -n "${NAMESPACE}" >/dev/null 2>&1 &
+  local app_pf=$!
+  sleep 2
+  local i
+  for i in $(seq 1 25); do
+    curl -sf "http://127.0.0.1:18081/cpu?intensity=low" >/dev/null 2>&1 || true
+  done
+  kill "${app_pf}" 2>/dev/null || true
+  wait "${app_pf}" 2>/dev/null || true
+  sleep 20
+}
+
+negative_hpa_never_scaled() {
+  kubectl config use-context "kind-${CLUSTER_NAME}" >/dev/null 2>&1 || true
+  kubectl wait --for=condition=Available deployment/hpa-eval-hpa -n "${NAMESPACE}" --timeout=120s
+
+  local min_replicas
+  min_replicas="$(hpa_min_replicas)"
+  echo "HPA_NO_LOAD_TEST minReplicas=${min_replicas}"
+
+  kubectl scale deployment hpa-eval-hpa --replicas="${min_replicas}" -n "${NAMESPACE}"
+  kubectl rollout status deployment/hpa-eval-hpa -n "${NAMESPACE}" --timeout=120s
+
+  kubectl port-forward svc/prometheus 9090:9090 -n "${NAMESPACE}" >/dev/null 2>&1 &
+  local pf=$!
+  sleep 3
+
+  kubectl port-forward svc/hpa-eval-hpa-svc 18081:80 -n "${NAMESPACE}" >/dev/null 2>&1 &
+  local app_pf=$!
+  sleep 2
+  curl -sf "http://127.0.0.1:18081/cpu?intensity=low" >/dev/null 2>&1 || true
+  kill "${app_pf}" 2>/dev/null || true
+  wait "${app_pf}" 2>/dev/null || true
+
+  set +e
+  local output
+  output="$(venv_python "${REPO_ROOT}/analysis/collect_metrics.py" \
+    --mode hpa \
+    --prometheus-url http://localhost:9090 \
+    --start "$(date -u -v-90S '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || date -u -d '90 seconds ago' '+%Y-%m-%dT%H:%M:%SZ')" \
+    --end "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" \
+    --step 15 \
+    --namespace "${NAMESPACE}" \
+    --output /tmp/t1-b-negative-hpa-never-scaled.csv \
+    --min-replicas "${min_replicas}" \
+    --max-replicas 3 \
+    --skip-label-isolation 2>&1)"
+  local rc=$?
+  set -e
+  echo "${output}"
+
+  kill "${pf}" 2>/dev/null || true
+
+  if [[ "${rc}" -eq 0 ]]; then
+    die "negative hpa-never-scaled test expected failure but passed"
+  fi
+  if ! echo "${output}" | grep -q "HPA_NEVER_SCALED"; then
+    die "negative hpa-never-scaled test missing HPA_NEVER_SCALED"
+  fi
+  echo "NEGATIVE_HPA_NEVER_SCALED_PASS"
+}
+
+negative_label_isolation() {
+  kubectl config use-context "kind-${CLUSTER_NAME}" >/dev/null 2>&1 || true
+  kubectl wait --for=condition=Available deployment/hpa-eval-fixed -n "${NAMESPACE}" --timeout=120s
+  kubectl wait --for=condition=Available deployment/hpa-eval-hpa -n "${NAMESPACE}" --timeout=120s
+
+  kubectl port-forward svc/prometheus 9090:9090 -n "${NAMESPACE}" >/dev/null 2>&1 &
+  local pf=$!
+  sleep 3
+  smoke_warm_hpa_traffic
+
+  set +e
+  local output
+  output="$(venv_python "${REPO_ROOT}/analysis/collect_metrics.py" \
+    --mode fixed \
+    --prometheus-url http://localhost:9090 \
+    --start "$(date -u -v-90S '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || date -u -d '90 seconds ago' '+%Y-%m-%dT%H:%M:%SZ')" \
+    --end "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" \
+    --output /tmp/t1-c-negative-label-isolation.csv \
+    --check-label-isolation 2>&1)"
+  local rc=$?
+  set -e
+  echo "${output}"
+
+  kill "${pf}" 2>/dev/null || true
+
+  if [[ "${rc}" -eq 0 ]]; then
+    die "negative label-isolation test expected failure but passed"
+  fi
+  if ! echo "${output}" | grep -q "LABEL_ISOLATION_FAILED"; then
+    die "negative label-isolation test missing LABEL_ISOLATION_FAILED"
+  fi
+  echo "NEGATIVE_LABEL_ISOLATION_PASS"
+}
+
 run_full_suite() {
   check_harness
   check_coldstart
@@ -377,6 +492,7 @@ run_full_suite() {
   negative_fixed_replica_assert
   negative_empty_metrics_column
   negative_missing_locust_hpa
+  negative_hpa_never_scaled
   echo "NEGATIVE_ASSERTION_TEST_PASS"
   echo "ALL_TIER1_ASSERTIONS_EXERCISED"
   echo "SMOKE_SUITE_PASS"
@@ -389,6 +505,8 @@ elif [[ -n "${NEGATIVE_TEST}" ]]; then
     fixed-replica-assert) negative_fixed_replica_assert ;;
     empty-metrics-column) negative_empty_metrics_column ;;
     missing-locust-hpa) negative_missing_locust_hpa ;;
+    hpa-never-scaled) negative_hpa_never_scaled ;;
+    label-isolation) negative_label_isolation ;;
     coldstart-readiness) negative_coldstart_readiness ;;
     *) die "unknown negative test: ${NEGATIVE_TEST}" ;;
   esac
@@ -401,6 +519,7 @@ elif [[ -n "${CHECK}" ]]; then
     locust-authority) check_locust_authority ;;
     preflight-traps) check_preflight_traps ;;
     assertions) check_assertions ;;
+    handoff-docs) check_handoff_docs ;;
     *) die "unknown check: ${CHECK}" ;;
   esac
 else

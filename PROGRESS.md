@@ -182,19 +182,86 @@ ASSERTION FAILED: publication blocked; locust_hpa_stats.csv is absent
 NEGATIVE_MISSING_LOCUST_HPA_PASS
 ```
 
-- **Replica assertion source:** `deployment_declared_replicas()` at cold-start / check time; fixed arm uses `--assert-replicas` from captured declared count; HPA arm uses `--max-replicas` only (no exact-replica assert during scale-up).
+- **Replica assertion source:** `deployment_declared_replicas()` at cold-start / check time; fixed arm uses `--assert-replicas` from captured declared count; HPA arm uses `--max-replicas` and `--min-replicas` floor (`HPA_NEVER_SCALED`).
 - **Elapsed time:** ~50 min
 - **Surprises:** `error_rate` PromQL returns zero series when no non-200 traffic; collector now allows empty `error_rate` series. `analyze_results` runs `guard_inputs` before loading numpy/matplotlib so publication guards fire without plot deps installed.
 
 ---
 
+## venv-and-path-remediation (post t1-b)
+
+- **Files touched:** `scripts/lib/common.sh`, `scripts/preflight.sh`, `requirements-tooling.txt`, `.gitignore`, `AGENTS.md`, `README.md`, `HANDOFF.md`, all benchmark scripts
+- **Verification command:** `PATH="/opt/homebrew/share/google-cloud-sdk/bin:$PATH" bash scripts/preflight.sh`
+- **Actual output:**
+
+```
+repo_path_whitespace_audit=PASS
+venv_python_path=/Users/srirammadduri/Documents/Personal Projects/k8s-hpa-benchmark/.venv/bin/python
+venv_python_version=Python 3.14.7
+venv_locust_path_check=PASS
+kubectl_client=v1.35.7-dispatcher
+kubectl_server=v1.37.0
+kubectl_minor_skew=2
+WARNING: kubectl version skew 2 exceeds recommended max of 1 minor version
+kubectl_skew_check=WARN
+python_package=PASS package=numpy version=2.5.2
+python_package=PASS package=matplotlib version=3.11.1
+PREFLIGHT_PASS
+```
+
+- **Policy:** no bare `python3`/`locust` in repo scripts; use `"${REPO_ROOT}/.venv/bin/python"` and `"${REPO_ROOT}/.venv/bin/locust"` via `venv_python` / `locust_cmd` in `common.sh`. Preflight fails if `.venv` missing (prints venv creation commands).
+- **Elapsed time:** ~60 min
+- **Surprises:** label isolation originally used `count()` on stale series; fixed to `sum(increase(...[window]))` over the anchored collection window.
+
+---
+
+## t1-b-hpa-floor-assertion (addition)
+
+- **Verification command:** `bash scripts/smoke_test.sh --negative-test hpa-never-scaled`
+- **Actual output:**
+
+```
+HPA_NO_LOAD_TEST minReplicas=1
+HPA_NEVER_SCALED peak_observed=1 minReplicas=1
+NEGATIVE_HPA_NEVER_SCALED_PASS
+```
+
+- **Production path:** `collect_arm_metrics` passes `--min-replicas` from HPA spec; abort before PromQL if peak observed replicas never exceeds `minReplicas`.
+
+---
+
 ## t1-c-fixed-metrics
 
-- **Files touched:** `analysis/collect_metrics.py`
-- **Verification command:** `bash scripts/smoke_test.sh --check fixed-metrics` and `--check label-isolation` (pending Docker)
-- **Actual output:** experiment-scoped PromQL, anchored `--start/--end`, kubectl replica sampling, strict series cardinality, MISSING semantics
-- **Elapsed time:** ~70 min
-- **Surprises:** `app_requests_total` only increments on `/cpu`; `/` health checks are not counted (metric contract implication for error_rate).
+- **Files touched:** `analysis/collect_metrics.py`, `scripts/smoke_test.sh`
+- **Verification command:** `bash scripts/smoke_test.sh --check fixed-metrics` and `bash scripts/smoke_test.sh --check label-isolation --mode fixed --both-deployments-up` and `bash scripts/smoke_test.sh --negative-test label-isolation`
+- **Actual output (positive fixed-metrics):**
+
+```
+ANCHOR_WINDOW_ENFORCED start=2026-09-03T00:07:47+00:00 end=2026-09-03T00:09:17+00:00
+LABEL_ISOLATION_VERIFIED experiment=fixed increase=29.997200261308944
+OPPOSITE_ARM_SERIES=0
+FIXED_METRICS_REQUIRED_COLUMNS_POPULATED rows=7
+ERROR_RATE_COLUMN_POPULATED=0 (no non-200 /cpu traffic observed)
+FIXED_METRICS_REQUIRED_COLUMNS_POPULATED
+ERROR_RATE_COLUMN_POPULATED
+```
+
+- **Actual output (positive label-isolation, both deployments up):**
+
+```
+LABEL_ISOLATION_VERIFIED experiment=fixed increase=60.0016000426678
+OPPOSITE_ARM_SERIES=0
+```
+
+- **Actual output (negative label-isolation — HPA traffic while checking fixed arm):**
+
+```
+LABEL_ISOLATION_FAILED opposite arm traffic experiment=hpa increase=29.78 in 90s window
+NEGATIVE_LABEL_ISOLATION_PASS
+```
+
+- **Elapsed time:** ~45 min
+- **Surprises:** `app_requests_total` only increments on `/cpu`; health checks do not count toward isolation or error_rate.
 
 ---
 

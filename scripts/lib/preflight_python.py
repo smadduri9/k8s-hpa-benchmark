@@ -7,7 +7,7 @@ import importlib.util
 import sys
 from pathlib import Path
 
-MIN_PYTHON = (3, 9)
+MIN_PYTHON = (3, 14)
 REPO_ROOT = Path(__file__).resolve().parents[2]
 ANALYSIS_MODULES = (
     "collect_metrics",

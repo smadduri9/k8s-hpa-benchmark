@@ -8,11 +8,11 @@ Format: `item_id | verification_command | expected_output`
 
 `t1-a-coldstart | bash scripts/smoke_test.sh --check coldstart | log contains "PODS_AT_ZERO_CONFIRMED", then "READY_REPLICAS_MATCH_DECLARED", then "LOAD_START t0=" in this exact order`
 
-`t1-b-assertions | bash scripts/smoke_test.sh --check assertions && bash scripts/smoke_test.sh --negative-test fixed-replica-assert && bash scripts/smoke_test.sh --negative-test empty-metrics-column && bash scripts/smoke_test.sh --negative-test missing-locust-hpa | positive: DECLARED_REPLICAS_FROM_SPEC and ASSERTIONS_PASS; negative replica: ASSERTION FAILED with declared count from spec (not hardcoded 3); negative empty column: ASSERTION FAILED required column; negative locust: publication blocked locust_hpa_stats.csv absent`
+`t1-b-assertions | bash scripts/smoke_test.sh --check assertions && bash scripts/smoke_test.sh --negative-test fixed-replica-assert && bash scripts/smoke_test.sh --negative-test empty-metrics-column && bash scripts/smoke_test.sh --negative-test missing-locust-hpa && bash scripts/smoke_test.sh --negative-test hpa-never-scaled | positive: DECLARED_REPLICAS_FROM_SPEC; negatives: ASSERTION FAILED replica, empty column, missing locust, HPA_NEVER_SCALED`
 
-`t1-c-fixed-metrics | bash scripts/smoke_test.sh --check fixed-metrics | output contains "FIXED_METRICS_REQUIRED_COLUMNS_POPULATED"; output contains "ERROR_RATE_COLUMN_POPULATED"; output contains no empty-string placeholders for required columns; output contains "ANCHOR_WINDOW_ENFORCED start=<ISO8601> end=<ISO8601>"`
+`t1-c-fixed-metrics | bash scripts/smoke_test.sh --check fixed-metrics | output contains "FIXED_METRICS_REQUIRED_COLUMNS_POPULATED"; output contains "ERROR_RATE_COLUMN_POPULATED"; output contains "ANCHOR_WINDOW_ENFORCED start=<ISO8601> end=<ISO8601>"`
 
-`t1-c-label-isolation | bash scripts/smoke_test.sh --check label-isolation --mode fixed --both-deployments-up | output contains "LABEL_ISOLATION_VERIFIED experiment=fixed series=" and output contains "OPPOSITE_ARM_SERIES=0"`
+`t1-c-label-isolation | bash scripts/smoke_test.sh --check label-isolation --mode fixed --both-deployments-up && bash scripts/smoke_test.sh --negative-test label-isolation | positive: LABEL_ISOLATION_VERIFIED and OPPOSITE_ARM_SERIES=0; negative: LABEL_ISOLATION_FAILED`
 
 `t1-d-locust-authority | bash scripts/smoke_test.sh --check locust-authority | output contains "LOCUST_FIXED_STATS_FOUND" and "LOCUST_HPA_STATS_FOUND" and "REQUEST_AUTHORITY=LOCUST" and "PROM_AUTHORITY=REPLICAS_CPU_TIMING"`
 

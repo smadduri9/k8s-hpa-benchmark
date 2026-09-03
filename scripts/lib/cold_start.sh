@@ -35,7 +35,7 @@ manifest_set_load_start_t0() {
   local manifest_path="$1"
   local arm="$2"
   local t0="$3"
-  python3 - "${manifest_path}" "${arm}" "${t0}" <<'PY'
+  "${VENV_PYTHON}" - "${manifest_path}" "${arm}" "${t0}" <<'PY'
 import json
 import sys
 

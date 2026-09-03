@@ -53,6 +53,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 load_env_file "${ENV_FILE}"
+require_venv
 
 if [[ "${SMOKE}" == "true" ]]; then
   LOCUST_FILE="locust/locustfile_smoke.py"
@@ -124,7 +125,7 @@ collect_arm_metrics() {
   local expected_replicas="${6:-}"
 
   local args=(
-    python3 "${REPO_ROOT}/analysis/collect_metrics.py"
+    "${VENV_PYTHON}" "${REPO_ROOT}/analysis/collect_metrics.py"
     --mode "${mode}"
     --prometheus-url "${PROMETHEUS_URL}"
     --start "${start_iso}"
@@ -141,6 +142,12 @@ collect_arm_metrics() {
     fi
     args+=(--assert-replicas "${expected_replicas}")
     echo "ASSERT_REPLICAS_SOURCE=deployment_spec deployment=hpa-eval-fixed declared=${expected_replicas}"
+  fi
+  if [[ "${mode}" == "hpa" ]]; then
+    local hpa_min
+    hpa_min="$(hpa_min_replicas)"
+    args+=(--min-replicas "${hpa_min}")
+    echo "HPA_MIN_REPLICAS_SOURCE=hpa_spec minReplicas=${hpa_min}"
   fi
   if [[ -n "${max_replicas}" ]]; then
     args+=(--max-replicas "${max_replicas}")
@@ -199,12 +206,12 @@ run_one_repetition() {
     t1_hpa="$(iso_now)"
     collect_arm_metrics hpa "${t0_hpa}" "${t1_hpa}" "${rep_dir}/hpa_metrics.csv" "${HPA_MAX_REPLICAS}"
 
-    python3 "${REPO_ROOT}/analysis/ingest_locust.py" \
+    venv_python "${REPO_ROOT}/analysis/ingest_locust.py" \
       --fixed-stats "${rep_dir}/locust_fixed_stats.csv" \
       --hpa-stats "${rep_dir}/locust_hpa_stats.csv" \
       --output "${rep_dir}/locust_summary.json"
 
-    python3 "${REPO_ROOT}/analysis/analyze_results.py" \
+    venv_python "${REPO_ROOT}/analysis/analyze_results.py" \
       --fixed "${rep_dir}/fixed_metrics.csv" \
       --hpa "${rep_dir}/hpa_metrics.csv" \
       --locust-hpa-stats "${rep_dir}/locust_hpa_stats.csv" \

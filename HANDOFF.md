@@ -22,6 +22,8 @@
 ### 1) Preflight (~1 min)
 ```bash
 cp .env.example .env   # fill PROJECT_ID, REGION, CLUSTER_NAME, ARTIFACT_REGISTRY_REPO
+python3 -m venv .venv
+".venv/bin/python" -m pip install -r requirements-tooling.txt
 bash scripts/preflight.sh --env-file .env --require-gke
 ```
 
@@ -46,7 +48,7 @@ nohup bash scripts/run_benchmark.sh --env-file .env --repetitions 3 > results/la
 ```bash
 cat results/runs/<run_id>/STATUS
 tail -f results/runs/<run_id>/rep-1/run.log
-python3 analysis/analyze_results.py --fixed results/runs/<run_id>/rep-1/fixed_metrics.csv --hpa results/runs/<run_id>/rep-1/hpa_metrics.csv --locust-hpa-stats results/runs/<run_id>/rep-1/locust_hpa_stats.csv
+".venv/bin/python" analysis/analyze_results.py --fixed results/runs/<run_id>/rep-1/fixed_metrics.csv --hpa results/runs/<run_id>/rep-1/hpa_metrics.csv --locust-hpa-stats results/runs/<run_id>/rep-1/locust_hpa_stats.csv
 ```
 
 ## Trust checks before publishing

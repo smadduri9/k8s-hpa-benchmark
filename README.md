@@ -47,10 +47,20 @@ The benchmark measures reliability, latency, throughput, scaling behavior, and c
 - `sample_data/` captured metrics and generated figures
 - `scripts/` local and GKE deployment + experiment orchestration
 
+## Tooling setup (required)
+
+All analysis and Locust commands use the repo virtualenv — do not install tooling globally.
+
+```bash
+python3 -m venv .venv
+".venv/bin/python" -m pip install -r requirements-tooling.txt
+bash scripts/preflight.sh
+```
+
 ## Quick Start (Local, Minikube)
 
 ```bash
-pip install locust numpy matplotlib
+bash scripts/preflight.sh
 bash scripts/deploy_local.sh
 ```
 
@@ -65,16 +75,16 @@ export HPA_HOST="http://${MINIKUBE_IP}:${HPA_PORT}"
 Run phased load test:
 
 ```bash
-locust -f locust/locustfile.py --host "$HPA_HOST" --headless --run-time 18m
+".venv/bin/locust" -f locust/locustfile.py --host "$HPA_HOST" --headless --run-time 18m
 ```
 
 Collect and analyze metrics:
 
 ```bash
 kubectl port-forward svc/prometheus 9090:9090 -n hpa-eval
-python3 analysis/collect_metrics.py --mode fixed --prometheus-url http://localhost:9090
-python3 analysis/collect_metrics.py --mode hpa --prometheus-url http://localhost:9090
-python3 analysis/analyze_results.py
+".venv/bin/python" analysis/collect_metrics.py --mode fixed --prometheus-url http://localhost:9090
+".venv/bin/python" analysis/collect_metrics.py --mode hpa --prometheus-url http://localhost:9090
+".venv/bin/python" analysis/analyze_results.py
 ```
 
 ## Full GKE Run
@@ -104,6 +114,6 @@ After running `analysis/analyze_results.py`, figures are written to:
 If you do not want to provision a cluster immediately, generate synthetic benchmark data and plots:
 
 ```bash
-python3 analysis/simulate_results.py
-python3 analysis/analyze_results.py
+".venv/bin/python" synthetic/generate_synthetic_data.py
+".venv/bin/python" analysis/analyze_results.py
 ```

@@ -1,8 +1,13 @@
 #!/usr/bin/env bash
-# OS/arch assumptions: macOS (darwin) or Linux, bash 4+, kubectl, locust, python3.
+# OS/arch assumptions: macOS (darwin) or Linux, bash 4+, kubectl, repo .venv tooling.
 # run_experiment.sh — legacy wrapper; prefer scripts/run_benchmark.sh
 
 set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=lib/common.sh
+source "${SCRIPT_DIR}/lib/common.sh"
+require_venv
 
 NAMESPACE="hpa-eval"
 HOST="${1:-}"
@@ -70,17 +75,17 @@ wait_for_pods "app=hpa-eval,experiment=fixed"
 
 log "Starting Locust load test against fixed deployment..."
 # LoadTestShape controls users/spawn-rate; do not pass --users or --spawn-rate.
-locust -f locust/locustfile.py \
+locust_cmd -f "${REPO_ROOT}/locust/locustfile.py" \
     --host "${FIXED_HOST}" \
     --headless \
     --run-time "${EXPERIMENT_DURATION}" \
-    --csv=results/legacy/locust_fixed \
+    --csv="${REPO_ROOT}/results/legacy/locust_fixed" \
     --csv-full-history \
-    --logfile=results/legacy/locust_fixed.log
+    --logfile="${REPO_ROOT}/results/legacy/locust_fixed.log"
 
 log "Collecting metrics from Prometheus..."
 sleep 5  # brief pause for final metrics to settle
-python3 analysis/collect_metrics.py \
+venv_python "${REPO_ROOT}/analysis/collect_metrics.py" \
     --mode fixed \
     --prometheus-url "${PROMETHEUS_URL}" \
     --duration-minutes 18
@@ -102,17 +107,17 @@ sleep 30
 
 log "Starting Locust load test against HPA deployment..."
 # LoadTestShape controls users/spawn-rate; do not pass --users or --spawn-rate.
-locust -f locust/locustfile.py \
+locust_cmd -f "${REPO_ROOT}/locust/locustfile.py" \
     --host "${HPA_HOST}" \
     --headless \
     --run-time "${EXPERIMENT_DURATION}" \
-    --csv=results/legacy/locust_hpa \
+    --csv="${REPO_ROOT}/results/legacy/locust_hpa" \
     --csv-full-history \
-    --logfile=results/legacy/locust_hpa.log
+    --logfile="${REPO_ROOT}/results/legacy/locust_hpa.log"
 
 log "Collecting metrics from Prometheus..."
 sleep 5
-python3 analysis/collect_metrics.py \
+venv_python "${REPO_ROOT}/analysis/collect_metrics.py" \
     --mode hpa \
     --prometheus-url "${PROMETHEUS_URL}" \
     --duration-minutes 18
@@ -123,7 +128,7 @@ log "HPA experiment complete."
 # Analysis
 # ---------------------------------------------------------------------------
 log "Running analysis and generating figures..."
-python3 analysis/analyze_results.py
+venv_python "${REPO_ROOT}/analysis/analyze_results.py"
 
 # ---------------------------------------------------------------------------
 # Cleanup

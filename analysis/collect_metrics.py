@@ -147,32 +147,67 @@ def query_range(
     return [(float(ts), float(val)) for ts, val in values]
 
 
-def assert_label_isolation(prometheus_url: str, mode: str) -> int:
-    own = f'count(app_requests_total{{experiment="{mode}"}})'
+def query_instant(
+    prometheus_url: str,
+    promql: str,
+    ts: float,
+    retries: int = 3,
+) -> list[dict]:
+    params = urllib.parse.urlencode({"query": promql, "time": f"{ts}"})
+    url = f"{prometheus_url.rstrip('/')}/api/v1/query?{params}"
+    last_error = None
+    for attempt in range(1, retries + 1):
+        try:
+            with urllib.request.urlopen(url, timeout=20) as resp:
+                data = json.load(resp)
+            if data.get("status") != "success":
+                raise RuntimeError(f"prometheus status={data.get('status')}")
+            return data.get("data", {}).get("result", [])
+        except Exception as exc:  # noqa: BLE001
+            last_error = exc
+            if attempt < retries:
+                time.sleep(2 ** attempt)
+    raise RuntimeError(f"PROMETHEUS_QUERY_FAILED after {retries} attempts: {last_error}")
+
+
+def _instant_scalar(results: list[dict]) -> float:
+    if not results:
+        return 0.0
+    return float(results[0].get("value", [0, "0"])[1])
+
+
+def assert_label_isolation(
+    prometheus_url: str,
+    mode: str,
+    start_ts: float | None = None,
+    end_ts: float | None = None,
+) -> int:
+    end = end_ts if end_ts is not None else time.time()
+    start = start_ts if start_ts is not None else end - 120
+    window_sec = max(int(end - start), 15)
     opposite = OPPOSITE_EXPERIMENT[mode]
-    other = f'count(app_requests_total{{experiment="{opposite}"}})'
+    own_promql = f'sum(increase(app_requests_total{{experiment="{mode}"}}[{window_sec}s]))'
+    other_promql = f'sum(increase(app_requests_total{{experiment="{opposite}"}}[{window_sec}s]))'
 
-    own_results = query_range_raw(
-        prometheus_url, own, time.time() - 120, time.time(), 15, retries=1
-    )
-    other_results = query_range_raw(
-        prometheus_url, other, time.time() - 120, time.time(), 15, retries=1
-    )
+    own_results = query_instant(prometheus_url, own_promql, end, retries=1)
+    other_results = query_instant(prometheus_url, other_promql, end, retries=1)
 
-    if not own_results:
-        raise RuntimeError(f"LABEL_ISOLATION_FAILED no series for experiment={mode}")
+    own_increase = _instant_scalar(own_results)
+    other_increase = _instant_scalar(other_results)
 
-    own_count = len(own_results)
-    other_count = len(other_results)
-    if other_count > 0:
-        other_labels = [item.get("metric", {}) for item in other_results]
+    if own_increase <= 0:
         raise RuntimeError(
-            f"LABEL_ISOLATION_FAILED opposite arm present experiment={opposite} series={other_count} labels={other_labels}"
+            f"LABEL_ISOLATION_FAILED no request increase for experiment={mode} in {window_sec}s window"
         )
 
-    print(f"LABEL_ISOLATION_VERIFIED experiment={mode} series={own_count}")
+    if other_increase > 0:
+        raise RuntimeError(
+            f"LABEL_ISOLATION_FAILED opposite arm traffic experiment={opposite} increase={other_increase} in {window_sec}s window"
+        )
+
+    print(f"LABEL_ISOLATION_VERIFIED experiment={mode} increase={own_increase}")
     print("OPPOSITE_ARM_SERIES=0")
-    return own_count
+    return 1
 
 
 def sample_ready_replicas(namespace: str, deployment: str) -> int | None:
@@ -209,10 +244,30 @@ def collect(
     cluster_name: str,
     assert_replicas: int | None = None,
     max_replicas: int | None = None,
+    min_replicas: int | None = None,
+    run_label_isolation_check: bool = True,
 ) -> list[dict]:
     print(f"ANCHOR_WINDOW_ENFORCED start={datetime.fromtimestamp(start_ts, tz=timezone.utc).isoformat()} end={datetime.fromtimestamp(end_ts, tz=timezone.utc).isoformat()}")
 
-    assert_label_isolation(prometheus_url, mode)
+    if run_label_isolation_check:
+        assert_label_isolation(prometheus_url, mode, start_ts, end_ts)
+
+    deployment = DEPLOYMENT_BY_MODE[mode]
+    if mode == "hpa" and min_replicas is not None:
+        peak_replicas = 0
+        ts = start_ts
+        while ts <= end_ts:
+            replica_val = sample_ready_replicas(namespace, deployment)
+            if replica_val is not None:
+                peak_replicas = max(peak_replicas, replica_val)
+            ts += step
+        if peak_replicas <= min_replicas:
+            msg = (
+                f"HPA_NEVER_SCALED peak_observed={peak_replicas} minReplicas={min_replicas}"
+            )
+            print(msg, file=sys.stderr)
+            raise RuntimeError(msg)
+        print(f"HPA_SCALE_FLOOR_CHECK peak={peak_replicas} minReplicas={min_replicas}")
 
     queries = build_queries(mode)
     series: dict[str, list[tuple[float, float]]] = {}
@@ -228,7 +283,6 @@ def collect(
         )
 
     ref = series.get("cpu_utilization_pct") or next(v for v in series.values() if v)
-    deployment = DEPLOYMENT_BY_MODE[mode]
     rows: list[dict] = []
 
     for ts, _ in ref:
@@ -281,7 +335,9 @@ def main() -> None:
     parser.add_argument("--output", required=True)
     parser.add_argument("--assert-replicas", type=int)
     parser.add_argument("--max-replicas", type=int)
+    parser.add_argument("--min-replicas", type=int)
     parser.add_argument("--check-label-isolation", action="store_true")
+    parser.add_argument("--skip-label-isolation", action="store_true")
     args = parser.parse_args()
 
     if not args.start or not args.end:
@@ -295,7 +351,9 @@ def main() -> None:
         sys.exit(1)
 
     if args.check_label_isolation:
-        assert_label_isolation(args.prometheus_url, args.mode)
+        start_ts = parse_iso8601(args.start)
+        end_ts = parse_iso8601(args.end)
+        assert_label_isolation(args.prometheus_url, args.mode, start_ts, end_ts)
 
     rows = collect(
         mode=args.mode,
@@ -308,6 +366,8 @@ def main() -> None:
         cluster_name=args.cluster_name,
         assert_replicas=args.assert_replicas,
         max_replicas=args.max_replicas,
+        min_replicas=args.min_replicas,
+        run_label_isolation_check=not args.skip_label_isolation,
     )
 
     os.makedirs(os.path.dirname(args.output) or ".", exist_ok=True)

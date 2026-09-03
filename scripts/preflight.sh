@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# OS/arch assumptions: macOS (darwin) or Linux, bash 4+, kubectl, docker, gcloud, locust, python3.
+# OS/arch assumptions: macOS (darwin) or Linux, bash 4+, kubectl, docker, gcloud.
 # Strict preflight checks. Never infers GCP project from gcloud config.
 
 set -euo pipefail
@@ -30,6 +30,44 @@ preflight_warn() {
   echo "WARNING: $*" >&2
 }
 
+audit_repo_path_quoting() {
+  if [[ "${REPO_ROOT}" != *" "* && "${REPO_ROOT}" != *$'\t'* ]]; then
+    echo "repo_path_whitespace_audit=SKIPPED"
+    return 0
+  fi
+
+  echo "repo_path_whitespace_audit=ACTIVE path=\"${REPO_ROOT}\""
+  local file line lineno bad=0
+  local repo_root_var='$REPO_ROOT'
+  local repo_root_braced='${REPO_ROOT}'
+  while IFS= read -r -d '' file; do
+    if [[ "${file}" == "${SCRIPT_DIR}/preflight.sh" ]]; then
+      continue
+    fi
+    lineno=0
+    while IFS= read -r line || [[ -n "${line}" ]]; do
+      lineno=$((lineno + 1))
+      if [[ "${line}" =~ ^[[:space:]]*# ]]; then
+        continue
+      fi
+      if [[ "${line}" != *"${repo_root_var}"* && "${line}" != *"${repo_root_braced}"* ]]; then
+        continue
+      fi
+      if [[ "${line}" == *'"${REPO_ROOT}'* ]] || [[ "${line}" == *"'${REPO_ROOT}"* ]] || [[ "${line}" == *'"$REPO_ROOT'* ]] || [[ "${line}" == *"'$REPO_ROOT"* ]]; then
+        continue
+      fi
+      echo "UNQUOTED_REPO_ROOT file=${file} line=${lineno}: ${line}" >&2
+      bad=1
+    done < "${file}"
+  done < <(find "${REPO_ROOT}/scripts" -name '*.sh' -print0)
+
+  if [[ "${bad}" -eq 1 ]]; then
+    preflight_fail "unquoted REPO_ROOT expansions found while repo path contains whitespace"
+  else
+    echo "repo_path_whitespace_audit=PASS"
+  fi
+}
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --env-file)
@@ -57,12 +95,14 @@ ARCH_NAME="$(uname -m)"
 echo "PREFLIGHT_TABLE_BEGIN"
 echo "os=${OS_NAME}"
 echo "arch=${ARCH_NAME}"
+echo "repo_root=\"${REPO_ROOT}\""
+
+audit_repo_path_quoting
 
 if [[ "${OS_NAME}" != "Darwin" && "${OS_NAME}" != "Linux" ]]; then
   die "unsupported OS: ${OS_NAME}"
 fi
 
-# GNU vs BSD tool checks
 if sed --version >/dev/null 2>&1; then
   echo "sed=GNU"
 else
@@ -87,27 +127,63 @@ parse_k8s_minor() {
   echo "${version%%.*}"
 }
 
-for cmd in gcloud docker python3; do
+for cmd in gcloud docker kubectl; do
   if ! command -v "${cmd}" >/dev/null 2>&1; then
     preflight_fail "missing required command: ${cmd}"
   else
-    version="$(first_line "$(${cmd} --version 2>&1)")"
+    if [[ "${cmd}" == "kubectl" ]]; then
+      version="$(kubectl version --client=true 2>&1 | awk '/Client Version:/{print $0; exit}')"
+    else
+      version="$(first_line "$(${cmd} --version 2>&1)")"
+    fi
     echo "${cmd}=${version}"
   fi
 done
 
-if command -v kubectl >/dev/null 2>&1; then
-  echo "kubectl=$(kubectl version --client=true 2>&1 | awk '/Client Version:/{print $0; exit}')"
+if [[ ! -d "${VENV_DIR}" ]]; then
+  preflight_fail "missing venv at ${VENV_DIR}"
+  cat >&2 <<EOF
+REMEDIATION:
+  python3 -m venv "${VENV_DIR}"
+  "${VENV_DIR}/bin/python" -m pip install -r "${REPO_ROOT}/requirements-tooling.txt"
+EOF
+elif [[ ! -x "${VENV_PYTHON}" ]]; then
+  preflight_fail "venv exists but interpreter missing at ${VENV_PYTHON}"
 else
-  preflight_fail "missing required command: kubectl"
+  venv_python_path="$(cd "$(dirname "${VENV_PYTHON}")" && pwd)/$(basename "${VENV_PYTHON}")"
+  venv_python_version="$("${VENV_PYTHON}" --version 2>&1)"
+  echo "venv_python_path=${venv_python_path}"
+  echo "venv_python_version=${venv_python_version}"
+fi
+
+if [[ -x "${VENV_LOCUST}" ]]; then
+  locust_version_out="$("${VENV_LOCUST}" --version 2>&1)"
+  echo "venv_locust_version=${locust_version_out}"
+  if echo "${locust_version_out}" | grep -q ' from '; then
+    locust_from="$(echo "${locust_version_out}" | sed -n 's/.* from \(.*\)$/\1/p')"
+    case "${locust_from}" in
+      "${VENV_DIR}"/*) echo "venv_locust_path_check=PASS from=${locust_from}" ;;
+      *)
+        preflight_fail "locust resolves outside venv: ${locust_from} (expected under ${VENV_DIR})"
+        ;;
+    esac
+  else
+    locust_real="$(cd "$(dirname "${VENV_LOCUST}")" && pwd)/$(basename "${VENV_LOCUST}")"
+    echo "venv_locust_path=${locust_real}"
+  fi
+elif [[ -d "${VENV_DIR}" ]]; then
+  preflight_fail "venv locust missing at ${VENV_LOCUST}"
+  echo "REMEDIATION: \"${VENV_PYTHON}\" -m pip install -r \"${REPO_ROOT}/requirements-tooling.txt\"" >&2
 fi
 
 if command -v locust >/dev/null 2>&1; then
-  echo "locust=$(first_line "$(locust --version 2>&1)")"
-elif python3 -m locust --version >/dev/null 2>&1; then
-  echo "locust=$(first_line "$(python3 -m locust --version 2>&1)") [python -m]"
-else
-  preflight_fail "missing required command: locust (or python3 -m locust)"
+  path_locust="$(command -v locust)"
+  case "${path_locust}" in
+    "${VENV_DIR}"/*) ;;
+    *)
+      preflight_fail "PATH locust (${path_locust}) is outside ${VENV_DIR}; scripts use venv locust only"
+      ;;
+  esac
 fi
 
 client_ver="$(kubectl version --client=true -o yaml 2>/dev/null | awk '/gitVersion:/{print $2; exit}')"
@@ -124,10 +200,11 @@ if kubectl cluster-info >/dev/null 2>&1; then
     echo "kubectl_minor_skew=${skew}"
     if [[ "${skew}" -gt 2 ]]; then
       preflight_fail "kubectl version skew ${skew} exceeds policy (max 2 minor versions); client=${client_ver} server=${server_ver}"
-      echo "REMEDIATION: brew upgrade kubectl  OR  gcloud components update kubectl" >&2
+      echo "REMEDIATION: align kubectl client with cluster (e.g. gcloud components install kubectl, then ensure gcloud bin precedes brew on PATH)" >&2
     elif [[ "${skew}" -gt 1 ]]; then
       preflight_warn "kubectl version skew ${skew} exceeds recommended max of 1 minor version; client=${client_ver} server=${server_ver}"
-      echo "REMEDIATION: brew upgrade kubectl  OR  gcloud components update kubectl" >&2
+      echo "REMEDIATION: align kubectl client with cluster (e.g. gcloud components install kubectl, then ensure gcloud bin precedes brew on PATH)" >&2
+      echo "kubectl_skew_check=WARN"
     else
       echo "kubectl_skew_check=PASS"
     fi
@@ -154,7 +231,9 @@ else
   echo "docker_platform_check=SKIPPED arch=${ARCH_NAME}"
 fi
 
-python3 "${SCRIPT_DIR}/lib/preflight_python.py" || PREFLIGHT_FAILED=true
+if [[ -x "${VENV_PYTHON}" ]]; then
+  "${VENV_PYTHON}" "${SCRIPT_DIR}/lib/preflight_python.py" || PREFLIGHT_FAILED=true
+fi
 
 if [[ "${REQUIRE_GKE}" == "true" ]]; then
   require_env PROJECT_ID
