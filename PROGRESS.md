@@ -353,3 +353,43 @@ NEGATIVE_LABEL_ISOLATION_PASS
 - **Actual output:** not executed — requires user GKE benchmark artifacts
 - **Elapsed time:** scaffold only
 - **Surprises:** Phase 2 intentionally operator-run per plan
+
+---
+
+## t1-d-locust-authority (re-verified 2026-09-03)
+
+- **Files touched:** `scripts/lib/locust_run.sh`, `scripts/run_benchmark.sh`
+- **Wall-clock timeout (pre-run):** `LOCUST_WALL_MARGIN_SEC=60` + `RUN_TIME=4m` (240s) ⇒ `LOCUST_WALL_CLOCK_SEC=300` (5m), exceeds 4m load duration
+- **Verification command:** `bash scripts/smoke_test.sh --check locust-authority`
+- **Elapsed time:** ~8.5 min (511s)
+- **Actual output:**
+
+```
+SUMMARY attempted=1 passed=0
+LOCUST_FIXED_STATS_FOUND
+LOCUST_HPA_STATS_FOUND
+REQUEST_AUTHORITY=LOCUST
+PROM_AUTHORITY=REPLICAS_CPU_TIMING
+LOCUST_BOTH_ARMS_INGESTED
+```
+
+- **ps evidence (live locust during fixed arm, captured 2026-09-03T17:12:08Z):**
+
+```
+srirammadduri    60090  19.1  0.1 435287680  35216   ??  U    10:12AM   0:00.13 .../.venv/bin/locust -f .../locust/locustfile_smoke.py --host http://127.0.0.1:30080 --headless --run-time 4m --csv .../locust_fixed --csv-full-history ...
+60090 /opt/homebrew/.../Python .../.venv/bin/locust -f .../locust/locustfile_smoke.py --host http://127.0.0.1:30080 --headless --run-time 4m ...
+```
+
+- **t0 anchoring (fixed arm, from `rep.log` + `manifest.json`):**
+
+| Event | Timestamp |
+|-------|-----------|
+| Run start (rep.log `RUN_ID=smoke-locust`) | 2026-09-03T17:11Z (no per-line stamp; benchmark invoked ~17:11) |
+| Locust PID confirmed running | `2026-09-03T17:12:07Z` (`LOCUST_PID_CONFIRMED pid=60090`) |
+| `LOAD_START` + manifest `load_start_t0` written | `2026-09-03T17:12:08Z` |
+| Manifest `arms.fixed.load_start_t0` | `2026-09-03T17:12:08Z` |
+
+Manifest t0 is **after** run start and **after** locust confirmed running (not before load).
+
+- **Unified log (`rep.log`):** heartbeats, `LOCUST_PID_CONFIRMED`, `LOAD_START`, and `LOCUST_COMPLETE` all appear in `results/runs/smoke-locust/rep-1/rep.log` (single tail target).
+- **Surprises:** `SUMMARY attempted=1 passed=0` because `analyze_results.py` step failed inside the repetition (benchmark ingest still passed); locust-authority check exits 0 on stats + ingest only.

@@ -94,19 +94,28 @@ run_locust_arm() {
   local harness_log="$4"
   local rep_dir="$5"
 
-  local t0
-  t0="$(iso_now)"
   local t0_file="${rep_dir}/t0_${arm}.txt"
   local locust_log="${rep_dir}/locust_${arm}.log"
-  echo "LOAD_START t0=${t0}" | tee -a "${harness_log}"
-  echo "${t0}" > "${t0_file}"
-  manifest_set_load_start_t0 "${MANIFEST_PATH}" "${arm}" "${t0}"
 
   heartbeat_start "${harness_log}" "locust-${arm}"
   local hb_pid=$!
   register_heartbeat_pid "${hb_pid}"
 
-  run_locust_bounded \
+  locust_start_bounded \
+    "${REPO_ROOT}/${LOCUST_FILE}" \
+    "${host}" \
+    "${RUN_TIME}" \
+    "${csv_base}" \
+    "${locust_log}" \
+    "${harness_log}"
+
+  local t0
+  t0="$(iso_now)"
+  echo "LOAD_START t0=${t0}" | tee -a "${harness_log}"
+  echo "${t0}" > "${t0_file}"
+  manifest_set_load_start_t0 "${MANIFEST_PATH}" "${arm}" "${t0}"
+
+  locust_wait_bounded \
     "${REPO_ROOT}/${LOCUST_FILE}" \
     "${host}" \
     "${RUN_TIME}" \
@@ -197,7 +206,7 @@ run_one_repetition() {
     local expected_fixed
     cold_start_arm "hpa-eval-fixed" "app=hpa-eval,experiment=fixed" "${NAMESPACE}" "${MANIFEST_PATH}" "fixed"
     expected_fixed="$(deployment_declared_replicas hpa-eval-fixed "${NAMESPACE}")"
-    run_locust_arm fixed "${FIXED_HOST}" "${rep_dir}/locust_fixed" "${rep_dir}/run.log" "${rep_dir}"
+    run_locust_arm fixed "${FIXED_HOST}" "${rep_dir}/locust_fixed" "${rep_dir}/rep.log" "${rep_dir}"
     local t0_fixed
     t0_fixed="$(<"${rep_dir}/t0_fixed.txt")"
     local t1_fixed
@@ -205,7 +214,7 @@ run_one_repetition() {
     collect_arm_metrics fixed "${t0_fixed}" "${t1_fixed}" "${rep_dir}/fixed_metrics.csv" "" "${expected_fixed}"
 
     cold_start_arm "hpa-eval-hpa" "app=hpa-eval,experiment=hpa" "${NAMESPACE}" "${MANIFEST_PATH}" "hpa"
-    run_locust_arm hpa "${HPA_HOST}" "${rep_dir}/locust_hpa" "${rep_dir}/run.log" "${rep_dir}"
+    run_locust_arm hpa "${HPA_HOST}" "${rep_dir}/locust_hpa" "${rep_dir}/rep.log" "${rep_dir}"
     local t0_hpa
     t0_hpa="$(<"${rep_dir}/t0_hpa.txt")"
     local t1_hpa

@@ -16,6 +16,11 @@ fi
 LOCUST_WALL_MARGIN_SEC="${LOCUST_WALL_MARGIN_SEC:-60}"
 LOCUST_CONNECT_TIMEOUT_SEC="${LOCUST_CONNECT_TIMEOUT_SEC:-5}"
 
+# Set by locust_start_bounded; read by callers without command substitution.
+LOCUST_STARTED_PID=""
+LOCUST_WATCHER_PID=""
+LOCUST_WALL_CLOCK_SEC=""
+
 run_time_to_seconds() {
   local run_time="$1"
   case "${run_time}" in
@@ -76,7 +81,29 @@ print_locust_command_line() {
   harness_echo "${harness_log}" "LOCUST_CMD=${cmd_line}"
 }
 
-run_locust_bounded() {
+confirm_locust_pid_running() {
+  local pid="$1"
+  local harness_log="${2:-}"
+  local attempt
+  for attempt in $(seq 1 15); do
+    if kill -0 "${pid}" 2>/dev/null; then
+      local cmd_line=""
+      cmd_line="$(ps -p "${pid}" -o command= 2>/dev/null || true)"
+      if [[ "${cmd_line}" == *locust* ]]; then
+        harness_echo "${harness_log}" "LOCUST_PID_CONFIRMED pid=${pid} confirmed_at=$(iso_now) attempt=${attempt} command=${cmd_line}"
+        harness_echo "${harness_log}" "LOCUST_PS_EVIDENCE_BEGIN"
+        ps -p "${pid}" -o pid=,ppid=,etime=,command= >> "${harness_log}" 2>/dev/null || true
+        ps aux | grep -E '[l]ocust' >> "${harness_log}" 2>/dev/null || true
+        harness_echo "${harness_log}" "LOCUST_PS_EVIDENCE_END"
+        return 0
+      fi
+    fi
+    sleep 0.2
+  done
+  return 1
+}
+
+locust_start_bounded() {
   local locust_file="$1"
   local host="$2"
   local run_time="$3"
@@ -84,12 +111,17 @@ run_locust_bounded() {
   local log_file="$5"
   local harness_log="${6:-}"
 
+  LOCUST_STARTED_PID=""
+  LOCUST_WATCHER_PID=""
+  LOCUST_WALL_CLOCK_SEC=""
+
   require_venv
   verify_load_target_reachable "${host}" "${harness_log}"
 
   local run_secs wall_secs
   run_secs="$(run_time_to_seconds "${run_time}")"
   wall_secs=$((run_secs + LOCUST_WALL_MARGIN_SEC))
+  LOCUST_WALL_CLOCK_SEC="${wall_secs}"
 
   print_locust_command_line "${harness_log}" \
     "${locust_file}" "${host}" "${run_time}" "${csv_base}" "${log_file}"
@@ -105,6 +137,14 @@ run_locust_bounded() {
     --csv-full-history \
     --logfile "${log_file}" >> "${log_file}" 2>&1 &
   local locust_pid=$!
+
+  if ! confirm_locust_pid_running "${locust_pid}" "${harness_log}"; then
+    local rc=0
+    wait "${locust_pid}" || rc=$?
+    die "LOCUST_START_FAILED pid=${locust_pid} exit_code=${rc}"
+  fi
+
+  LOCUST_STARTED_PID="${locust_pid}"
   register_locust_pid "${locust_pid}"
 
   (
@@ -116,14 +156,33 @@ run_locust_bounded() {
       kill -9 "${locust_pid}" 2>/dev/null || true
     fi
   ) &
-  local watcher_pid=$!
-  register_heartbeat_pid "${watcher_pid}"
+  LOCUST_WATCHER_PID=$!
+  register_heartbeat_pid "${LOCUST_WATCHER_PID}"
+}
+
+locust_wait_bounded() {
+  local locust_file="${1:-}"
+  local host="${2:-}"
+  local run_time="${3:-}"
+  local csv_base="${4:-}"
+  local log_file="${5:-}"
+  local harness_log="${6:-}"
+
+  local locust_pid="${LOCUST_STARTED_PID:-}"
+  local watcher_pid="${LOCUST_WATCHER_PID:-}"
+  local wall_secs="${LOCUST_WALL_CLOCK_SEC:-}"
+
+  if [[ -z "${locust_pid}" ]]; then
+    die "LOCUST_WAIT_WITHOUT_START"
+  fi
 
   local rc=0
   wait "${locust_pid}" || rc=$?
 
-  kill "${watcher_pid}" 2>/dev/null || true
-  wait "${watcher_pid}" 2>/dev/null || true
+  if [[ -n "${watcher_pid}" ]]; then
+    kill "${watcher_pid}" 2>/dev/null || true
+    wait "${watcher_pid}" 2>/dev/null || true
+  fi
 
   if [[ "${rc}" -ne 0 ]]; then
     if grep -q "LOCUST_TIMEOUT" "${log_file}" 2>/dev/null; then
@@ -137,4 +196,18 @@ run_locust_bounded() {
   fi
 
   harness_echo "${harness_log}" "LOCUST_COMPLETE run_time=${run_time} csv_base=${csv_base}"
+}
+
+run_locust_bounded() {
+  local locust_file="$1"
+  local host="$2"
+  local run_time="$3"
+  local csv_base="$4"
+  local log_file="$5"
+  local harness_log="${6:-}"
+
+  locust_start_bounded \
+    "${locust_file}" "${host}" "${run_time}" "${csv_base}" "${log_file}" "${harness_log}"
+  locust_wait_bounded \
+    "${locust_file}" "${host}" "${run_time}" "${csv_base}" "${log_file}" "${harness_log}"
 }
