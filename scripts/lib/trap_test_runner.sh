@@ -36,6 +36,19 @@ register_port_forward_pid "${pf_pid}"
 echo "pf_pid=${pf_pid}" >> "${MARKER}"
 echo "pf_port=${PF_PORT}" >> "${MARKER}"
 
+heartbeat_start "${MARKER}" "trap-verify"
+hb_pid=$!
+register_heartbeat_pid "${hb_pid}"
+echo "hb_pid=${hb_pid}" >> "${MARKER}"
+
+{
+  echo "PS_SNAPSHOT_BEFORE_BEGIN"
+  ps -p "${pf_pid}" -o pid=,ppid=,etime=,command= 2>/dev/null || echo "pf_pid=${pf_pid} not listed"
+  ps -p "${hb_pid}" -o pid=,ppid=,etime=,command= 2>/dev/null || echo "hb_pid=${hb_pid} not listed"
+  ps aux | grep -E '[k]ubectl port-forward.*'"${PF_PORT}"'|[H]EARTBEAT trap-verify' || true
+  echo "PS_SNAPSHOT_BEFORE_END"
+} >> "${MARKER}"
+
 if [[ "${MODE}" == "sigint" ]]; then
   while true; do
     sleep 1

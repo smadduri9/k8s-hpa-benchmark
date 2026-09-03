@@ -316,6 +316,102 @@ NEGATIVE_LABEL_ISOLATION_PASS
 
 ---
 
+## t1-e-preflight-traps (re-verified 2026-09-03)
+
+- **Files touched:** `AGENTS.md`, `scripts/smoke_test.sh`, `scripts/lib/trap_test_runner.sh`
+- **Verification command:** `bash scripts/smoke_test.sh --check preflight-traps --env-file .env`
+- **Elapsed time:** ~1.1 min (68s)
+- **Teardown policy (active by default):** `cluster=on-failure-only` — GKE cluster is never auto-deleted on success (`destructive_gke_teardown` only verifies identity; no delete call). `port_forwards=always` and `background_pids=always` — `cleanup_background_jobs` runs on EXIT/INT/TERM via trap in `run_benchmark.sh` / `trap_test_runner.sh`.
+- **Actual output:**
+
+```
+TEARDOWN_POLICY cluster=on-failure-only port_forwards=always background_pids=always success_cluster_delete=never
+PREFLIGHT_TABLE_BEGIN
+os=Darwin
+arch=arm64
+repo_root="/Users/srirammadduri/Documents/Personal Projects/k8s-hpa-benchmark"
+repo_path_whitespace_audit=ACTIVE path="/Users/srirammadduri/Documents/Personal Projects/k8s-hpa-benchmark"
+repo_path_whitespace_audit=PASS
+sed=BSD
+date=BSD
+gcloud=Google Cloud SDK 583.0.0
+docker=Docker version 28.5.1, build e180ab8
+kubectl=Client Version: v1.35.7-dispatcher
+venv_python_path=/Users/srirammadduri/Documents/Personal Projects/k8s-hpa-benchmark/.venv/bin/python
+venv_python_version=Python 3.14.7
+venv_locust_version=locust 2.46.4 from /Users/srirammadduri/Documents/Personal Projects/k8s-hpa-benchmark/.venv/lib/python3.14/site-packages/locust (Python 3.14.7)
+venv_locust_path_check=PASS from=/Users/srirammadduri/Documents/Personal Projects/k8s-hpa-benchmark/.venv/lib/python3.14/site-packages/locust (Python 3.14.7)
+kubectl_client=v1.35.7-dispatcher
+kubectl_server=v1.37.0
+kubectl_minor_skew=2
+WARNING: kubectl version skew 2 exceeds recommended max of 1 minor version; client=v1.35.7-dispatcher server=v1.37.0
+REMEDIATION: align kubectl client with cluster (e.g. gcloud components install kubectl, then ensure gcloud bin precedes brew on PATH)
+kubectl_skew_check=WARN
+docker_platform_check=PASS build_script=/Users/srirammadduri/Documents/Personal Projects/k8s-hpa-benchmark/scripts/deploy_gke.sh platform=linux/amd64
+python_version=PASS 3.14.7
+analysis_import=PASS module=collect_metrics
+analysis_import=PASS module=ingest_locust
+analysis_import=PASS module=analyze_results
+analysis_import=PASS module=fill_results
+python_package=PASS package=numpy version=2.5.2
+python_package=PASS package=matplotlib version=3.11.1
+analyze_plotting=PASS figures=4 fixture_dir=/Users/srirammadduri/Documents/Personal Projects/k8s-hpa-benchmark/scripts/lib/fixtures
+PREFLIGHT_PASS
+PREFLIGHT_TABLE_END
+deployment.apps/prometheus condition met
+PS_SNAPSHOT_BEFORE_BEGIN
+65416 65402 00:00 kubectl port-forward svc/prometheus 19354:9090 -n hpa-eval --context kind-hpa-eval-benchmark
+[2026-09-03T18:56:18Z] HEARTBEAT trap-verify
+PS_SNAPSHOT_BEFORE_END
+TRAP_FIRED reason=EXIT
+PS_AFTER mode=normal pf_pid=65416 hb_pid=65417
+PS_AFTER pf_pid=65416 not listed (expected)
+PS_AFTER hb_pid=65417 not listed (expected)
+PS_AFTER no HEARTBEAT trap-verify processes (expected)
+TRAP_SCENARIO_PASS mode=normal
+PS_SNAPSHOT_BEFORE_BEGIN
+65460 65446 00:00 kubectl port-forward svc/prometheus 19348:9090 -n hpa-eval --context kind-hpa-eval-benchmark
+[2026-09-03T18:56:20Z] HEARTBEAT trap-verify
+PS_SNAPSHOT_BEFORE_END
+TRAP_FIRED reason=EXIT
+PS_AFTER mode=error pf_pid=65460 hb_pid=65461
+PS_AFTER pf_pid=65460 not listed (expected)
+PS_AFTER hb_pid=65461 not listed (expected)
+PS_AFTER no HEARTBEAT trap-verify processes (expected)
+TRAP_SCENARIO_PASS mode=error
+PS_SNAPSHOT_BEFORE_BEGIN
+65506 65492 00:00 kubectl port-forward svc/prometheus 19437:9090 -n hpa-eval --context kind-hpa-eval-benchmark
+[2026-09-03T18:56:22Z] HEARTBEAT trap-verify
+PS_SNAPSHOT_BEFORE_END
+TRAP_FIRED reason=TERM
+PS_AFTER mode=sigint pf_pid=65506 hb_pid=65507
+PS_AFTER pf_pid=65506 not listed (expected)
+PS_AFTER hb_pid=65507 not listed (expected)
+PS_AFTER no HEARTBEAT trap-verify processes (expected)
+TRAP_SCENARIO_PASS mode=sigint
+TRAP_CLEANUP_IDEMPOTENT
+ERROR: cluster mismatch: expected hpa-eval-benchmark, got wrong-cluster-name-deliberate
+NEGATIVE_CLUSTER_VERIFICATION_PASS
+[2026-09-03T18:56:27Z] PROJECT_CLUSTER_VERIFICATION_REQUIRED
+[2026-09-03T18:56:27Z] Verified target project=hpa-benchmark-2026 cluster=hpa-eval-benchmark region=us-central1 context=kind-hpa-eval-smoke
+[2026-09-03T18:56:27Z] DESTRUCTIVE_GKE_TEARDOWN_AUTHORIZED project=hpa-benchmark-2026 cluster=hpa-eval-benchmark
+PROJECT_CLUSTER_VERIFICATION_REQUIRED
+TRAP_CLEANUP_VERIFIED
+EXIT_RC=0
+```
+
+- **Seven verifications:**
+  1. Trap on normal exit — `TRAP_FIRED reason=EXIT`, `TRAP_SCENARIO_PASS mode=normal`
+  2. Trap on error exit — `TRAP_FIRED reason=EXIT`, `TRAP_SCENARIO_PASS mode=error`
+  3. Trap on SIGINT path — `TRAP_FIRED reason=TERM` (runner received SIGINT then parent escalated to SIGTERM), `TRAP_SCENARIO_PASS mode=sigint`
+  4. Port-forward dead after trap — `PS_SNAPSHOT_BEFORE` shows live `kubectl port-forward`; `PS_AFTER pf_pid=… not listed (expected)` for all three modes
+  5. Heartbeat subshells killed — `HEARTBEAT trap-verify` in `PS_SNAPSHOT_BEFORE`; `PS_AFTER no HEARTBEAT trap-verify processes (expected)` for all three modes
+  6. Wrong CLUSTER_NAME refused — `ERROR: cluster mismatch: expected hpa-eval-benchmark, got wrong-cluster-name-deliberate`, `NEGATIVE_CLUSTER_VERIFICATION_PASS`
+  7. Idempotent teardown — `TRAP_CLEANUP_IDEMPOTENT` (double `cleanup_background_jobs` with no error)
+- **Surprises:** `destructive_gke_teardown` authorizes against kind context (`kind-hpa-eval-smoke`) without creating GCP resources; SIGINT scenario records `reason=TERM` when parent escalates after 2s wait.
+
+---
+
 ## t1-a2-synthetic-rename-minimal
 
 - **Files touched:** `synthetic/generate_synthetic_data.py`, `synthetic/README.md` (git mv from `analysis/simulate_results.py`)

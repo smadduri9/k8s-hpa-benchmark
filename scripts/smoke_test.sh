@@ -328,12 +328,35 @@ verify_trap_scenario() {
   local marker="/tmp/trap-test-${mode}-$$.log"
   local pf_port=$((19100 + RANDOM % 500))
   local rc=0
+  local pf_pid="" hb_pid=""
 
   bash "${SCRIPT_DIR}/lib/trap_test_runner.sh" "${mode}" "${marker}" "${NAMESPACE}" "${CLUSTER_NAME}" "${pf_port}" &
   local runner_pid=$!
-  sleep 3
+
+  local waited=0
+  while [[ "${waited}" -lt 20 ]]; do
+    if [[ -f "${marker}" ]] && grep -q '^pf_pid=' "${marker}"; then
+      pf_pid="$(grep '^pf_pid=' "${marker}" | cut -d= -f2 || true)"
+      hb_pid="$(grep '^hb_pid=' "${marker}" | cut -d= -f2 || true)"
+      break
+    fi
+    sleep 0.2
+    waited=$((waited + 1))
+  done
+
+  if [[ -z "${pf_pid}" ]]; then
+    die "trap test ${mode}: pf_pid not recorded in marker"
+  fi
+
+  echo "PS_BEFORE mode=${mode} pf_pid=${pf_pid} hb_pid=${hb_pid:-MISSING}"
+  ps -p "${pf_pid}" -o pid=,ppid=,etime=,command= 2>/dev/null || echo "PS_BEFORE pf_pid=${pf_pid} not listed"
+  if [[ -n "${hb_pid}" ]]; then
+    ps -p "${hb_pid}" -o pid=,ppid=,etime=,command= 2>/dev/null || echo "PS_BEFORE hb_pid=${hb_pid} not listed"
+  fi
+  ps aux | grep -E '[H]EARTBEAT trap-verify' || true
 
   if [[ "${mode}" == "sigint" ]]; then
+    sleep 1
     kill -INT "${runner_pid}" 2>/dev/null || true
     sleep 2
     if ps -p "${runner_pid}" >/dev/null 2>&1; then
@@ -348,9 +371,8 @@ verify_trap_scenario() {
   rc=$?
   set -e
 
-  local pf_pid=""
   if [[ -f "${marker}" ]]; then
-    pf_pid="$(grep '^pf_pid=' "${marker}" | cut -d= -f2 || true)"
+    sed -n '/^PS_SNAPSHOT_BEFORE_BEGIN$/,/^PS_SNAPSHOT_BEFORE_END$/p' "${marker}" || true
     cat "${marker}"
   fi
 
@@ -358,8 +380,26 @@ verify_trap_scenario() {
     die "trap test ${mode}: TRAP_FIRED marker missing"
   fi
 
-  if [[ -n "${pf_pid}" ]] && ps -p "${pf_pid}" >/dev/null 2>&1; then
+  echo "PS_AFTER mode=${mode} pf_pid=${pf_pid} hb_pid=${hb_pid:-MISSING}"
+  if ps -p "${pf_pid}" >/dev/null 2>&1; then
+    ps -p "${pf_pid}" -o pid=,ppid=,etime=,command=
     die "trap test ${mode}: port-forward pid ${pf_pid} still running after trap"
+  else
+    echo "PS_AFTER pf_pid=${pf_pid} not listed (expected)"
+  fi
+  if [[ -n "${hb_pid}" ]]; then
+    if ps -p "${hb_pid}" >/dev/null 2>&1; then
+      ps -p "${hb_pid}" -o pid=,ppid=,etime=,command=
+      die "trap test ${mode}: heartbeat pid ${hb_pid} still running after trap"
+    else
+      echo "PS_AFTER hb_pid=${hb_pid} not listed (expected)"
+    fi
+  fi
+  if pgrep -f 'HEARTBEAT trap-verify' >/dev/null 2>&1; then
+    ps aux | grep -E '[H]EARTBEAT trap-verify' || true
+    die "trap test ${mode}: heartbeat subshell still present after trap"
+  else
+    echo "PS_AFTER no HEARTBEAT trap-verify processes (expected)"
   fi
   if lsof -nP -iTCP:"${pf_port}" -sTCP:LISTEN >/dev/null 2>&1; then
     die "trap test ${mode}: port ${pf_port} still listening after trap"
@@ -375,6 +415,7 @@ verify_trap_scenario() {
 }
 
 check_preflight_traps() {
+  echo "TEARDOWN_POLICY cluster=on-failure-only port_forwards=always background_pids=always success_cluster_delete=never"
   bash "${SCRIPT_DIR}/preflight.sh" ${ENV_FILE:+--env-file "${ENV_FILE}"}
 
   kubectl config use-context "kind-${CLUSTER_NAME}" >/dev/null 2>&1 || true
