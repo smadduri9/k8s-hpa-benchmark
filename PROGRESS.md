@@ -1174,3 +1174,45 @@ SMOKE_SUITE_PASS
 
 - **Surprises:** `check_assertions` needed `--skip-label-isolation` (label isolation has dedicated positive/negative checks). Full suite now includes `negative_label_isolation` and `BOTH_DEPLOYMENTS_UP=true` for positive label-isolation.
 
+---
+
+## t1-f-full-smoke-suite-honest (supersedes 2026-09-03 dishonest pass, 2026-09-04)
+
+- **Files touched:** `scripts/smoke_test.sh`, `HANDOFF.md`
+- **Goal:** `--full` runs every check for real; locust-authority fresh by default; GKE identity guards require `--env-file`.
+- **Changes:**
+  - `--full` requires `--env-file`; passes through to `check_preflight_traps` (no `PROJECT_CLUSTER_VERIFICATION_SKIPPED`).
+  - `--reuse-artifacts` opt-in (default off); reuse prints `REUSED_ARTIFACTS run_id=…`, fresh run prints `LOCUST_FRESH_RUN`.
+  - Split kind vs GKE cluster names (`KIND_CLUSTER=hpa-eval-smoke`, `GKE_CLUSTER_NAME` from `.env`).
+  - `verify_metric_contract` warms `/cpu` before scrape (empty histogram has no `_bucket` series; was silently aborting suite after `HPA_UTILIZATION_PRESENT`).
+  - `HANDOFF.md`: post-run GCP orphan verification commands, LoadBalancer note, `destructive_gke_teardown` never deletes, zonal spend estimate.
+- **Verification command:** `bash scripts/smoke_test.sh --full --env-file .env`
+- **Elapsed time:** ~14.5 min (869s wall clock)
+- **Exit code:** 0 (`SMOKE_SUITE_PASS`)
+
+### Honesty checks (this pass)
+
+| Check | Evidence |
+|-------|----------|
+| Fresh locust (not reuse) | `LOCUST_FRESH_RUN run_id=smoke-locust` (no `REUSED_ARTIFACTS`) |
+| Locust actually ran | `LOCUST_PID_CONFIRMED pid=73614` (fixed arm, 2026-09-04T00:29:04Z); `LOCUST_PID_CONFIRMED pid=73830` (hpa arm, 2026-09-04T00:33:14Z) |
+| Benchmark summary | `SUMMARY attempted=1 passed=1` |
+| GKE identity guards | `NEGATIVE_CLUSTER_VERIFICATION_PASS`, `PROJECT_CLUSTER_VERIFICATION_REQUIRED` (not skipped) |
+| Metric contract | `METRIC_CONTRACT_VERIFIED` (both harness passes) |
+| Suite | `NEGATIVE_ASSERTION_TEST_PASS`, `ALL_TIER1_ASSERTIONS_EXERCISED`, `SMOKE_SUITE_PASS` |
+
+### Key output excerpts
+
+```
+LOCUST_FRESH_RUN run_id=smoke-locust
+LOCUST_PID_CONFIRMED pid=73614 confirmed_at=2026-09-04T00:29:04Z attempt=1 command=.../locust ... --host http://127.0.0.1:30080 --headless --run-time 4m ...
+LOCUST_PID_CONFIRMED pid=73830 confirmed_at=2026-09-04T00:33:14Z attempt=1 command=.../locust ... --host http://127.0.0.1:30081 --headless --run-time 4m ...
+SUMMARY attempted=1 passed=1
+NEGATIVE_CLUSTER_VERIFICATION_PASS
+PROJECT_CLUSTER_VERIFICATION_REQUIRED
+SMOKE_SUITE_PASS
+```
+
+Full log: `/tmp/t1-f-full-honest-verify.log` (691 lines).
+
+- **Surprises:** Prior `--full` without `--env-file` skipped GKE guards and reused locust artifacts (ingest-only). Empty histogram on cold pods caused `verify_metric_contract` to fail silently at `grep app_request_latency_seconds_bucket` (set -e), truncating the suite before locust.

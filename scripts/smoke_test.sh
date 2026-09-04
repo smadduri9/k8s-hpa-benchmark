@@ -18,7 +18,9 @@ NEGATIVE_TEST=""
 MODE="fixed"
 BOTH_DEPLOYMENTS_UP=false
 FULL=false
-CLUSTER_NAME="${KIND_CLUSTER_NAME:-hpa-eval-smoke}"
+REUSE_ARTIFACTS=false
+KIND_CLUSTER="${KIND_CLUSTER_NAME:-hpa-eval-smoke}"
+GKE_CLUSTER_NAME=""
 IMAGE_NAME="hpa-eval-app:smoke"
 NAMESPACE="hpa-eval"
 
@@ -28,7 +30,8 @@ Usage:
   bash scripts/smoke_test.sh --check harness
   bash scripts/smoke_test.sh --check coldstart|assertions|fixed-metrics|label-isolation|locust-authority|preflight-traps|handoff-docs|error-rate-positive
   bash scripts/smoke_test.sh --negative-test fixed-replica-assert|empty-metrics-column|missing-locust-hpa|missing-locust-fixed|hpa-never-scaled|label-isolation|coldstart-readiness
-  bash scripts/smoke_test.sh --full
+  bash scripts/smoke_test.sh --full --env-file .env [--reuse-artifacts]
+  bash scripts/smoke_test.sh --check locust-authority [--reuse-artifacts]
 EOF
 }
 
@@ -40,12 +43,15 @@ while [[ $# -gt 0 ]]; do
     --mode) MODE="$2"; shift 2 ;;
     --both-deployments-up) BOTH_DEPLOYMENTS_UP=true; shift ;;
     --full) FULL=true; shift ;;
+    --reuse-artifacts) REUSE_ARTIFACTS=true; shift ;;
     -h|--help) usage; exit 0 ;;
     *) die "unknown argument: $1" ;;
   esac
 done
 
 load_env_file "${ENV_FILE}"
+GKE_CLUSTER_NAME="${CLUSTER_NAME:-}"
+CLUSTER_NAME="${KIND_CLUSTER}"
 require_venv
 
 ensure_kind_cluster() {
@@ -101,6 +107,9 @@ verify_hpa_percentage() {
 verify_metric_contract() {
   local pod
   pod="$(kubectl get pods -n "${NAMESPACE}" -l app=hpa-eval,experiment=fixed -o jsonpath='{.items[0].metadata.name}')"
+  # Histogram _bucket series appear only after at least one observed request.
+  kubectl exec -n "${NAMESPACE}" "${pod}" -- python3 -c \
+    "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/cpu?intensity=low')" >/dev/null
   local raw
   raw="$(kubectl exec -n "${NAMESPACE}" "${pod}" -- python3 -c "import urllib.request; print(urllib.request.urlopen('http://127.0.0.1:8000/metrics').read().decode())")"
   echo "${raw}" | grep -q 'app_requests_total'
@@ -278,28 +287,29 @@ check_error_rate_positive() {
 }
 
 check_locust_authority() {
-  local run_root="${REPO_ROOT}/results/runs/smoke-locust"
+  local run_id="smoke-locust"
+  local run_root="${REPO_ROOT}/results/runs/${run_id}"
   local run_dir="${run_root}/rep-1"
   local status_file="${run_root}/STATUS"
-  local needs_run=false
-  if [[ ! -f "${run_dir}/locust_fixed_stats.csv" || ! -f "${run_dir}/locust_hpa_stats.csv" ]]; then
-    needs_run=true
-  elif [[ ! -f "${status_file}" ]] || ! head -n1 "${status_file}" | grep -qx "COMPLETE"; then
-    needs_run=true
-  else
-    local fig
-    for fig in latency_comparison.png throughput_comparison.png cpu_replicas.png cost_performance.png; do
-      if [[ ! -f "${run_dir}/figures/${fig}" ]]; then
-        needs_run=true
-        break
-      fi
-    done
-  fi
 
-  if [[ "${needs_run}" == "true" ]]; then
+  locust_artifacts_complete() {
+    [[ -f "${run_dir}/locust_fixed_stats.csv" && -f "${run_dir}/locust_hpa_stats.csv" ]] \
+      && [[ -f "${status_file}" ]] \
+      && head -n1 "${status_file}" | grep -qx "COMPLETE" \
+      && [[ -f "${run_dir}/figures/latency_comparison.png" ]] \
+      && [[ -f "${run_dir}/figures/throughput_comparison.png" ]] \
+      && [[ -f "${run_dir}/figures/cpu_replicas.png" ]] \
+      && [[ -f "${run_dir}/figures/cost_performance.png" ]]
+  }
+
+  if [[ "${REUSE_ARTIFACTS}" == "true" ]] && locust_artifacts_complete; then
+    echo "REUSED_ARTIFACTS run_id=${run_id}"
+  else
     pkill -f 'HEARTBEAT locust-' 2>/dev/null || true
     rm -rf "${run_root}"
-    bash "${SCRIPT_DIR}/run_benchmark.sh" --smoke --repetitions 1 --run-id smoke-locust || die "run_benchmark.sh failed for locust-authority"
+    echo "LOCUST_FRESH_RUN run_id=${run_id}"
+    bash "${SCRIPT_DIR}/run_benchmark.sh" --smoke --repetitions 1 --run-id "${run_id}" \
+      || die "run_benchmark.sh failed for locust-authority"
     run_dir="${run_root}/rep-1"
   fi
 
@@ -432,13 +442,15 @@ check_preflight_traps() {
   if [[ -n "${ENV_FILE}" && -f "${ENV_FILE}" ]]; then
     load_env_file "${ENV_FILE}"
     require_env PROJECT_ID
-    require_env CLUSTER_NAME
+    if [[ -z "${GKE_CLUSTER_NAME}" ]]; then
+      die "preflight-traps requires CLUSTER_NAME in --env-file for GKE identity guards"
+    fi
     require_env REGION
 
     set +e
     local neg_output
     neg_output="$(CLUSTER_NAME="wrong-cluster-name-deliberate" \
-      bash -c "source '${SCRIPT_DIR}/lib/common.sh'; source '${SCRIPT_DIR}/lib/cleanup.sh'; destructive_gke_teardown '${PROJECT_ID}' '${CLUSTER_NAME}' '${REGION}'" 2>&1)"
+      bash -c "source '${SCRIPT_DIR}/lib/common.sh'; source '${SCRIPT_DIR}/lib/cleanup.sh'; destructive_gke_teardown '${PROJECT_ID}' '${GKE_CLUSTER_NAME}' '${REGION}'" 2>&1)"
     local neg_rc=$?
     set -e
     echo "${neg_output}"
@@ -450,10 +462,10 @@ check_preflight_traps() {
     fi
     echo "NEGATIVE_CLUSTER_VERIFICATION_PASS"
 
-    destructive_gke_teardown "${PROJECT_ID}" "${CLUSTER_NAME}" "${REGION}"
+    destructive_gke_teardown "${PROJECT_ID}" "${GKE_CLUSTER_NAME}" "${REGION}"
     echo "PROJECT_CLUSTER_VERIFICATION_REQUIRED"
   else
-    echo "PROJECT_CLUSTER_VERIFICATION_SKIPPED no --env-file"
+    die "preflight-traps requires --env-file for GKE identity guards"
   fi
 
   echo "TRAP_CLEANUP_VERIFIED"
@@ -741,6 +753,9 @@ negative_label_isolation() {
 }
 
 run_full_suite() {
+  if [[ -z "${ENV_FILE}" ]]; then
+    die "--full requires --env-file so preflight-traps exercises GKE identity guards"
+  fi
   check_harness
   check_coldstart
   check_assertions
