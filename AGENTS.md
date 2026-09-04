@@ -6,7 +6,7 @@
 - Never infer the GCP project from gcloud config. Required vars come from `.env` or flags; missing means exit 1.
 - Destructive cloud operations must verify expected cluster name AND project before executing.
 - Commit after every completed item with the item ID in the message. Cursor checkpoints do not track bash-created files, so git is the only real undo.
-- Locust invocation is exactly: `--headless --csv <base> --csv-full-history`. Never add `--processes` (crashes with `--csv-full-history`, locust#2908). Never pass `--users` or `--spawn-rate` (`LoadTestShape` overrides them; they are inert).
+- Locust invocation is exactly: `--headless --csv <base> --csv-full-history --exit-code-on-error 0`. Never add `--processes` (crashes with `--csv-full-history`, locust#2908). Never pass `--users` or `--spawn-rate` (`LoadTestShape` overrides them; they are inert). Arm success is artifact-based (stats CSV + shape completion), not Locust exit code.
 - Never patch a container's args array wholesale. Vendor the full manifest or append. Replacing args silently drops upstream defaults — this caused the t1-0 gate failure.
 - All Python and Locust invocations use `"${REPO_ROOT}/.venv/bin/python"` and `"${REPO_ROOT}/.venv/bin/locust"`, always quoted. Never call bare `python3` or `locust` in repo scripts. The repo path contains a space; every path expansion must be quoted.
 - Tooling runs in the repo venv at `.venv/` (Python **3.14**). Create with `python3 -m venv .venv` and install `requirements-tooling.txt`. Preflight fails if `.venv` is absent and prints creation commands. Preflight imports every `analysis/*.py` module plus `numpy` and `matplotlib` via the venv interpreter.

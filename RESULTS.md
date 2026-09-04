@@ -29,6 +29,11 @@ Two published rows per arm at the start of the window (`t0` and `t0+step`) are o
 - **Symmetric across arms:** Both fixed and HPA arms see the same two-row gap, so comparative analysis is unaffected.
 - **Expected coverage (no warm-up traffic):** At `step=15` and `rate_window_sec=30`, expect two `MISSING` rate-derived rows per arm. Published row counts: **41 at 10m smoke** → **39/41 (0.9512)**; **73 at 18m production** → **~71/73 (0.973)**. Do not add pre-burst request traffic to populate these rows — that would alter the counter baseline before `t0`.
 
+## Locust failure semantics
+
+- **`Unexpected status 0`:** In Locust logs/CSV this means the HTTP client received no response (connection error, timeout, or reset) — **not** an HTTP 5xx. It is the same error class as the original repo's burst-onset connection failures.
+- **Exit code vs measurement:** Locust exits non-zero when any sample fails unless `--exit-code-on-error 0` is set. Request failures are the measurement under burst load; the harness treats a completed load shape with valid stats as success (`LOCUST_NONZERO_EXIT_IGNORED` when exit code is ignored).
+
 ## Failure rate (fixed arm)
 - **Value:** `PENDING_RERUN`
 - **Formula:** `failures / requests` from Locust Aggregated row

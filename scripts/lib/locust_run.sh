@@ -41,8 +41,9 @@ harness_echo() {
   shift
   if [[ -n "${harness_log}" ]]; then
     echo "$@" >> "${harness_log}"
+  else
+    echo "$@" >&2
   fi
-  echo "$@" >&2
 }
 
 verify_load_target_reachable() {
@@ -71,6 +72,8 @@ print_locust_command_line() {
     --run-time "${run_time}"
     --csv "${csv_base}"
     --csv-full-history
+    --exit-code-on-error
+    0
     --logfile "${log_file}"
   )
   local cmd_line=""
@@ -135,6 +138,7 @@ locust_start_bounded() {
     --run-time "${run_time}" \
     --csv "${csv_base}" \
     --csv-full-history \
+    --exit-code-on-error 0 \
     --logfile "${log_file}" >> "${log_file}" 2>&1 &
   local locust_pid=$!
 
@@ -184,15 +188,21 @@ locust_wait_bounded() {
     wait "${watcher_pid}" 2>/dev/null || true
   fi
 
-  if [[ "${rc}" -ne 0 ]]; then
-    if grep -q "LOCUST_TIMEOUT" "${log_file}" 2>/dev/null; then
-      die "LOCUST_TIMEOUT run_time=${run_time} wall_sec=${wall_secs}"
-    fi
-    die "LOCUST_FAILED exit_code=${rc}"
+  if grep -q "LOCUST_TIMEOUT" "${log_file}" 2>/dev/null; then
+    die "LOCUST_TIMEOUT run_time=${run_time} wall_sec=${wall_secs}"
   fi
 
-  if [[ ! -f "${csv_base}_stats.csv" ]]; then
-    die "LOCUST_STATS_MISSING csv_base=${csv_base}"
+  local validate_py="${LIB_DIR}/locust_validate_arm.py"
+  local validate_rc=0
+  set +e
+  "${VENV_PYTHON}" "${validate_py}" "${csv_base}_stats.csv" "${log_file}" "${rc}" >> "${harness_log}" 2>&1
+  validate_rc=$?
+  set -e
+  if [[ "${validate_rc}" -ne 0 ]]; then
+    if [[ "${rc}" -ne 0 ]]; then
+      die "LOCUST_FAILED exit_code=${rc}"
+    fi
+    die "LOCUST_ARTIFACTS_INVALID stats_csv=${csv_base}_stats.csv log=${log_file}"
   fi
 
   harness_echo "${harness_log}" "LOCUST_COMPLETE run_time=${run_time} csv_base=${csv_base}"

@@ -146,8 +146,11 @@ heartbeat_start() {
   local label="$2"
   { while true; do
       local line="[$(iso_now)] HEARTBEAT ${label}"
-      echo "${line}" >> "${log_file}"
-      echo "${line}" >&2
+      if [[ -n "${log_file}" ]]; then
+        echo "${line}" >> "${log_file}"
+      else
+        echo "${line}" >&2
+      fi
       sleep 60
     done
   } &

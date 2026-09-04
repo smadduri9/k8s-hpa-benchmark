@@ -113,7 +113,7 @@ run_locust_arm() {
 
   local t0
   t0="$(iso_now)"
-  echo "LOAD_START t0=${t0}" | tee -a "${harness_log}"
+  echo "LOAD_START t0=${t0}" >> "${harness_log}"
   echo "${t0}" > "${t0_file}"
   manifest_set_load_start_t0 "${MANIFEST_PATH}" "${arm}" "${t0}"
 
