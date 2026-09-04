@@ -14,7 +14,7 @@
 | Cold-start scale-to-zero | yes | not yet |
 | HPA utilization % | yes (reduced topology) | not yet |
 | Label isolation | yes | not yet |
-| 18-minute load shape | no (4-minute smoke only) | not yet |
+| 18-minute load shape | no (10-minute smoke only; production 18m not yet on GKE) | not yet |
 | Cost/SLO modules | deferred Tier 2/3 | not yet |
 
 ## Expected GKE spend (zonal cluster, fixed node pool)
@@ -78,9 +78,11 @@ Autoscale above 3 nodes is disabled (fixed pool). Leaving load balancers/disks a
 
 ## Service type on GKE
 
-`k8s/service.yaml` declares **`type: LoadBalancer`** for both `hpa-eval-fixed-svc` and `hpa-eval-hpa-svc`. On GKE each Service provisions a cloud load balancer — the most common cost orphan after teardown.
+`k8s/service.yaml` declares **`type: LoadBalancer`** for both `hpa-eval-fixed-svc` and `hpa-eval-hpa-svc`. On GKE each Service provisions a cloud load balancer.
 
-**Recommendation for cost-sensitive runs:** patch to `NodePort` (as the kind smoke kustomize overlay already does) and reach apps via `kubectl port-forward` or a single ingress you control. `run_benchmark.sh` accepts `--fixed-host` / `--hpa-host` flags for non-LoadBalancer endpoints.
+**Keep LoadBalancer (do not switch to NodePort + port-forward).** `kubectl port-forward` is a single TCP tunnel through the API server. At 80 concurrent users for 18 minutes it becomes the bottleneck and the benchmark would measure the tunnel, not the HPA. The ~$0.15/session load-balancer cost is the correct trade for externally reachable endpoints.
+
+`run_benchmark.sh` waits for both Services to receive an external IP and pass `GET /health` before cold-start begins (`LOADBALANCER_GATE_*` log markers). On timeout it exits with **`LOADBALANCER_NOT_READY`** so LB provisioning time is never folded into `t0`.
 
 Prometheus remains `ClusterIP`; collect metrics via port-forward (as smoke tests do).
 
@@ -106,7 +108,7 @@ bash scripts/smoke_test.sh --full --env-file .env
 
 Use `--reuse-artifacts` only when intentionally skipping a fresh locust benchmark (prints `REUSED_ARTIFACTS run_id=…`).
 
-### 3) GKE abbreviated smoke while watching (~10 min)
+### 3) GKE abbreviated smoke while watching (~25–35 min)
 ```bash
 bash scripts/deploy_gke.sh --env-file .env
 bash scripts/run_benchmark.sh --env-file .env --smoke --repetitions 1
@@ -114,8 +116,10 @@ bash scripts/run_benchmark.sh --env-file .env --smoke --repetitions 1
 
 ### 4) Full GKE benchmark (walk-away)
 ```bash
-nohup bash scripts/run_benchmark.sh --env-file .env --repetitions 3 > results/latest.nohup.log 2>&1 &
+nohup bash scripts/run_benchmark.sh --env-file .env --repetitions 1 > results/latest.nohup.log 2>&1 &
 ```
+
+Pass `--repetitions 3` explicitly only when you want a multi-run statistical sample (default is `1`).
 
 ### 5) Post-run status checks
 ```bash
@@ -126,7 +130,7 @@ tail -f results/runs/<run_id>/rep-1/rep.log
 
 ### 6) Post-run GCP orphan cleanup verification
 
-Run after **every** GKE session. GKE deletes load balancer forwarding rules when the cluster is deleted, but **persistent disks** and **static IPs** are often retained. Leftover load balancers block VPC deletion.
+Run after **every** GKE session. GKE deletes load balancer forwarding rules when the cluster is deleted, but **persistent disks**, **static IPs**, and **firewall rules** are often retained. Leftover forwarding rules and `k8s-*` firewall rules block VPC deletion.
 
 Replace project id if yours differs:
 
@@ -134,11 +138,13 @@ Replace project id if yours differs:
 gcloud container clusters list --project=hpa-benchmark-2026
 gcloud compute forwarding-rules list --project=hpa-benchmark-2026
 gcloud compute target-pools list --project=hpa-benchmark-2026
+gcloud compute firewall-rules list --project=hpa-benchmark-2026 \
+  --filter="name~'^k8s-'"
 gcloud compute disks list --filter="-users:*" --project=hpa-benchmark-2026
 gcloud compute addresses list --project=hpa-benchmark-2026
 ```
 
-**Pass criteria:** clusters list empty (or only the cluster you expect); forwarding-rules, target-pools, and unused disks/addresses empty or explicitly accounted for. Delete orphans before removing the VPC.
+**Pass criteria:** clusters list empty (or only the cluster you expect); forwarding-rules, target-pools, `k8s-*` firewall rules, and unused disks/addresses empty or explicitly accounted for. Delete orphans before removing the VPC.
 
 ## Trust checks before publishing
 1. `STATUS` is `COMPLETE` (or understand `PARTIAL` failure reasons in `rep-*/status.json`).

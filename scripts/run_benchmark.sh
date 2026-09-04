@@ -14,6 +14,8 @@ source "${LIBS_DIR}/cleanup.sh"
 source "${LIBS_DIR}/cold_start.sh"
 # shellcheck source=lib/locust_run.sh
 source "${LIBS_DIR}/locust_run.sh"
+# shellcheck source=lib/loadbalancer.sh
+source "${LIBS_DIR}/loadbalancer.sh"
 
 ENV_FILE=""
 SMOKE=false
@@ -257,14 +259,9 @@ run_one_repetition() {
   return 1
 }
 
-discover_hosts_kind() {
-  FIXED_HOST="http://127.0.0.1:30080"
-  HPA_HOST="http://127.0.0.1:30081"
-}
-
 main() {
-  if [[ -z "${FIXED_HOST}" || -z "${HPA_HOST}" ]]; then
-    discover_hosts_kind
+  if [[ "${COLD_START_ONLY}" != "true" ]]; then
+    ensure_loadbalancer_hosts_ready
   fi
 
   local attempted=0 passed=0
