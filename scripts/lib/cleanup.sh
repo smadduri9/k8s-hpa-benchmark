@@ -77,3 +77,31 @@ verify_cluster_target() {
   log "PROJECT_CLUSTER_VERIFICATION_REQUIRED"
   log "Verified target project=${PROJECT_ID} cluster=${CLUSTER_NAME} region=${expected_region:-N/A} context=${current_cluster}"
 }
+
+reset_prometheus_deployment() {
+  kubectl rollout restart deployment/prometheus -n "${NAMESPACE}" >/dev/null
+  kubectl rollout status deployment/prometheus -n "${NAMESPACE}" --timeout=120s
+  echo "PROMETHEUS_TSDB_RESET namespace=${NAMESPACE}"
+}
+
+wait_prometheus_scrape_ready() {
+  pkill -f "kubectl port-forward svc/prometheus.*${NAMESPACE}" 2>/dev/null || true
+  sleep 1
+  local pf_port=$((29090 + RANDOM % 1000))
+  kubectl port-forward "svc/prometheus" "${pf_port}:9090" -n "${NAMESPACE}" >/dev/null 2>&1 &
+  local pf=$!
+  sleep 3
+  local attempt
+  for attempt in $(seq 1 36); do
+    if curl -sf "http://127.0.0.1:${pf_port}/api/v1/query?query=up" 2>/dev/null | grep -q '"status":"success"'; then
+      echo "PROMETHEUS_SCRAPE_READY attempt=${attempt} port=${pf_port}"
+      kill "${pf}" 2>/dev/null || true
+      wait "${pf}" 2>/dev/null || true
+      return 0
+    fi
+    sleep 5
+  done
+  kill "${pf}" 2>/dev/null || true
+  wait "${pf}" 2>/dev/null || true
+  die "prometheus API not ready within 180s after TSDB reset"
+}

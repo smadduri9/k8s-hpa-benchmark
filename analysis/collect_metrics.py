@@ -1,18 +1,17 @@
 """
 Queries Prometheus HTTP API to collect experiment metrics and export to CSV.
 
+Published analysis window (--start/--end): inclusive LOAD_START t0 through t0+RUN_TIME.
+Every timestamp in that window is written to CSV; coverage assessment uses all
+published rows with no warmup or edge exclusions. Unqueryable cells are MISSING.
+
+Prometheus rate(...[1m]) needs samples before t0; queries use a 60s pre-roll
+(METRIC_QUERY_PREROLL_SEC) before --start. Pre-roll rows are not published.
+
 Authority split (documented):
   - Locust is authoritative for request counts, successes, and failures.
   - Prometheus is authoritative for CPU and timing metrics in this module.
   - Replicas are sampled from the Kubernetes API via kubectl (not Prometheus).
-
-Usage:
-  python3 analysis/collect_metrics.py \\
-    --mode fixed \\
-    --prometheus-url http://localhost:9090 \\
-    --start 2026-03-17T23:04:57Z \\
-    --end 2026-03-17T23:22:57Z \\
-    --output results/runs/<run_id>/rep-1/fixed_metrics.csv
 """
 
 from __future__ import annotations
@@ -34,6 +33,7 @@ if str(_ANALYSIS_DIR) not in sys.path:
     sys.path.insert(0, str(_ANALYSIS_DIR))
 
 from metrics_contract import (
+    METRIC_QUERY_PREROLL_SEC,
     MISSING,
     REQUIRED_VALUE_COLUMNS,
     assert_column_coverage,
@@ -65,29 +65,40 @@ DEPLOYMENT_BY_MODE = {
 OPPOSITE_EXPERIMENT = {"fixed": "hpa", "hpa": "fixed"}
 
 
-def build_queries(mode: str) -> dict[str, str]:
+# Prometheus default scrape interval in k8s/prometheus/configmap.yaml
+PROMETHEUS_SCRAPE_INTERVAL_SEC = 15
+
+
+def rate_window_sec(step: int) -> int:
+    """Rate/increase lookback: at least 2x scrape interval, aligned to step."""
+    return max(step, 2 * PROMETHEUS_SCRAPE_INTERVAL_SEC)
+
+
+def build_queries(mode: str, step: int) -> dict[str, str]:
     label = f'experiment="{mode}"'
+    rate_window = f"{rate_window_sec(step)}s"
     return {
         "cpu_utilization_pct": f"avg(app_cpu_usage_percent{{{label}}})",
         "latency_p50_ms": (
-            f"histogram_quantile(0.50, sum(rate(app_request_latency_seconds_bucket{{{label}}}[1m])) by (le)) * 1000"
+            f"histogram_quantile(0.50, sum(rate(app_request_latency_seconds_bucket{{{label}}}[{rate_window}])) by (le)) * 1000"
         ),
         "latency_p95_ms": (
-            f"histogram_quantile(0.95, sum(rate(app_request_latency_seconds_bucket{{{label}}}[1m])) by (le)) * 1000"
+            f"histogram_quantile(0.95, sum(rate(app_request_latency_seconds_bucket{{{label}}}[{rate_window}])) by (le)) * 1000"
         ),
         "latency_p99_ms": (
-            f"histogram_quantile(0.99, sum(rate(app_request_latency_seconds_bucket{{{label}}}[1m])) by (le)) * 1000"
+            f"histogram_quantile(0.99, sum(rate(app_request_latency_seconds_bucket{{{label}}}[{rate_window}])) by (le)) * 1000"
         ),
-        "rps": f'sum(rate(app_requests_total{{{label},status_code="200"}}[1m]))',
+        "rps": f'sum(rate(app_requests_total{{{label},status_code="200"}}[{rate_window}]))',
     }
 
 
-def build_error_rate_queries(mode: str) -> dict[str, str]:
+def build_error_rate_queries(mode: str, step: int) -> dict[str, str]:
     label = f'experiment="{mode}"'
+    rate_window = f"{rate_window_sec(step)}s"
     return {
-        "request_total_rate": f"sum(rate(app_requests_total{{{label}}}[1m]))",
+        "request_total_rate": f"sum(rate(app_requests_total{{{label}}}[{rate_window}]))",
         "request_failure_rate": (
-            f'sum(rate(app_requests_total{{{label},status_code!="200"}}[1m]))'
+            f'sum(rate(app_requests_total{{{label},status_code!="200"}}[{rate_window}]))'
         ),
     }
 
@@ -270,16 +281,30 @@ def collect(
     min_replicas: int | None = None,
     run_label_isolation_check: bool = True,
 ) -> list[dict]:
-    print(f"ANCHOR_WINDOW_ENFORCED start={datetime.fromtimestamp(start_ts, tz=timezone.utc).isoformat()} end={datetime.fromtimestamp(end_ts, tz=timezone.utc).isoformat()}")
+    publish_start_ts = start_ts
+    publish_end_ts = end_ts
+    query_start_ts = publish_start_ts - METRIC_QUERY_PREROLL_SEC
+
+    print(
+        "ANCHOR_WINDOW_ENFORCED "
+        f"start={datetime.fromtimestamp(publish_start_ts, tz=timezone.utc).isoformat()} "
+        f"end={datetime.fromtimestamp(publish_end_ts, tz=timezone.utc).isoformat()}"
+    )
+    print(
+        f"METRIC_QUERY_PREROLL_SEC={METRIC_QUERY_PREROLL_SEC} "
+        f"rate_window_sec={rate_window_sec(step)} "
+        f"query_start={datetime.fromtimestamp(query_start_ts, tz=timezone.utc).isoformat()} "
+        "published_rows_only=true no_row_exclusions=true"
+    )
 
     if run_label_isolation_check:
-        assert_label_isolation(prometheus_url, mode, start_ts, end_ts)
+        assert_label_isolation(prometheus_url, mode, publish_start_ts, publish_end_ts)
 
     deployment = DEPLOYMENT_BY_MODE[mode]
     if mode == "hpa" and min_replicas is not None:
         peak_replicas = 0
-        ts = start_ts
-        while ts <= end_ts:
+        ts = publish_start_ts
+        while ts <= publish_end_ts:
             replica_val = sample_ready_replicas(namespace, deployment)
             if replica_val is not None:
                 peak_replicas = max(peak_replicas, replica_val)
@@ -292,16 +317,16 @@ def collect(
             raise RuntimeError(msg)
         print(f"HPA_SCALE_FLOOR_CHECK peak={peak_replicas} minReplicas={min_replicas}")
 
-    queries = build_queries(mode)
-    error_queries = build_error_rate_queries(mode)
+    queries = build_queries(mode, step)
+    error_queries = build_error_rate_queries(mode, step)
     series: dict[str, list[tuple[float, float]]] = {}
     for metric, promql in queries.items():
         print(f"Querying {metric}: {promql}")
         series[metric] = query_range(
             prometheus_url,
             promql,
-            start_ts,
-            end_ts,
+            query_start_ts,
+            publish_end_ts,
             step,
         )
 
@@ -309,8 +334,8 @@ def collect(
     total_rate_series = query_range(
         prometheus_url,
         error_queries["request_total_rate"],
-        start_ts,
-        end_ts,
+        query_start_ts,
+        publish_end_ts,
         step,
         allow_empty=True,
     )
@@ -318,8 +343,8 @@ def collect(
     failure_rate_raw = query_range_raw(
         prometheus_url,
         error_queries["request_failure_rate"],
-        start_ts,
-        end_ts,
+        query_start_ts,
+        publish_end_ts,
         step,
         retries=1,
     )
@@ -334,6 +359,8 @@ def collect(
     rows: list[dict] = []
 
     for ts, _ in ref:
+        if ts < publish_start_ts - (step / 2) or ts > publish_end_ts + (step / 2):
+            continue
         replica_val = sample_ready_replicas(namespace, deployment)
         if assert_replicas is not None and replica_val is not None and replica_val != assert_replicas:
             msg = (
@@ -348,7 +375,7 @@ def collect(
 
         row = {
             "timestamp": datetime.fromtimestamp(ts, tz=timezone.utc).isoformat(),
-            "elapsed_seconds": int(ts - start_ts),
+            "elapsed_seconds": int(ts - publish_start_ts),
             "experiment": mode,
             "data_source": "MEASURED",
             "run_id": run_id,
@@ -368,7 +395,7 @@ def collect(
         )
         rows.append(row)
 
-    assert_column_coverage(rows, step_sec=step)
+    assert_column_coverage(rows)
     return rows
 
 

@@ -1246,3 +1246,30 @@ SMOKE_SUITE_PASS
 ```
 
 - **Surprises:** Re-running `--full` on a Prometheus TSDB polluted by a prior `/fail` error-rate test can make `check_fixed-metrics` see non-zero `error_rate`; restart Prometheus before a clean gate if re-running locally.
+
+---
+
+## t1-burst-window: publish t0..t0+RUN_TIME + Prometheus auto-reset (2026-09-04)
+
+- **Files touched:** `analysis/collect_metrics.py`, `analysis/metrics_contract.py`, `scripts/run_benchmark.sh`, `scripts/lib/common.sh`, `scripts/lib/cleanup.sh`, `scripts/smoke_test.sh`, `locust/locustfile_smoke.py`, `RESULTS.md`
+- **Issue 1 — burst excluded:** Collection had been anchored `t0+60s` → `t0+RUN_TIME`, dropping the first minute of load. Fixed: 60s scrape pre-roll during post-cold-start wait (`ensure_metrics_preroll`); published window is `t0` → `t0+RUN_TIME` with no row exclusions; PromQL queries from `t0-60s`.
+- **Issue 2 — Prometheus state leak:** `reset_prometheus_deployment` + `wait_prometheus_scrape_ready` at `--full` suite start and after `check_error_rate_positive`; no operator restart instruction required.
+- **Smoke shape:** `locustfile_smoke.py` extended to 10m with sustained low load after burst (removed early `runner.quit()` that stopped traffic at 4m while `RUN_TIME=10m`).
+- **Verification commands:**
+  - `bash scripts/smoke_test.sh --check fixed-metrics` — 41/41 columns at 1.0000 (`/tmp/t1-burst-coverage-test.log`)
+  - `bash scripts/smoke_test.sh --check locust-authority` — `SUMMARY attempted=1 passed=1` (`/tmp/t1-burst-locust.log`, ~22.6 min)
+- **`--full` wall clock:** Exceeds 45 min with 600s metric windows (stopped at locust on first attempt before smoke-shape fix). Individual checks above pass the anchor and coverage gates.
+
+### Anchor + coverage (locust-authority, fixed arm)
+
+```
+LOAD_START t0=2026-09-04T05:18:14Z
+ANCHOR_WINDOW_ENFORCED start=2026-09-04T05:18:14+00:00 end=2026-09-04T05:28:14+00:00
+METRIC_QUERY_PREROLL_SEC=60 rate_window_sec=30 query_start=2026-09-04T05:17:14+00:00 published_rows_only=true no_row_exclusions=true
+METRICS_COLUMN_COVERAGE column=latency_p50_ms populated=39/41 ratio=0.9512
+METRICS_COLUMN_COVERAGE column=error_rate populated=39/41 ratio=0.9512
+```
+
+HPA arm: `LOAD_START t0=2026-09-04T05:29:25Z` → `ANCHOR_WINDOW_ENFORCED start=2026-09-04T05:29:25+00:00` (same 39/41 request-metric coverage).
+
+- **Edge rows:** Two burst-onset rows per arm remain `MISSING` for rate-derived columns (30s lookback vs 15s scrape); 39/41 = 0.9512 meets the 0.95 threshold without exclusions.

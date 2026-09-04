@@ -1,14 +1,17 @@
 """
 Shared metrics CSV contract: required columns and minimum population coverage.
+
+Published analysis window: every row from LOAD_START t0 through t0+RUN_TIME is
+included in CSV output and coverage assessment. No warmup or edge rows are dropped.
 """
 
 from __future__ import annotations
 
 MISSING = "MISSING"
 
-# Prometheus rate()[1m] needs history before the first sample; trailing partial buckets excluded.
-METRIC_RATE_WARMUP_SEC = 60
-METRIC_SCRAPE_SETTLE_SEC = 15
+# Prometheus rate(...[1m]) needs samples before t0; collectors query from t0 minus
+# this offset but only publish rows in [t0, t0+RUN_TIME]. Not used to exclude rows.
+METRIC_QUERY_PREROLL_SEC = 60
 
 # Minimum fraction of rows that must be non-MISSING per required value column.
 MIN_COLUMN_COVERAGE_RATIO = 0.95
@@ -26,18 +29,6 @@ REQUIRED_VALUE_COLUMNS = [
 ]
 
 
-def assessable_rows(rows: list[dict], step_sec: int = 15) -> list[dict]:
-    """Rows eligible for coverage assessment (excludes rate warmup and scrape settle edges)."""
-    if not rows:
-        return rows
-    warmup_rows = (METRIC_RATE_WARMUP_SEC + step_sec - 1) // step_sec
-    settle_rows = (METRIC_SCRAPE_SETTLE_SEC + step_sec - 1) // step_sec
-    end_idx = len(rows) - settle_rows if settle_rows else len(rows)
-    if end_idx <= warmup_rows:
-        return rows
-    return rows[warmup_rows:end_idx]
-
-
 def column_coverage(rows: list[dict], column: str) -> tuple[int, int, float]:
     total = len(rows)
     if total == 0:
@@ -46,11 +37,10 @@ def column_coverage(rows: list[dict], column: str) -> tuple[int, int, float]:
     return populated, total, populated / total
 
 
-def print_column_coverage_summary(rows: list[dict], label: str = "", *, step_sec: int = 15) -> None:
-    assessed = assessable_rows(rows, step_sec=step_sec)
+def print_column_coverage_summary(rows: list[dict], label: str = "") -> None:
     prefix = f"{label} " if label else ""
     for column in REQUIRED_VALUE_COLUMNS:
-        populated, total, ratio = column_coverage(assessed, column)
+        populated, total, ratio = column_coverage(rows, column)
         print(
             f"METRICS_COLUMN_COVERAGE {prefix}column={column} "
             f"populated={populated}/{total} ratio={ratio:.4f}"
@@ -62,19 +52,14 @@ def assert_column_coverage(
     *,
     threshold: float = MIN_COLUMN_COVERAGE_RATIO,
     label: str = "",
-    step_sec: int = 15,
 ) -> None:
     if not rows:
         raise RuntimeError("ASSERTION FAILED: metrics CSV has zero rows")
 
-    assessed = assessable_rows(rows, step_sec=step_sec)
-    if not assessed:
-        raise RuntimeError("ASSERTION FAILED: no assessable rows after warmup/settle exclusion")
-
-    print_column_coverage_summary(rows, label=label, step_sec=step_sec)
+    print_column_coverage_summary(rows, label=label)
 
     for column in REQUIRED_VALUE_COLUMNS:
-        populated, total, ratio = column_coverage(assessed, column)
+        populated, total, ratio = column_coverage(rows, column)
         if populated == 0:
             raise RuntimeError(f"ASSERTION FAILED: required column {column} has zero populated rows")
         if ratio < threshold:

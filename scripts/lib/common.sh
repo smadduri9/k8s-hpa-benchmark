@@ -83,10 +83,12 @@ iso_add_run_time() {
   date -u -d "${iso} + ${secs} seconds" '+%Y-%m-%dT%H:%M:%SZ'
 }
 
-# Prometheus rate()[1m] needs history before the first sample; trailing partial buckets excluded.
-METRICS_SAMPLE_WINDOW_SEC="${METRICS_SAMPLE_WINDOW_SEC:-90}"
-METRICS_RATE_WARMUP_SEC="${METRICS_RATE_WARMUP_SEC:-60}"
+# Prometheus rate(...[1m]) pre-roll duration for benchmark scrape before LOAD_START t0.
+METRICS_RATE_PREROLL_SEC="${METRICS_RATE_PREROLL_SEC:-60}"
+METRICS_SAMPLE_WINDOW_SEC="${METRICS_SAMPLE_WINDOW_SEC:-600}"
 METRICS_SCRAPE_SETTLE_SEC="${METRICS_SCRAPE_SETTLE_SEC:-15}"
+# Match Prometheus scrape_interval in k8s/prometheus/configmap.yaml (15s).
+SMOKE_METRICS_STEP="${SMOKE_METRICS_STEP:-15}"
 
 _iso_to_epoch() {
   local iso="$1"
@@ -109,7 +111,7 @@ metrics_query_end_iso() {
 
 metrics_query_start_iso() {
   local window_sec="${1:-${METRICS_SAMPLE_WINDOW_SEC}}"
-  local offset_sec=$((window_sec + METRICS_RATE_WARMUP_SEC + METRICS_SCRAPE_SETTLE_SEC))
+  local offset_sec=$((window_sec + METRICS_RATE_PREROLL_SEC + METRICS_SCRAPE_SETTLE_SEC))
   local start_iso=""
   if start_iso="$(date -u -v-"${offset_sec}"S '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null)"; then
     :
@@ -117,6 +119,22 @@ metrics_query_start_iso() {
     start_iso="$(date -u -d "${offset_sec} seconds ago" '+%Y-%m-%dT%H:%M:%SZ')"
   fi
   echo "${start_iso}"
+}
+
+ensure_metrics_preroll() {
+  local pods_ready_iso="$1"
+  local preroll_sec="${METRICS_RATE_PREROLL_SEC}"
+  local ready_epoch now_epoch target_epoch
+  ready_epoch="$(_iso_to_epoch "${pods_ready_iso}")"
+  target_epoch=$((ready_epoch + preroll_sec))
+  now_epoch="$(_iso_to_epoch "$(iso_now)")"
+  if (( now_epoch < target_epoch )); then
+    local wait_sec=$((target_epoch - now_epoch))
+    echo "METRIC_SCRAPE_PREROLL_WAIT sec=${wait_sec} ready_at=${pods_ready_iso}"
+    sleep "${wait_sec}"
+  else
+    echo "METRIC_SCRAPE_PREROLL_SATISFIED ready_at=${pods_ready_iso} elapsed_sec=$((now_epoch - ready_epoch))"
+  fi
 }
 
 hpa_min_replicas() {

@@ -357,7 +357,7 @@ def guard_inputs(fixed_path: str, hpa_path: str, locust_hpa_stats: str | None = 
                 print("ERROR: synthetic data detected; pass --allow-synthetic to analyze", file=sys.stderr)
                 sys.exit(1)
             try:
-                assert_column_coverage(rows, label=f"path={path}", step_sec=15)
+                assert_column_coverage(rows, label=f"path={path}")
             except RuntimeError as exc:
                 print(str(exc), file=sys.stderr)
                 sys.exit(1)

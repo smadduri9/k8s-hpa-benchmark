@@ -180,18 +180,8 @@ check_label_isolation() {
   else
     setup_harness
   fi
-  kubectl port-forward svc/prometheus 9090:9090 -n "${NAMESPACE}" >/dev/null 2>&1 &
-  local pf=$!
-  sleep 3
-  smoke_warm_fixed_traffic
-  venv_python "${REPO_ROOT}/analysis/collect_metrics.py" \
-    --mode "${MODE}" \
-    --prometheus-url http://localhost:9090 \
-    --start "$(metrics_query_start_iso)" \
-    --end "$(metrics_query_end_iso)" \
-    --output /tmp/label_isolation.csv \
+  smoke_collect_fixed_metrics_anchored /tmp/label_isolation.csv \
     --check-label-isolation
-  kill "${pf}" 2>/dev/null || true
 }
 
 check_fixed_metrics() {
@@ -201,22 +191,10 @@ check_fixed_metrics() {
   else
     setup_harness
   fi
-  kubectl port-forward svc/prometheus 9090:9090 -n "${NAMESPACE}" >/dev/null 2>&1 &
-  local pf=$!
-  sleep 3
-  smoke_warm_fixed_traffic
   local out_csv="/tmp/t1-c-fixed-metrics.csv"
-  venv_python "${REPO_ROOT}/analysis/collect_metrics.py" \
-    --mode fixed \
-    --prometheus-url http://localhost:9090 \
-    --start "$(metrics_query_start_iso)" \
-    --end "$(metrics_query_end_iso)" \
-    --step 15 \
-    --namespace "${NAMESPACE}" \
-    --output "${out_csv}" \
+  smoke_collect_fixed_metrics_anchored "${out_csv}" \
     --assert-replicas "$(deployment_declared_replicas hpa-eval-fixed "${NAMESPACE}")" \
     --skip-label-isolation
-  kill "${pf}" 2>/dev/null || true
   test -f "${out_csv}"
   venv_python -c "
 import csv, sys
@@ -246,33 +224,32 @@ check_error_rate_positive() {
   local pf=$!
   sleep 3
 
-  local traffic_pid
-  (
-    while true; do
-      curl -sf "http://127.0.0.1:18080/cpu?intensity=low" >/dev/null 2>&1 || true
-      curl -s -o /dev/null "http://127.0.0.1:18080/fail" || true
-      sleep 1
-    done
-  ) &
-  traffic_pid=$!
-  sleep 75
+  local preroll_start t0 t1 out_csv="/tmp/t1-c-error-rate-positive.csv"
+  preroll_start="$(iso_now)"
+  ensure_metrics_preroll "${preroll_start}"
+  t0="$(iso_now)"
+  t1="$(iso_add_run_time "${t0}" "${METRICS_SAMPLE_WINDOW_SEC}s")"
+  echo "SMOKE_METRICS_WINDOW t0=${t0} end=${t1}"
 
-  local out_csv="/tmp/t1-c-error-rate-positive.csv"
+  while [[ "$(_iso_to_epoch "$(iso_now)")" -lt "$(_iso_to_epoch "${t1}")" ]]; do
+    curl -sf "http://127.0.0.1:18080/cpu?intensity=low" >/dev/null 2>&1 || true
+    curl -s -o /dev/null "http://127.0.0.1:18080/fail" || true
+    sleep 1
+  done
+
   local output
   output="$(venv_python "${REPO_ROOT}/analysis/collect_metrics.py" \
     --mode fixed \
     --prometheus-url http://localhost:9090 \
-    --start "$(metrics_query_start_iso)" \
-    --end "$(metrics_query_end_iso)" \
-    --step 15 \
+    --start "${t0}" \
+    --end "${t1}" \
+    --step "${SMOKE_METRICS_STEP}" \
     --namespace "${NAMESPACE}" \
     --output "${out_csv}" \
     --assert-replicas "$(deployment_declared_replicas hpa-eval-fixed "${NAMESPACE}")" \
     --skip-label-isolation 2>&1)"
   echo "${output}"
 
-  kill "${traffic_pid}" 2>/dev/null || true
-  wait "${traffic_pid}" 2>/dev/null || true
   kill "${app_pf}" 2>/dev/null || true
   wait "${app_pf}" 2>/dev/null || true
   kill "${pf}" 2>/dev/null || true
@@ -285,6 +262,9 @@ check_error_rate_positive() {
     die "error-rate positive test expected non_zero>=1 in collector output"
   fi
   echo "ERROR_RATE_NONZERO_VERIFIED"
+
+  reset_prometheus_deployment
+  wait_prometheus_scrape_ready
 }
 
 check_locust_authority() {
@@ -494,31 +474,60 @@ smoke_warm_fixed_traffic() {
   sleep 20
 }
 
-check_assertions() {
-  kubectl config use-context "kind-${CLUSTER_NAME}" >/dev/null 2>&1 || true
-  kubectl wait --for=condition=Available deployment/hpa-eval-fixed -n "${NAMESPACE}" --timeout=120s
+smoke_sustain_fixed_traffic_until() {
+  local target_iso="$1"
+  kubectl port-forward svc/hpa-eval-fixed-svc 18080:80 -n "${NAMESPACE}" >/dev/null 2>&1 &
+  local app_pf=$!
+  sleep 2
+  while [[ "$(_iso_to_epoch "$(iso_now)")" -lt "$(_iso_to_epoch "${target_iso}")" ]]; do
+    curl -sf "http://127.0.0.1:18080/cpu?intensity=low" >/dev/null 2>&1 || true
+    sleep 1
+  done
+  kill "${app_pf}" 2>/dev/null || true
+  wait "${app_pf}" 2>/dev/null || true
+}
 
-  local declared
-  declared="$(deployment_declared_replicas hpa-eval-fixed "${NAMESPACE}")"
-  echo "DECLARED_REPLICAS_FROM_SPEC deployment=hpa-eval-fixed declared=${declared}"
+smoke_collect_fixed_metrics_anchored() {
+  local out_csv="$1"
+  shift
+  local -a extra_args=("$@")
 
   kubectl port-forward svc/prometheus 9090:9090 -n "${NAMESPACE}" >/dev/null 2>&1 &
   local pf=$!
   sleep 3
 
-  smoke_warm_fixed_traffic
+  local preroll_start t0 t1
+  preroll_start="$(iso_now)"
+  ensure_metrics_preroll "${preroll_start}"
+  t0="$(iso_now)"
+  t1="$(iso_add_run_time "${t0}" "${METRICS_SAMPLE_WINDOW_SEC}s")"
+  echo "SMOKE_METRICS_WINDOW t0=${t0} end=${t1}"
+  smoke_sustain_fixed_traffic_until "${t1}"
 
   venv_python "${REPO_ROOT}/analysis/collect_metrics.py" \
     --mode fixed \
     --prometheus-url http://localhost:9090 \
-    --start "$(metrics_query_start_iso)" \
-    --end "$(metrics_query_end_iso)" \
-    --step 15 \
-    --output /tmp/t1-b-positive-fixed.csv \
-    --assert-replicas "${declared}" \
-    --skip-label-isolation
+    --start "${t0}" \
+    --end "${t1}" \
+    --step "${SMOKE_METRICS_STEP}" \
+    --namespace "${NAMESPACE}" \
+    --output "${out_csv}" \
+    "${extra_args[@]}"
 
   kill "${pf}" 2>/dev/null || true
+}
+
+check_assertions() {
+  kubectl config use-context "kind-${CLUSTER_NAME}" >/dev/null 2>&1 || true
+  kubectl wait --for=condition=Available deployment/hpa-eval-fixed -n "${NAMESPACE}" --timeout=120s
+
+  local declared ready
+  declared="$(deployment_declared_replicas hpa-eval-fixed "${NAMESPACE}")"
+  ready="$(kubectl get deployment hpa-eval-fixed -n "${NAMESPACE}" -o jsonpath='{.status.readyReplicas}')"
+  echo "DECLARED_REPLICAS_FROM_SPEC deployment=hpa-eval-fixed declared=${declared}"
+  if [[ "${ready}" != "${declared}" ]]; then
+    die "ASSERTION FAILED: declared=${declared} ready=${ready:-0}"
+  fi
   echo "ASSERTIONS_PASS declared=${declared} observed_matches_declared=true"
 }
 
@@ -812,6 +821,9 @@ run_full_suite() {
     die "--full requires --env-file so preflight-traps exercises GKE identity guards"
   fi
   check_harness
+  kubectl config use-context "kind-${CLUSTER_NAME}" >/dev/null 2>&1 || true
+  reset_prometheus_deployment
+  wait_prometheus_scrape_ready
   check_coldstart
   check_assertions
   check_fixed_metrics

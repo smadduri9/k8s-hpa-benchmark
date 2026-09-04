@@ -1,5 +1,8 @@
 """
-4-minute Locust load shape for kind smoke tests.
+10-minute Locust load shape for kind smoke tests.
+
+Burst onset is in the first 60–90s; sustained low load continues through RUN_TIME
+so Prometheus rate() queries remain populated for the full published window.
 
 Do NOT modify locust/locustfile.py — it must remain byte-identical for 18-minute GKE runs.
 """
@@ -28,12 +31,13 @@ class HPAEvalUser(HttpUser):
 
 
 class SmokeLoadShape(LoadTestShape):
-    """4-minute smoke profile: ramp, spike, cool-down."""
+    """10-minute smoke profile: burst at onset, then sustained low load through RUN_TIME."""
 
     stages = [
-        (60, 10, 2),   # 0-1 min: ramp to 10 users
-        (180, 20, 5),  # 1-3 min: hold/spike to 20 users
-        (240, 5, 5),   # 3-4 min: ramp down
+        (60, 10, 2),   # 0-1 min: ramp (burst onset — HPA scaling window)
+        (180, 20, 5),  # 1-3 min: spike/hold
+        (240, 5, 5),   # 3-4 min: cool down from spike
+        (600, 5, 1),   # 4-10 min: sustain low load for full-window metrics
     ]
 
     def tick(self):
@@ -41,6 +45,4 @@ class SmokeLoadShape(LoadTestShape):
         for end_time, users, spawn_rate in self.stages:
             if run_time <= end_time:
                 return (users, spawn_rate)
-        if self.runner is not None:
-            self.runner.quit()
         return None
