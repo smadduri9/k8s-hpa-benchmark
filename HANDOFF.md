@@ -26,6 +26,7 @@ Cluster shape from `scripts/deploy_gke.sh` (no cluster autoscaler — fixed node
 | Topology | **Zonal** (`ZONE=us-central1-a`), not regional |
 | Machine type | `e2-standard-2` (2 vCPU, 8 GB RAM per node) |
 | Node count | **3** fixed (`--num-nodes=3`; no `--enable-autoscaling`) |
+| Boot disk | **50 GB** balanced PD per node (`--disk-size=50`; 3×50 = **150 GB** against `SSD_TOTAL_GB` limit 250) |
 | Control-plane fee | **Waived** for the first zonal cluster per GCP project |
 
 ### App resources (`k8s/deployment-hpa.yaml`)
@@ -62,13 +63,16 @@ Limits at peak (`10×200m + 3×200m + 500m` Prometheus = **3100m**) exceed a sin
 
 Cluster autoscaler was removed so node provisioning latency is not folded into HPA scaling measurements and both arms see the same fixed node baseline.
 
-**Rough 3-hour unattended session estimate** (us-central1, on-demand, excludes egress and disk orphans):
+**Rough 3-hour unattended session estimate** (us-central1, on-demand, excludes egress):
 
 | Component | Estimate |
 |-----------|----------|
 | 3× `e2-standard-2` compute (~$0.067/hr each) | ~$0.60 |
+| 3× 50 GB balanced PD boot disks (~$0.10/GB-mo prorated; negligible for ≤3 hr) | ~$0.02 |
 | 2× `LoadBalancer` Services (see below, ~$0.025/hr each) | ~$0.15 |
 | **Total ballpark** | **~$0.75–$1.00** |
+
+Default GKE boot disks are 100 GB balanced PD (300 GB total for 3 nodes), which exceeds this project's **250 GB `SSD_TOTAL_GB`** regional quota. `deploy_gke.sh` sets `--disk-size=50` explicitly; `preflight.sh --require-gke` queries live quotas and fails with `QUOTA_INSUFFICIENT_SSD` before cluster create if headroom is insufficient.
 
 Autoscale above 3 nodes is disabled (fixed pool). Leaving load balancers/disks after teardown increases cost. Regional topology would have been ~3× node cost plus a non-waived management fee — the deploy script uses zonal explicitly to avoid that.
 

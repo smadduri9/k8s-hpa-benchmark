@@ -1,8 +1,53 @@
 #!/usr/bin/env bash
 # OS/arch assumptions: macOS (darwin) or Linux, bash 4+, gcloud.
-# GKE-side preflight checks (project access, APIs, Artifact Registry).
+# GKE-side preflight checks (project access, APIs, Artifact Registry, regional quotas).
 
 set -euo pipefail
+
+_PREFLIGHT_GKE_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=gke_shape.sh
+source "${_PREFLIGHT_GKE_LIB_DIR}/gke_shape.sh"
+
+preflight_check_gke_quotas() {
+  local quota_py="${_PREFLIGHT_GKE_LIB_DIR}/preflight_gke_quota.py"
+  local region_json=""
+  region_json="$(mktemp "${TMPDIR:-/tmp}/gke-quota.XXXXXX")"
+
+  if ! gcloud compute regions describe "${REGION}" \
+      --project="${PROJECT_ID}" \
+      --format=json >"${region_json}" 2>/dev/null; then
+    rm -f "${region_json}"
+    preflight_fail "failed to query regional quotas for region=${REGION} project=${PROJECT_ID}"
+    return
+  fi
+
+  printf '%s\n' "GKE_SHAPE num_nodes=${GKE_NUM_NODES} disk_gb=${NODE_DISK_SIZE_GB} machine=${GKE_MACHINE_TYPE} cpus_per_node=${GKE_CPUS_PER_NODE}"
+
+  local audit_python="${VENV_PYTHON:-}"
+  if [[ -z "${audit_python}" || ! -x "${audit_python}" ]]; then
+    audit_python="$(command -v python3 || true)"
+  fi
+  if [[ -z "${audit_python}" ]]; then
+    rm -f "${region_json}"
+    preflight_fail "missing python3 for GKE quota audit"
+    return
+  fi
+
+  set +e
+  local quota_rc=0
+  "${audit_python}" "${quota_py}" \
+    "${region_json}" \
+    "${GKE_NUM_NODES}" \
+    "${NODE_DISK_SIZE_GB}" \
+    "${GKE_CPUS_PER_NODE}"
+  quota_rc=$?
+  set -e
+  rm -f "${region_json}"
+
+  if [[ "${quota_rc}" -ne 0 ]]; then
+    PREFLIGHT_FAILED=true
+  fi
+}
 
 preflight_require_gke() {
   require_env PROJECT_ID
@@ -50,6 +95,8 @@ preflight_require_gke() {
     return
   fi
   printf '%s\n' "GKE_ARTIFACT_REGISTRY_REPO=PASS repo=${ARTIFACT_REGISTRY_REPO} region=${REGION}"
+
+  preflight_check_gke_quotas
 
   printf '%s\n' "PROJECT_CLUSTER_VERIFICATION_REQUIRED"
 }

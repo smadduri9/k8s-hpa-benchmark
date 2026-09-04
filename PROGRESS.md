@@ -1273,3 +1273,31 @@ METRICS_COLUMN_COVERAGE column=error_rate populated=39/41 ratio=0.9512
 HPA arm: `LOAD_START t0=2026-09-04T05:29:25Z` → `ANCHOR_WINDOW_ENFORCED start=2026-09-04T05:29:25+00:00` (same 39/41 request-metric coverage).
 
 - **Edge rows:** Two burst-onset rows per arm remain `MISSING` for rate-derived columns (30s lookback vs 15s scrape); 39/41 = 0.9512 meets the 0.95 threshold without exclusions.
+
+---
+
+## t1-gke-quota: SSD_TOTAL_GB disk sizing + live quota preflight (2026-09-04)
+
+- **Files touched:** `scripts/deploy_gke.sh`, `scripts/lib/gke_shape.sh` (new), `scripts/lib/preflight_gke.sh`, `scripts/lib/preflight_gke_quota.py` (new), `HANDOFF.md`
+- **Disk size:** `NODE_DISK_SIZE_GB=50` (not 60). GKE COS image ~10–12GB on disk; at 50GB boot disk GKE reserves ~23.5GiB system + 5GiB eviction threshold (per node sizing docs) → ~21GiB allocatable ephemeral. Benchmark has no large `emptyDir` volumes; 50GB is not tight for a ≤3h session. 3×50=150GB < 250GB `SSD_TOTAL_GB` quota (default 100GB/node would need 300GB and fail).
+- **deploy_gke.sh:** `--disk-size="${NODE_DISK_SIZE_GB}"` on cluster create.
+- **preflight `--require-gke`:** queries live `gcloud compute regions describe` quotas; prints `GKE_QUOTA_* limit/usage/required/status` rows; fails with `QUOTA_INSUFFICIENT_SSD|CPUS|INSTANCES`.
+
+### Preflight pass (`bash scripts/preflight.sh --env-file .env --require-gke`)
+
+```
+GKE_SHAPE num_nodes=3 disk_gb=50 machine=e2-standard-2 cpus_per_node=2
+GKE_QUOTA_SSD_TOTAL_GB limit=250 usage=0 required=150 status=PASS
+GKE_QUOTA_CPUS limit=32 usage=0 required=6 status=PASS
+GKE_QUOTA_INSTANCES limit=8 usage=0 required=3 status=PASS
+PREFLIGHT_PASS
+```
+
+### Negative SSD check (`NODE_DISK_SIZE_GB=100 bash scripts/preflight.sh --env-file .env --require-gke`)
+
+```
+ERROR: QUOTA_INSUFFICIENT_SSD limit=250 usage=0 required=300 headroom=250
+GKE_QUOTA_SSD_TOTAL_GB limit=250 usage=0 required=300 status=FAIL
+PREFLIGHT_FAIL
+```
+(exit 1)

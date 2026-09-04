@@ -13,6 +13,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/common.sh
 source "${SCRIPT_DIR}/lib/common.sh"
+# shellcheck source=lib/gke_shape.sh
+source "${SCRIPT_DIR}/lib/gke_shape.sh"
 
 ENV_FILE=""
 while [[ $# -gt 0 ]]; do
@@ -37,14 +39,19 @@ require_env CLUSTER_NAME
 NAMESPACE="${NAMESPACE:-hpa-eval}"
 IMAGE_NAME="gcr.io/${PROJECT_ID}/hpa-eval-app"
 IMAGE_TAG="latest"
-MACHINE_TYPE="${GKE_MACHINE_TYPE:-e2-standard-2}"
+MACHINE_TYPE="${GKE_MACHINE_TYPE}"
 # Fixed node count — no cluster autoscaler (CA adds/removes nodes reactively and
 # contaminates HPA scaling latency measurements and arm-to-arm node baselines).
 # Sizing: e2-standard-2 allocatable ~1930m CPU / ~6172Mi per node after GKE
 # kube+system reserve; ~250m CPU / ~400Mi per node for daemonsets.
 # Peak concurrent requests: HPA maxReplicas=10×100m + fixed 3×100m + prom 100m = 1400m.
 # Require N×(1930-250) ≥ 1400 + N×250 → N ≥ 1.97 → minimum 2; use 3 for ~57% CPU headroom.
-NUM_NODES="${GKE_NUM_NODES:-3}"
+NUM_NODES="${GKE_NUM_NODES}"
+# Balanced PD boot disks (GKE 1.24+ default) count against SSD_TOTAL_GB (250 in
+# hpa-benchmark-2026), not DISKS_TOTAL_GB. Default 100GB/node would need 300GB.
+# 50GB/node: COS image ~10–12GB + GKE system reservation ~24GB (35%×50+6Gi cap) +
+# eviction threshold 5GB → ~21GB allocatable ephemeral; ample for this benchmark.
+NODE_DISK_SIZE_GB="${NODE_DISK_SIZE_GB}"
 
 echo "=== Kubernetes HPA Evaluation — GKE Deploy ==="
 echo "  Project:      ${PROJECT_ID}"
@@ -53,6 +60,7 @@ echo "  Zone:         ${ZONE} (GKE cluster)"
 echo "  Cluster:      ${CLUSTER_NAME}"
 echo "  Machine type: ${MACHINE_TYPE}"
 echo "  Nodes:        ${NUM_NODES} (fixed, single zone, no cluster autoscaler)"
+echo "  Boot disk:    ${NODE_DISK_SIZE_GB}GB balanced PD per node (${NUM_NODES}×${NODE_DISK_SIZE_GB}=$(( NUM_NODES * NODE_DISK_SIZE_GB ))GB SSD_TOTAL_GB)"
 echo ""
 
 # ---------------------------------------------------------------------------
@@ -76,6 +84,7 @@ else
         --project="${PROJECT_ID}" \
         --machine-type="${MACHINE_TYPE}" \
         --num-nodes="${NUM_NODES}" \
+        --disk-size="${NODE_DISK_SIZE_GB}" \
         --enable-ip-alias \
         --release-channel=regular
 fi
