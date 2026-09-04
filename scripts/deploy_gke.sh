@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# deploy_gke.sh — Deploy HPA evaluation app to Google Kubernetes Engine
-# Usage: bash scripts/deploy_gke.sh [PROJECT_ID] [REGION]
+# OS/arch assumptions: macOS (darwin) or Linux, bash 4+, gcloud, docker, kubectl.
+# deploy_gke.sh — Deploy HPA evaluation app to Google Kubernetes Engine (zonal cluster).
+# Usage: bash scripts/deploy_gke.sh [--env-file .env]
 #
 # Prerequisites:
 #   - gcloud CLI authenticated: gcloud auth login
@@ -9,22 +10,45 @@
 
 set -euo pipefail
 
-PROJECT_ID="${1:-$(gcloud config get-value project 2>/dev/null)}"
-REGION="${2:-us-central1}"
-CLUSTER_NAME="hpa-eval-cluster"
-NAMESPACE="hpa-eval"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=lib/common.sh
+source "${SCRIPT_DIR}/lib/common.sh"
+
+ENV_FILE=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --env-file) ENV_FILE="$2"; shift 2 ;;
+    -h|--help)
+      echo "Usage: bash scripts/deploy_gke.sh [--env-file .env]"
+      exit 0
+      ;;
+    *)
+      die "unknown argument: $1 (use --env-file .env; do not pass PROJECT_ID positionally)"
+      ;;
+  esac
+done
+
+load_env_file "${ENV_FILE}"
+require_env PROJECT_ID
+require_env REGION
+require_env ZONE
+require_env CLUSTER_NAME
+
+NAMESPACE="${NAMESPACE:-hpa-eval}"
 IMAGE_NAME="gcr.io/${PROJECT_ID}/hpa-eval-app"
 IMAGE_TAG="latest"
-
-if [[ -z "${PROJECT_ID}" ]]; then
-    echo "ERROR: PROJECT_ID not set. Pass as argument or run: gcloud config set project PROJECT_ID"
-    exit 1
-fi
+MACHINE_TYPE="${GKE_MACHINE_TYPE:-e2-standard-2}"
+NUM_NODES="${GKE_NUM_NODES:-3}"
+MIN_NODES="${GKE_MIN_NODES:-2}"
+MAX_NODES="${GKE_MAX_NODES:-6}"
 
 echo "=== Kubernetes HPA Evaluation — GKE Deploy ==="
-echo "  Project:  ${PROJECT_ID}"
-echo "  Region:   ${REGION}"
-echo "  Cluster:  ${CLUSTER_NAME}"
+echo "  Project:      ${PROJECT_ID}"
+echo "  Region:       ${REGION} (Artifact Registry)"
+echo "  Zone:         ${ZONE} (GKE cluster)"
+echo "  Cluster:      ${CLUSTER_NAME}"
+echo "  Machine type: ${MACHINE_TYPE}"
+echo "  Nodes:        ${NUM_NODES} (autoscale ${MIN_NODES}-${MAX_NODES}, single zone)"
 echo ""
 
 # ---------------------------------------------------------------------------
@@ -36,28 +60,28 @@ gcloud services enable container.googleapis.com \
     --project="${PROJECT_ID}"
 
 # ---------------------------------------------------------------------------
-# Step 2: Create GKE cluster
+# Step 2: Create GKE cluster (zonal — one node pool in ZONE, not triplicated)
 # ---------------------------------------------------------------------------
 echo "[2/7] Creating GKE cluster (this takes ~3–5 minutes)..."
 if gcloud container clusters describe "${CLUSTER_NAME}" \
-    --region="${REGION}" --project="${PROJECT_ID}" &>/dev/null; then
+    --zone="${ZONE}" --project="${PROJECT_ID}" &>/dev/null; then
     echo "  Cluster already exists, skipping creation."
 else
     gcloud container clusters create "${CLUSTER_NAME}" \
-        --region="${REGION}" \
+        --zone="${ZONE}" \
         --project="${PROJECT_ID}" \
-        --machine-type="e2-standard-2" \
-        --num-nodes=3 \
+        --machine-type="${MACHINE_TYPE}" \
+        --num-nodes="${NUM_NODES}" \
         --enable-autoscaling \
-        --min-nodes=2 \
-        --max-nodes=6 \
+        --min-nodes="${MIN_NODES}" \
+        --max-nodes="${MAX_NODES}" \
         --enable-ip-alias \
         --release-channel=regular
 fi
 
 # Configure kubectl
 gcloud container clusters get-credentials "${CLUSTER_NAME}" \
-    --region="${REGION}" \
+    --zone="${ZONE}" \
     --project="${PROJECT_ID}"
 
 # ---------------------------------------------------------------------------
@@ -65,25 +89,25 @@ gcloud container clusters get-credentials "${CLUSTER_NAME}" \
 # ---------------------------------------------------------------------------
 echo "[3/7] Building and pushing Docker image to GCR..."
 # GKE nodes are linux/amd64; explicit platform avoids arm64 host building wrong arch.
-docker build --platform linux/amd64 -t "${IMAGE_NAME}:${IMAGE_TAG}" ./app/
+docker build --platform linux/amd64 -t "${IMAGE_NAME}:${IMAGE_TAG}" "${REPO_ROOT}/app/"
 docker push "${IMAGE_NAME}:${IMAGE_TAG}"
 
 # ---------------------------------------------------------------------------
 # Step 4: Apply Kubernetes manifests
 # ---------------------------------------------------------------------------
 echo "[4/7] Applying Kubernetes manifests..."
-kubectl apply -f k8s/namespace.yaml
+kubectl apply -f "${REPO_ROOT}/k8s/namespace.yaml"
 
 # Patch image references
-for deploy_file in k8s/deployment-fixed.yaml k8s/deployment-hpa.yaml; do
-    kubectl apply -f <(sed "s|gcr.io/PROJECT_ID/|gcr.io/${PROJECT_ID}/|g" "$deploy_file")
+for deploy_file in "${REPO_ROOT}/k8s/deployment-fixed.yaml" "${REPO_ROOT}/k8s/deployment-hpa.yaml"; do
+    kubectl apply -f <(sed "s|gcr.io/PROJECT_ID/|gcr.io/${PROJECT_ID}/|g" "${deploy_file}")
 done
 
-kubectl apply -f k8s/service.yaml
-kubectl apply -f k8s/hpa.yaml
-kubectl apply -f k8s/prometheus/configmap.yaml
-kubectl apply -f k8s/prometheus/deployment.yaml
-kubectl apply -f k8s/prometheus/service.yaml
+kubectl apply -f "${REPO_ROOT}/k8s/service.yaml"
+kubectl apply -f "${REPO_ROOT}/k8s/hpa.yaml"
+kubectl apply -f "${REPO_ROOT}/k8s/prometheus/configmap.yaml"
+kubectl apply -f "${REPO_ROOT}/k8s/prometheus/deployment.yaml"
+kubectl apply -f "${REPO_ROOT}/k8s/prometheus/service.yaml"
 
 # ---------------------------------------------------------------------------
 # Step 5: Wait for deployments

@@ -502,7 +502,8 @@ check_assertions() {
     --end "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" \
     --step 15 \
     --output /tmp/t1-b-positive-fixed.csv \
-    --assert-replicas "${declared}"
+    --assert-replicas "${declared}" \
+    --skip-label-isolation
 
   kill "${pf}" 2>/dev/null || true
   echo "ASSERTIONS_PASS declared=${declared} observed_matches_declared=true"
@@ -745,7 +746,9 @@ run_full_suite() {
   check_assertions
   check_fixed_metrics
   check_error_rate_positive
+  BOTH_DEPLOYMENTS_UP=true
   check_label_isolation
+  BOTH_DEPLOYMENTS_UP=false
   check_locust_authority
   check_preflight_traps
   negative_fixed_replica_assert
@@ -753,6 +756,7 @@ run_full_suite() {
   negative_missing_locust_hpa
   negative_missing_locust_fixed
   negative_hpa_never_scaled
+  negative_label_isolation
   echo "NEGATIVE_ASSERTION_TEST_PASS"
   echo "ALL_TIER1_ASSERTIONS_EXERCISED"
   echo "SMOKE_SUITE_PASS"
