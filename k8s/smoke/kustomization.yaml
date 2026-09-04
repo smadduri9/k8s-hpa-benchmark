@@ -14,7 +14,7 @@ resources:
   - ../prometheus/service.yaml
 
 images:
-  - name: gcr.io/PROJECT_ID/hpa-eval-app
+  - name: PLACEHOLDER_REGISTRY/hpa-eval-app
     newName: hpa-eval-app
     newTag: smoke
 

@@ -47,7 +47,7 @@ kubectl apply -f k8s/namespace.yaml
 # Patch deployments to use local image (no registry pull)
 # Use sed to replace image reference for local build
 for deploy_file in k8s/deployment-fixed.yaml k8s/deployment-hpa.yaml; do
-    kubectl apply -f <(sed 's|gcr.io/PROJECT_ID/hpa-eval-app:latest|hpa-eval-app:latest|g' "$deploy_file")
+    kubectl apply -f <(sed 's|PLACEHOLDER_REGISTRY/hpa-eval-app:PLACEHOLDER_TAG|hpa-eval-app:latest|g' "$deploy_file")
 done
 
 # Patch services to use NodePort instead of LoadBalancer

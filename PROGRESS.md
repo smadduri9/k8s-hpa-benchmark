@@ -1312,3 +1312,15 @@ PREFLIGHT_FAIL
 - **HANDOFF fixes:** smoke shape 10m (not 4m); GKE smoke ~25–35 min; default `--repetitions 1`; firewall-rule orphan check (`gcloud compute firewall-rules list --filter="name~'^k8s-'"`).
 - **RESULTS.md:** added **Measurement limitations** (laptop Locust in California → us-central1; comparison valid, absolute latency not internal; in-cluster Locust deferred Tier 2).
 
+---
+
+## t1-gke-artifact-registry: fix deploy image push target (2026-09-04)
+
+- **Files touched:** `scripts/deploy_gke.sh`, `scripts/lib/gke_shape.sh`, `scripts/lib/preflight_gke.sh`, `k8s/deployment-*.yaml`, `k8s/smoke/kustomization.yaml`, `scripts/deploy_local.sh`
+- **Image URI:** `${REGION}-docker.pkg.dev/${PROJECT_ID}/${ARTIFACT_REGISTRY_REPO}/hpa-eval-app:${git_short_sha}` (immutable tag, no `:latest`)
+- **Manifests:** placeholder `PLACEHOLDER_REGISTRY/hpa-eval-app:PLACEHOLDER_TAG` substituted at deploy; `grep -r gcr.io` returns **no hits** in deploy scripts or k8s manifests
+- **Re-run:** `CLUSTER_EXISTS zone=… skipping creation` when cluster already present (no recreate)
+- **Preflight:** `GKE_DOCKER_CREDENTIAL_HELPER=PASS` + `GKE_ARTIFACT_REGISTRY_REACHABLE=PASS`; fails with `ARTIFACT_REGISTRY_DOCKER_AUTH_MISSING` if `${REGION}-docker.pkg.dev` cred helper absent
+- **Deploy manifest:** `results/gke-deploy-manifest.json` records `image_uri`, `image_tag`, `git_sha_short`
+- **Operator resume:** `bash scripts/deploy_gke.sh --env-file .env` against live us-central1-b cluster
+

@@ -49,6 +49,54 @@ preflight_check_gke_quotas() {
   fi
 }
 
+preflight_check_artifact_registry_docker_auth() {
+  local registry_host helper
+  registry_host="$(artifact_registry_host "${REGION}")"
+  local docker_config="${HOME}/.docker/config.json"
+
+  if [[ ! -f "${docker_config}" ]]; then
+    preflight_fail "ARTIFACT_REGISTRY_DOCKER_AUTH_MISSING registry=${registry_host} reason=no_docker_config"
+    return
+  fi
+
+  local audit_python="${VENV_PYTHON:-}"
+  if [[ -z "${audit_python}" || ! -x "${audit_python}" ]]; then
+    audit_python="$(command -v python3 || true)"
+  fi
+  if [[ -z "${audit_python}" ]]; then
+    preflight_fail "missing python3 for docker credential helper audit"
+    return
+  fi
+
+  helper="$("${audit_python}" - "${registry_host}" "${docker_config}" <<'PY'
+import json
+import sys
+
+registry_host, docker_config = sys.argv[1], sys.argv[2]
+with open(docker_config, encoding="utf-8") as handle:
+    config = json.load(handle)
+helpers = config.get("credHelpers", {})
+helper = helpers.get(registry_host, "")
+print(helper)
+PY
+)"
+
+  if [[ -z "${helper}" ]]; then
+    preflight_fail "ARTIFACT_REGISTRY_DOCKER_AUTH_MISSING registry=${registry_host} reason=no_cred_helper remediation=gcloud auth configure-docker ${registry_host}"
+    return
+  fi
+  printf '%s\n' "GKE_DOCKER_CREDENTIAL_HELPER=PASS registry=${registry_host} helper=${helper}"
+
+  if ! gcloud artifacts docker images list \
+      "${registry_host}/${PROJECT_ID}/${ARTIFACT_REGISTRY_REPO}" \
+      --project="${PROJECT_ID}" \
+      --limit=1 >/dev/null 2>&1; then
+    preflight_fail "ARTIFACT_REGISTRY_REPO_UNREACHABLE repo=${ARTIFACT_REGISTRY_REPO} host=${registry_host} project=${PROJECT_ID}"
+    return
+  fi
+  printf '%s\n' "GKE_ARTIFACT_REGISTRY_REACHABLE=PASS repo=${ARTIFACT_REGISTRY_REPO} host=${registry_host}"
+}
+
 preflight_require_gke() {
   require_env PROJECT_ID
   require_env REGION
@@ -96,6 +144,7 @@ preflight_require_gke() {
   fi
   printf '%s\n' "GKE_ARTIFACT_REGISTRY_REPO=PASS repo=${ARTIFACT_REGISTRY_REPO} region=${REGION}"
 
+  preflight_check_artifact_registry_docker_auth
   preflight_check_gke_quotas
 
   printf '%s\n' "PROJECT_CLUSTER_VERIFICATION_REQUIRED"
