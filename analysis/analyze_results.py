@@ -23,16 +23,15 @@ import os
 import sys
 from pathlib import Path
 
-MISSING = "MISSING"
-REQUIRED_VALUE_COLUMNS = [
-    "cpu_utilization_pct",
-    "latency_p50_ms",
-    "latency_p95_ms",
-    "latency_p99_ms",
-    "rps",
-    "error_rate",
-    "replicas",
-]
+_ANALYSIS_DIR = Path(__file__).resolve().parent
+if str(_ANALYSIS_DIR) not in sys.path:
+    sys.path.insert(0, str(_ANALYSIS_DIR))
+
+from metrics_contract import (
+    MISSING,
+    REQUIRED_VALUE_COLUMNS,
+    assert_column_coverage,
+)
 
 # Plotting deps load after guard_inputs in main() so publication guards run without numpy/matplotlib.
 np = None  # type: ignore[assignment]
@@ -357,16 +356,11 @@ def guard_inputs(fixed_path: str, hpa_path: str, locust_hpa_stats: str | None = 
             if not allow_synthetic and "data_source" in rows[0] and any(r.get("data_source") == "SYNTHETIC" for r in rows):
                 print("ERROR: synthetic data detected; pass --allow-synthetic to analyze", file=sys.stderr)
                 sys.exit(1)
-            for col in REQUIRED_VALUE_COLUMNS:
-                populated = sum(
-                    1 for row in rows if row.get(col) not in (MISSING, "", None)
-                )
-                if populated == 0:
-                    print(
-                        f"ASSERTION FAILED: required column {col} has zero populated rows in {path}",
-                        file=sys.stderr,
-                    )
-                    sys.exit(1)
+            try:
+                assert_column_coverage(rows, label=f"path={path}", step_sec=15)
+            except RuntimeError as exc:
+                print(str(exc), file=sys.stderr)
+                sys.exit(1)
 
 
 def main():

@@ -63,6 +63,62 @@ iso_now() {
   date -u '+%Y-%m-%dT%H:%M:%SZ'
 }
 
+# Add Locust-style duration (e.g. 4m, 60s) to an ISO8601 UTC timestamp.
+iso_add_run_time() {
+  local iso="$1"
+  local run_time="$2"
+  local num="${run_time%[mMsS]}"
+  local unit="${run_time: -1}"
+  local secs=0
+  case "${unit}" in
+    m|M) secs=$((num * 60)) ;;
+    s|S) secs="${num}" ;;
+    *) die "unsupported run_time duration: ${run_time}" ;;
+  esac
+  local result=""
+  if result="$(date -u -v "+${secs}S" -jf '%Y-%m-%dT%H:%M:%SZ' "${iso}" '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null)"; then
+    echo "${result}"
+    return 0
+  fi
+  date -u -d "${iso} + ${secs} seconds" '+%Y-%m-%dT%H:%M:%SZ'
+}
+
+# Prometheus rate()[1m] needs history before the first sample; trailing partial buckets excluded.
+METRICS_SAMPLE_WINDOW_SEC="${METRICS_SAMPLE_WINDOW_SEC:-90}"
+METRICS_RATE_WARMUP_SEC="${METRICS_RATE_WARMUP_SEC:-60}"
+METRICS_SCRAPE_SETTLE_SEC="${METRICS_SCRAPE_SETTLE_SEC:-15}"
+
+_iso_to_epoch() {
+  local iso="$1"
+  local result=""
+  if result="$(date -u -jf '%Y-%m-%dT%H:%M:%SZ' "${iso}" '+%s' 2>/dev/null)"; then
+    echo "${result}"
+    return 0
+  fi
+  date -u -d "${iso}" '+%s'
+}
+
+metrics_query_end_iso() {
+  local result=""
+  if result="$(date -u -v-"${METRICS_SCRAPE_SETTLE_SEC}"S '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null)"; then
+    echo "${result}"
+    return 0
+  fi
+  date -u -d "${METRICS_SCRAPE_SETTLE_SEC} seconds ago" '+%Y-%m-%dT%H:%M:%SZ'
+}
+
+metrics_query_start_iso() {
+  local window_sec="${1:-${METRICS_SAMPLE_WINDOW_SEC}}"
+  local offset_sec=$((window_sec + METRICS_RATE_WARMUP_SEC + METRICS_SCRAPE_SETTLE_SEC))
+  local start_iso=""
+  if start_iso="$(date -u -v-"${offset_sec}"S '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null)"; then
+    :
+  else
+    start_iso="$(date -u -d "${offset_sec} seconds ago" '+%Y-%m-%dT%H:%M:%SZ')"
+  fi
+  echo "${start_iso}"
+}
+
 hpa_min_replicas() {
   kubectl get hpa hpa-eval-hpa -n "${NAMESPACE}" -o jsonpath='{.spec.minReplicas}'
 }

@@ -1216,3 +1216,33 @@ SMOKE_SUITE_PASS
 Full log: `/tmp/t1-f-full-honest-verify.log` (691 lines).
 
 - **Surprises:** Prior `--full` without `--env-file` skipped GKE guards and reused locust artifacts (ingest-only). Empty histogram on cold pods caused `verify_metric_contract` to fail silently at `grep app_request_latency_seconds_bucket` (set -e), truncating the suite before locust.
+
+---
+
+## t1-gke-prep: fixed nodes + metrics coverage threshold (2026-09-04)
+
+- **Files touched:** `scripts/deploy_gke.sh`, `scripts/run_benchmark.sh`, `scripts/lib/common.sh`, `scripts/smoke_test.sh`, `analysis/metrics_contract.py`, `analysis/collect_metrics.py`, `analysis/analyze_results.py`, `HANDOFF.md`
+- **Issue 1 — cluster autoscaler:** Removed `--enable-autoscaling`/`--min-nodes`/`--max-nodes` from `deploy_gke.sh`. Fixed `--num-nodes=3` (see HANDOFF.md arithmetic).
+- **Issue 2 — coverage threshold:** Added `MIN_COLUMN_COVERAGE_RATIO=0.95` in `analysis/metrics_contract.py`; collectors and `analyze_results.py` print `METRICS_COLUMN_COVERAGE` per column and abort with `METRICS_COVERAGE_BELOW_THRESHOLD`. Benchmark collection window anchored `t0+60s` → `t0+RUN_TIME` (no trailing `iso_now` bucket). Negative test `low-metrics-coverage` (50% CSV) added to `--full`.
+- **App resources (`deployment-hpa.yaml`):** CPU request `100m`, limit `200m`; memory request `128Mi`, limit `256Mi`.
+- **Verification command:** `bash scripts/smoke_test.sh --full --env-file .env`
+- **Elapsed time:** ~15.6 min (938s; log `/tmp/t1-gke-prep-full11.log`)
+- **Exit code:** 0 (`SMOKE_SUITE_PASS`)
+
+### Coverage lines (representative from full run)
+
+```
+METRICS_COLUMN_COVERAGE column=cpu_utilization_pct populated=6/6 ratio=1.0000
+METRICS_COLUMN_COVERAGE column=latency_p50_ms populated=6/6 ratio=1.0000
+...
+METRICS_COLUMN_COVERAGE column=error_rate populated=6/6 ratio=1.0000
+METRICS_COLUMN_COVERAGE path=.../fixed_metrics.csv column=cpu_utilization_pct populated=8/8 ratio=1.0000
+...
+METRICS_COVERAGE_BELOW_THRESHOLD column=cpu_utilization_pct populated=3/5 ratio=0.6000 threshold=0.95
+NEGATIVE_LOW_METRICS_COVERAGE_PASS
+LOCUST_FRESH_RUN run_id=smoke-locust
+SUMMARY attempted=1 passed=1
+SMOKE_SUITE_PASS
+```
+
+- **Surprises:** Re-running `--full` on a Prometheus TSDB polluted by a prior `/fail` error-rate test can make `check_fixed-metrics` see non-zero `error_rate`; restart Prometheus before a clean gate if re-running locally.

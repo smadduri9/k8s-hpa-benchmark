@@ -29,7 +29,7 @@ usage() {
 Usage:
   bash scripts/smoke_test.sh --check harness
   bash scripts/smoke_test.sh --check coldstart|assertions|fixed-metrics|label-isolation|locust-authority|preflight-traps|handoff-docs|error-rate-positive
-  bash scripts/smoke_test.sh --negative-test fixed-replica-assert|empty-metrics-column|missing-locust-hpa|missing-locust-fixed|hpa-never-scaled|label-isolation|coldstart-readiness
+  bash scripts/smoke_test.sh --negative-test fixed-replica-assert|empty-metrics-column|low-metrics-coverage|missing-locust-hpa|missing-locust-fixed|hpa-never-scaled|label-isolation|coldstart-readiness
   bash scripts/smoke_test.sh --full --env-file .env [--reuse-artifacts]
   bash scripts/smoke_test.sh --check locust-authority [--reuse-artifacts]
 EOF
@@ -187,8 +187,8 @@ check_label_isolation() {
   venv_python "${REPO_ROOT}/analysis/collect_metrics.py" \
     --mode "${MODE}" \
     --prometheus-url http://localhost:9090 \
-    --start "$(date -u -v-90S '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || date -u -d '90 seconds ago' '+%Y-%m-%dT%H:%M:%SZ')" \
-    --end "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" \
+    --start "$(metrics_query_start_iso)" \
+    --end "$(metrics_query_end_iso)" \
     --output /tmp/label_isolation.csv \
     --check-label-isolation
   kill "${pf}" 2>/dev/null || true
@@ -209,12 +209,13 @@ check_fixed_metrics() {
   venv_python "${REPO_ROOT}/analysis/collect_metrics.py" \
     --mode fixed \
     --prometheus-url http://localhost:9090 \
-    --start "$(date -u -v-90S '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || date -u -d '90 seconds ago' '+%Y-%m-%dT%H:%M:%SZ')" \
-    --end "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" \
+    --start "$(metrics_query_start_iso)" \
+    --end "$(metrics_query_end_iso)" \
     --step 15 \
     --namespace "${NAMESPACE}" \
     --output "${out_csv}" \
-    --assert-replicas "$(deployment_declared_replicas hpa-eval-fixed "${NAMESPACE}")"
+    --assert-replicas "$(deployment_declared_replicas hpa-eval-fixed "${NAMESPACE}")" \
+    --skip-label-isolation
   kill "${pf}" 2>/dev/null || true
   test -f "${out_csv}"
   venv_python -c "
@@ -261,8 +262,8 @@ check_error_rate_positive() {
   output="$(venv_python "${REPO_ROOT}/analysis/collect_metrics.py" \
     --mode fixed \
     --prometheus-url http://localhost:9090 \
-    --start "$(date -u -v-90S '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || date -u -d '90 seconds ago' '+%Y-%m-%dT%H:%M:%SZ')" \
-    --end "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" \
+    --start "$(metrics_query_start_iso)" \
+    --end "$(metrics_query_end_iso)" \
     --step 15 \
     --namespace "${NAMESPACE}" \
     --output "${out_csv}" \
@@ -510,8 +511,8 @@ check_assertions() {
   venv_python "${REPO_ROOT}/analysis/collect_metrics.py" \
     --mode fixed \
     --prometheus-url http://localhost:9090 \
-    --start "$(date -u -v-90S '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || date -u -d '90 seconds ago' '+%Y-%m-%dT%H:%M:%SZ')" \
-    --end "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" \
+    --start "$(metrics_query_start_iso)" \
+    --end "$(metrics_query_end_iso)" \
     --step 15 \
     --output /tmp/t1-b-positive-fixed.csv \
     --assert-replicas "${declared}" \
@@ -546,8 +547,8 @@ negative_fixed_replica_assert() {
   venv_python "${REPO_ROOT}/analysis/collect_metrics.py" \
     --mode fixed \
     --prometheus-url http://localhost:9090 \
-    --start "$(date -u -v-90S '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || date -u -d '90 seconds ago' '+%Y-%m-%dT%H:%M:%SZ')" \
-    --end "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" \
+    --start "$(metrics_query_start_iso)" \
+    --end "$(metrics_query_end_iso)" \
     --step 15 \
     --output /tmp/t1-b-negative-replica.csv \
     --assert-replicas "${declared}" 2>&1
@@ -594,6 +595,60 @@ EOF
     die "negative empty-metrics-column test missing expected assertion message for rps"
   fi
   echo "NEGATIVE_EMPTY_METRICS_COLUMN_PASS"
+}
+
+negative_low_metrics_coverage() {
+  local csv="/tmp/t1-b-low-coverage.csv"
+  PYTHONPATH="${REPO_ROOT}/analysis" venv_python -c "
+import csv
+from pathlib import Path
+from metrics_contract import MISSING, REQUIRED_VALUE_COLUMNS
+
+path = Path('${csv}')
+rows = []
+for i in range(10):
+    row = {
+        'timestamp': f'2026-09-02T00:{i:02d}:00+00:00',
+        'elapsed_seconds': str(i * 15),
+        'experiment': 'fixed',
+        'data_source': 'MEASURED',
+        'run_id': 'test',
+        'cluster_name': 'kind',
+        'collection_timestamp': '2026-09-02T00:00:00+00:00',
+        'replicas': '2',
+    }
+    for col in REQUIRED_VALUE_COLUMNS:
+        if col == 'error_rate':
+            row[col] = '0.0' if i % 2 == 0 else MISSING
+        elif i % 2 == 0:
+            row[col] = '1.0'
+        else:
+            row[col] = MISSING
+    rows.append(row)
+
+with path.open('w', newline='') as handle:
+    writer = csv.DictWriter(handle, fieldnames=list(rows[0].keys()))
+    writer.writeheader()
+    writer.writerows(rows)
+"
+
+  set +e
+  local output
+  output="$(venv_python "${REPO_ROOT}/analysis/analyze_results.py" \
+    --fixed "${csv}" \
+    --hpa "${csv}" \
+    --output-dir /tmp/t1-b-low-coverage-figures 2>&1)"
+  local rc=$?
+  set -e
+  echo "${output}"
+
+  if [[ "${rc}" -eq 0 ]]; then
+    die "negative low-metrics-coverage test expected failure but passed"
+  fi
+  if ! echo "${output}" | grep -q "METRICS_COVERAGE_BELOW_THRESHOLD"; then
+    die "negative low-metrics-coverage test missing METRICS_COVERAGE_BELOW_THRESHOLD"
+  fi
+  echo "NEGATIVE_LOW_METRICS_COVERAGE_PASS"
 }
 
 negative_missing_locust_hpa() {
@@ -695,8 +750,8 @@ negative_hpa_never_scaled() {
   output="$(venv_python "${REPO_ROOT}/analysis/collect_metrics.py" \
     --mode hpa \
     --prometheus-url http://localhost:9090 \
-    --start "$(date -u -v-90S '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || date -u -d '90 seconds ago' '+%Y-%m-%dT%H:%M:%SZ')" \
-    --end "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" \
+    --start "$(metrics_query_start_iso)" \
+    --end "$(metrics_query_end_iso)" \
     --step 15 \
     --namespace "${NAMESPACE}" \
     --output /tmp/t1-b-negative-hpa-never-scaled.csv \
@@ -733,8 +788,8 @@ negative_label_isolation() {
   output="$(venv_python "${REPO_ROOT}/analysis/collect_metrics.py" \
     --mode fixed \
     --prometheus-url http://localhost:9090 \
-    --start "$(date -u -v-90S '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || date -u -d '90 seconds ago' '+%Y-%m-%dT%H:%M:%SZ')" \
-    --end "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" \
+    --start "$(metrics_query_start_iso)" \
+    --end "$(metrics_query_end_iso)" \
     --output /tmp/t1-c-negative-label-isolation.csv \
     --check-label-isolation 2>&1)"
   local rc=$?
@@ -768,6 +823,7 @@ run_full_suite() {
   check_preflight_traps
   negative_fixed_replica_assert
   negative_empty_metrics_column
+  negative_low_metrics_coverage
   negative_missing_locust_hpa
   negative_missing_locust_fixed
   negative_hpa_never_scaled
@@ -783,6 +839,7 @@ elif [[ -n "${NEGATIVE_TEST}" ]]; then
   case "${NEGATIVE_TEST}" in
     fixed-replica-assert) negative_fixed_replica_assert ;;
     empty-metrics-column) negative_empty_metrics_column ;;
+    low-metrics-coverage) negative_low_metrics_coverage ;;
     missing-locust-hpa) negative_missing_locust_hpa ;;
     missing-locust-fixed) negative_missing_locust_fixed ;;
     hpa-never-scaled) negative_hpa_never_scaled ;;

@@ -27,8 +27,18 @@ import time
 import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
+from pathlib import Path
 
-MISSING = "MISSING"
+_ANALYSIS_DIR = Path(__file__).resolve().parent
+if str(_ANALYSIS_DIR) not in sys.path:
+    sys.path.insert(0, str(_ANALYSIS_DIR))
+
+from metrics_contract import (
+    MISSING,
+    REQUIRED_VALUE_COLUMNS,
+    assert_column_coverage,
+    column_coverage,
+)
 
 FIELDNAMES = [
     "timestamp",
@@ -44,16 +54,6 @@ FIELDNAMES = [
     "latency_p95_ms",
     "latency_p99_ms",
     "rps",
-    "error_rate",
-]
-
-REQUIRED_VALUE_COLUMNS = [
-    "cpu_utilization_pct",
-    "latency_p50_ms",
-    "latency_p95_ms",
-    "latency_p99_ms",
-    "rps",
-    "replicas",
     "error_rate",
 ]
 
@@ -368,11 +368,7 @@ def collect(
         )
         rows.append(row)
 
-    for col in REQUIRED_VALUE_COLUMNS:
-        populated = sum(1 for row in rows if row.get(col) not in (MISSING, "", None))
-        if populated == 0:
-            raise RuntimeError(f"ASSERTION FAILED: required column {col} has zero populated rows")
-
+    assert_column_coverage(rows, step_sec=step)
     return rows
 
 
@@ -431,7 +427,7 @@ def main() -> None:
         writer.writeheader()
         writer.writerows(rows)
 
-    populated_error = sum(1 for row in rows if row.get("error_rate") not in (MISSING, "", None))
+    populated_error, total_rows, error_ratio = column_coverage(rows, "error_rate")
     nonzero_error = sum(
         1
         for row in rows
@@ -439,8 +435,8 @@ def main() -> None:
     )
     print(f"FIXED_METRICS_REQUIRED_COLUMNS_POPULATED rows={len(rows)}")
     print(
-        f"ERROR_RATE_COLUMN_POPULATED rows={populated_error}/{len(rows)} "
-        f"non_zero={nonzero_error} missing={len(rows) - populated_error}"
+        f"ERROR_RATE_COLUMN_POPULATED rows={populated_error}/{total_rows} "
+        f"non_zero={nonzero_error} missing={total_rows - populated_error}"
     )
     if populated_error == 0:
         raise RuntimeError("ASSERTION FAILED: error_rate column has zero populated rows")

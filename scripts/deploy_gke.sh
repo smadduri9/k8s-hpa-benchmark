@@ -38,9 +38,13 @@ NAMESPACE="${NAMESPACE:-hpa-eval}"
 IMAGE_NAME="gcr.io/${PROJECT_ID}/hpa-eval-app"
 IMAGE_TAG="latest"
 MACHINE_TYPE="${GKE_MACHINE_TYPE:-e2-standard-2}"
+# Fixed node count — no cluster autoscaler (CA adds/removes nodes reactively and
+# contaminates HPA scaling latency measurements and arm-to-arm node baselines).
+# Sizing: e2-standard-2 allocatable ~1930m CPU / ~6172Mi per node after GKE
+# kube+system reserve; ~250m CPU / ~400Mi per node for daemonsets.
+# Peak concurrent requests: HPA maxReplicas=10×100m + fixed 3×100m + prom 100m = 1400m.
+# Require N×(1930-250) ≥ 1400 + N×250 → N ≥ 1.97 → minimum 2; use 3 for ~57% CPU headroom.
 NUM_NODES="${GKE_NUM_NODES:-3}"
-MIN_NODES="${GKE_MIN_NODES:-2}"
-MAX_NODES="${GKE_MAX_NODES:-6}"
 
 echo "=== Kubernetes HPA Evaluation — GKE Deploy ==="
 echo "  Project:      ${PROJECT_ID}"
@@ -48,7 +52,7 @@ echo "  Region:       ${REGION} (Artifact Registry)"
 echo "  Zone:         ${ZONE} (GKE cluster)"
 echo "  Cluster:      ${CLUSTER_NAME}"
 echo "  Machine type: ${MACHINE_TYPE}"
-echo "  Nodes:        ${NUM_NODES} (autoscale ${MIN_NODES}-${MAX_NODES}, single zone)"
+echo "  Nodes:        ${NUM_NODES} (fixed, single zone, no cluster autoscaler)"
 echo ""
 
 # ---------------------------------------------------------------------------
@@ -72,9 +76,6 @@ else
         --project="${PROJECT_ID}" \
         --machine-type="${MACHINE_TYPE}" \
         --num-nodes="${NUM_NODES}" \
-        --enable-autoscaling \
-        --min-nodes="${MIN_NODES}" \
-        --max-nodes="${MAX_NODES}" \
         --enable-ip-alias \
         --release-channel=regular
 fi

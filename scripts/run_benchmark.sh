@@ -210,16 +210,20 @@ run_one_repetition() {
     local t0_fixed
     t0_fixed="$(<"${rep_dir}/t0_fixed.txt")"
     local t1_fixed
-    t1_fixed="$(iso_now)"
-    collect_arm_metrics fixed "${t0_fixed}" "${t1_fixed}" "${rep_dir}/fixed_metrics.csv" "" "${expected_fixed}"
+    t1_fixed="$(iso_add_run_time "${t0_fixed}" "${RUN_TIME}")"
+    local collect_start_fixed
+    collect_start_fixed="$(iso_add_run_time "${t0_fixed}" "${METRICS_RATE_WARMUP_SEC}s")"
+    collect_arm_metrics fixed "${collect_start_fixed}" "${t1_fixed}" "${rep_dir}/fixed_metrics.csv" "" "${expected_fixed}"
 
     cold_start_arm "hpa-eval-hpa" "app=hpa-eval,experiment=hpa" "${NAMESPACE}" "${MANIFEST_PATH}" "hpa"
     run_locust_arm hpa "${HPA_HOST}" "${rep_dir}/locust_hpa" "${rep_dir}/rep.log" "${rep_dir}"
     local t0_hpa
     t0_hpa="$(<"${rep_dir}/t0_hpa.txt")"
     local t1_hpa
-    t1_hpa="$(iso_now)"
-    collect_arm_metrics hpa "${t0_hpa}" "${t1_hpa}" "${rep_dir}/hpa_metrics.csv" "${HPA_MAX_REPLICAS}"
+    t1_hpa="$(iso_add_run_time "${t0_hpa}" "${RUN_TIME}")"
+    local collect_start_hpa
+    collect_start_hpa="$(iso_add_run_time "${t0_hpa}" "${METRICS_RATE_WARMUP_SEC}s")"
+    collect_arm_metrics hpa "${collect_start_hpa}" "${t1_hpa}" "${rep_dir}/hpa_metrics.csv" "${HPA_MAX_REPLICAS}"
 
     venv_python "${REPO_ROOT}/analysis/ingest_locust.py" \
       --fixed-stats "${rep_dir}/locust_fixed_stats.csv" \
