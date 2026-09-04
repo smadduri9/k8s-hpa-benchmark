@@ -14,6 +14,8 @@ source "${LIBS_DIR}/cleanup.sh"
 source "${LIBS_DIR}/cold_start.sh"
 # shellcheck source=lib/locust_run.sh
 source "${LIBS_DIR}/locust_run.sh"
+# shellcheck source=lib/replica_sampler.sh
+source "${LIBS_DIR}/replica_sampler.sh"
 # shellcheck source=lib/loadbalancer.sh
 source "${LIBS_DIR}/loadbalancer.sh"
 
@@ -98,6 +100,15 @@ run_locust_arm() {
 
   local t0_file="${rep_dir}/t0_${arm}.txt"
   local locust_log="${rep_dir}/locust_${arm}.log"
+  local replica_series
+  local sampler_pid=""
+  local deployment
+  case "${arm}" in
+    fixed) deployment="hpa-eval-fixed" ;;
+    hpa) deployment="hpa-eval-hpa" ;;
+    *) die "unsupported locust arm: ${arm}" ;;
+  esac
+  replica_series="$(replica_series_path "${rep_dir}" "${arm}")"
 
   heartbeat_start "${harness_log}" "locust-${arm}"
   local hb_pid=$!
@@ -117,6 +128,10 @@ run_locust_arm() {
   echo "${t0}" > "${t0_file}"
   manifest_set_load_start_t0 "${MANIFEST_PATH}" "${arm}" "${t0}"
 
+  replica_sampler_start "${NAMESPACE}" "${deployment}" "${replica_series}" 15
+  sampler_pid=$!
+  register_heartbeat_pid "${sampler_pid}"
+
   locust_wait_bounded \
     "${REPO_ROOT}/${LOCUST_FILE}" \
     "${host}" \
@@ -124,6 +139,9 @@ run_locust_arm() {
     "${csv_base}" \
     "${locust_log}" \
     "${harness_log}"
+
+  replica_sampler_stop "${sampler_pid}" "${replica_series}"
+  echo "REPLICA_SERIES_WRITTEN path=${replica_series} arm=${arm}"
 
   heartbeat_stop "${hb_pid}"
 }
@@ -135,6 +153,10 @@ collect_arm_metrics() {
   local output="$4"
   local max_replicas="${5:-}"
   local expected_replicas="${6:-}"
+  local rep_dir
+  rep_dir="$(dirname "${output}")"
+  local replica_series
+  replica_series="$(replica_series_path "${rep_dir}" "${mode}")"
 
   local args=(
     "${VENV_PYTHON}" "${REPO_ROOT}/analysis/collect_metrics.py"
@@ -147,6 +169,7 @@ collect_arm_metrics() {
     --run-id "${RUN_ID}"
     --cluster-name "${CLUSTER_NAME:-kind-smoke}"
     --output "${output}"
+    --replica-series "${replica_series}"
   )
   if [[ "${mode}" == "fixed" ]]; then
     if [[ -z "${expected_replicas}" ]]; then

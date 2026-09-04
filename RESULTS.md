@@ -5,7 +5,7 @@ All headline numbers below are `PENDING_RERUN` until measured GKE artifacts exis
 Authority split:
 - Locust: request counts, successes, failures
 - Prometheus: CPU and timing
-- kubectl API: replica counts
+- kubectl API (sampled every 15s during load into `replica_series_<arm>.csv`): `spec_replicas`, `status_replicas`, `ready_replicas` per timestamp
 
 ## Measurement limitations
 
@@ -25,7 +25,8 @@ Authority split:
 
 Two published rows per arm at the start of the window (`t0` and `t0+step`) are often `MISSING` for `latency_p50_ms`, `latency_p95_ms`, `latency_p99_ms`, `rps`, and `error_rate`. This is inherent to Prometheus counter semantics, not a collection failure: `app_requests_total` has no series until the first request arrives, so `rate(...[30s])` has no prior sample to difference against at the exact burst onset.
 
-- **Gauges are complete from t0:** `replicas` and `cpu_utilization_pct` scrape idle pods during pre-roll and are populated for every published row (e.g. 41/41 at 10m smoke, 73/73 at 18m production). HPA scaling behavior is captured from the first row.
+- **Gauges are complete from t0:** `cpu_utilization_pct` scrapes idle pods during pre-roll and is populated for every published row. **Replica columns** come from in-run kubectl sampling (`replica_series_<arm>.csv`), aligned to each timestamp — not live state at collection time. Published CSV includes `spec_replicas` (HPA desired), `status_replicas`, and `ready_replicas` (capacity serving traffic); legacy `replicas` equals `ready_replicas`.
+- **Scale-up lag (HPA arm):** During scale-up, `spec_replicas` (what the HPA decided) leads `ready_replicas` (pods passing readiness). `HPA_SCALE_FLOOR_CHECK` uses peak `spec_replicas` to match Kubernetes event rescale lines; the gap between spec and ready is a real measurement of scale-up latency and should be reported, not treated as missing data.
 - **Symmetric across arms:** Both fixed and HPA arms see the same two-row gap, so comparative analysis is unaffected.
 - **Expected coverage (no warm-up traffic):** At `step=15` and `rate_window_sec=30`, expect two `MISSING` rate-derived rows per arm. Published row counts: **41 at 10m smoke** → **39/41 (0.9512)**; **73 at 18m production** → **~71/73 (0.973)**. Do not add pre-burst request traffic to populate these rows — that would alter the counter baseline before `t0`.
 

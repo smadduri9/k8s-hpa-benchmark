@@ -13,7 +13,8 @@
 - Cold-start production readiness timeout defaults to **180s** (`COLD_START_READINESS_TIMEOUT_SEC` in `scripts/lib/cold_start.sh`). Smoke negative tests may override to 30s; that override must never be the production default.
 - kubectl client/server minor-version skew: preflight **WARN** when skew > 1, **FAIL** when skew > 2 (Kubernetes supported skew is one minor version).
 - On arm64 hosts, GKE image builds in `scripts/deploy_gke.sh` must pass `docker build --platform linux/amd64`; preflight fails if the flag is absent.
-- HPA arm collection aborts with `HPA_NEVER_SCALED` if peak observed replicas never exceeds `minReplicas` during the anchored window.
+- HPA arm collection aborts with `HPA_NEVER_SCALED` if peak `spec_replicas` never exceeds `minReplicas` during the anchored window (from in-run `replica_series_<arm>.csv`, not live kubectl at collection time). `HPA_SCALE_FLOOR_CHECK` peak uses `spec_replicas` (HPA desired count); `ready_replicas` is recorded separately.
+- Fixed arm aborts with `REPLICA_BELOW_DECLARED` if peak in-window `ready_replicas` never reaches declared count; mid-run dips below declared log `REPLICA_DIP_OBSERVED` and continue.
 - No operation may block indefinitely. Every wait has an explicit timeout and a named error on expiry.
 - Locust invocations must pass explicit `--run-time`, verify load-target reachability before start (`LOAD_TARGET_UNREACHABLE` on failure), and run under a wall-clock guard (`LOCUST_TIMEOUT` on expiry). Never capture Locust stdout via command substitution.
 - Never use command substitution to capture a function's return value. Functions return status via exit codes; diagnostic output goes to stderr or a log file, never stdout.

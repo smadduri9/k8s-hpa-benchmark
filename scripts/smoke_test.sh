@@ -11,6 +11,8 @@ source "${SCRIPT_DIR}/lib/common.sh"
 source "${SCRIPT_DIR}/lib/cold_start.sh"
 # shellcheck source=lib/cleanup.sh
 source "${SCRIPT_DIR}/lib/cleanup.sh"
+# shellcheck source=lib/replica_sampler.sh
+source "${SCRIPT_DIR}/lib/replica_sampler.sh"
 
 ENV_FILE=""
 CHECK=""
@@ -224,18 +226,23 @@ check_error_rate_positive() {
   local pf=$!
   sleep 3
 
-  local preroll_start t0 t1 out_csv="/tmp/t1-c-error-rate-positive.csv"
+  local preroll_start t0 t1 out_csv="/tmp/t1-c-error-rate-positive.csv" replica_series sampler_pid
   preroll_start="$(iso_now)"
   ensure_metrics_preroll "${preroll_start}"
   t0="$(iso_now)"
   t1="$(iso_add_run_time "${t0}" "${METRICS_SAMPLE_WINDOW_SEC}s")"
   echo "SMOKE_METRICS_WINDOW t0=${t0} end=${t1}"
+  replica_series="/tmp/smoke-error-rate-replica-series-$$.csv"
+  replica_sampler_start "${NAMESPACE}" "hpa-eval-fixed" "${replica_series}" "${SMOKE_METRICS_STEP}"
+  sampler_pid=$!
 
   while [[ "$(_iso_to_epoch "$(iso_now)")" -lt "$(_iso_to_epoch "${t1}")" ]]; do
     curl -sf "http://127.0.0.1:18080/cpu?intensity=low" >/dev/null 2>&1 || true
     curl -s -o /dev/null "http://127.0.0.1:18080/fail" || true
     sleep 1
   done
+
+  replica_sampler_stop "${sampler_pid}" "${replica_series}"
 
   local output
   output="$(venv_python "${REPO_ROOT}/analysis/collect_metrics.py" \
@@ -246,6 +253,7 @@ check_error_rate_positive() {
     --step "${SMOKE_METRICS_STEP}" \
     --namespace "${NAMESPACE}" \
     --output "${out_csv}" \
+    --replica-series "${replica_series}" \
     --assert-replicas "$(deployment_declared_replicas hpa-eval-fixed "${NAMESPACE}")" \
     --skip-label-isolation 2>&1)"
   echo "${output}"
@@ -496,13 +504,17 @@ smoke_collect_fixed_metrics_anchored() {
   local pf=$!
   sleep 3
 
-  local preroll_start t0 t1
+  local preroll_start t0 t1 replica_series sampler_pid
   preroll_start="$(iso_now)"
   ensure_metrics_preroll "${preroll_start}"
   t0="$(iso_now)"
   t1="$(iso_add_run_time "${t0}" "${METRICS_SAMPLE_WINDOW_SEC}s")"
   echo "SMOKE_METRICS_WINDOW t0=${t0} end=${t1}"
+  replica_series="/tmp/smoke-fixed-replica-series-$$.csv"
+  replica_sampler_start "${NAMESPACE}" "hpa-eval-fixed" "${replica_series}" "${SMOKE_METRICS_STEP}"
+  sampler_pid=$!
   smoke_sustain_fixed_traffic_until "${t1}"
+  replica_sampler_stop "${sampler_pid}" "${replica_series}"
 
   venv_python "${REPO_ROOT}/analysis/collect_metrics.py" \
     --mode fixed \
@@ -512,6 +524,7 @@ smoke_collect_fixed_metrics_anchored() {
     --step "${SMOKE_METRICS_STEP}" \
     --namespace "${NAMESPACE}" \
     --output "${out_csv}" \
+    --replica-series "${replica_series}" \
     "${extra_args[@]}"
 
   kill "${pf}" 2>/dev/null || true
@@ -552,6 +565,10 @@ negative_fixed_replica_assert() {
 
   smoke_warm_fixed_traffic
 
+  local replica_series="/tmp/t1-b-negative-replica-series.csv"
+  replica_series_write_constant "${NAMESPACE}" "hpa-eval-fixed" \
+    "$(metrics_query_start_iso)" "$(metrics_query_end_iso)" 15 "${replica_series}"
+
   set +e
   venv_python "${REPO_ROOT}/analysis/collect_metrics.py" \
     --mode fixed \
@@ -560,6 +577,7 @@ negative_fixed_replica_assert() {
     --end "$(metrics_query_end_iso)" \
     --step 15 \
     --output /tmp/t1-b-negative-replica.csv \
+    --replica-series "${replica_series}" \
     --assert-replicas "${declared}" 2>&1
   local rc=$?
   set -e
@@ -754,6 +772,10 @@ negative_hpa_never_scaled() {
   kill "${app_pf}" 2>/dev/null || true
   wait "${app_pf}" 2>/dev/null || true
 
+  local replica_series="/tmp/t1-b-negative-hpa-series.csv"
+  replica_series_write_constant "${NAMESPACE}" "hpa-eval-hpa" \
+    "$(metrics_query_start_iso)" "$(metrics_query_end_iso)" 15 "${replica_series}"
+
   set +e
   local output
   output="$(venv_python "${REPO_ROOT}/analysis/collect_metrics.py" \
@@ -764,6 +786,7 @@ negative_hpa_never_scaled() {
     --step 15 \
     --namespace "${NAMESPACE}" \
     --output /tmp/t1-b-negative-hpa-never-scaled.csv \
+    --replica-series "${replica_series}" \
     --min-replicas "${min_replicas}" \
     --max-replicas 3 \
     --skip-label-isolation 2>&1)"

@@ -11,7 +11,8 @@ Prometheus rate(...[1m]) needs samples before t0; queries use a 60s pre-roll
 Authority split (documented):
   - Locust is authoritative for request counts, successes, and failures.
   - Prometheus is authoritative for CPU and timing metrics in this module.
-  - Replicas are sampled from the Kubernetes API via kubectl (not Prometheus).
+  - Replicas are sampled from the Kubernetes API during the load window (see
+    scripts/lib/replica_sampler.sh) and read from --replica-series at collection.
 """
 
 from __future__ import annotations
@@ -20,11 +21,11 @@ import argparse
 import csv
 import json
 import os
-import subprocess
 import sys
 import time
 import urllib.parse
 import urllib.request
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -49,6 +50,9 @@ FIELDNAMES = [
     "cluster_name",
     "collection_timestamp",
     "replicas",
+    "spec_replicas",
+    "status_replicas",
+    "ready_replicas",
     "cpu_utilization_pct",
     "latency_p50_ms",
     "latency_p95_ms",
@@ -57,13 +61,7 @@ FIELDNAMES = [
     "error_rate",
 ]
 
-DEPLOYMENT_BY_MODE = {
-    "fixed": "hpa-eval-fixed",
-    "hpa": "hpa-eval-hpa",
-}
-
 OPPOSITE_EXPERIMENT = {"fixed": "hpa", "hpa": "fixed"}
-
 
 # Prometheus default scrape interval in k8s/prometheus/configmap.yaml
 PROMETHEUS_SCRAPE_INTERVAL_SEC = 15
@@ -244,27 +242,140 @@ def assert_label_isolation(
     return 1
 
 
-def sample_ready_replicas(namespace: str, deployment: str) -> int | None:
-    cmd = [
-        "kubectl",
-        "get",
-        "deployment",
-        deployment,
-        "-n",
-        namespace,
-        "-o",
-        "jsonpath={.status.readyReplicas}",
-    ]
-    proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
-    if proc.returncode != 0:
-        return None
-    value = proc.stdout.strip()
+@dataclass(frozen=True)
+class ReplicaSample:
+    ts: float
+    spec: int
+    status: int
+    ready: int
+
+
+def _parse_replica_int(raw: str, field: str, row: dict, path: Path) -> int:
+    value = raw.strip()
     if value == "":
-        return 0
+        if field == "ready_replicas":
+            return 0
+        raise RuntimeError(
+            f"REPLICA_SERIES_INVALID path={path} reason=empty_{field} row={row}"
+        )
     try:
         return int(value)
-    except ValueError:
-        return None
+    except ValueError as exc:
+        raise RuntimeError(
+            f"REPLICA_SERIES_INVALID path={path} reason=non_numeric_{field} row={row}"
+        ) from exc
+
+
+def load_replica_series(path: Path) -> list[ReplicaSample]:
+    if not path.is_file() or path.stat().st_size == 0:
+        raise RuntimeError(f"REPLICA_SERIES_MISSING path={path}")
+    samples: list[ReplicaSample] = []
+    with path.open(newline="", encoding="utf-8") as handle:
+        reader = csv.DictReader(handle)
+        if reader.fieldnames is None or "timestamp" not in reader.fieldnames:
+            raise RuntimeError(f"REPLICA_SERIES_INVALID path={path} reason=missing_timestamp_column")
+        required = ("spec_replicas", "status_replicas", "ready_replicas")
+        for column in required:
+            if column not in reader.fieldnames:
+                raise RuntimeError(
+                    f"REPLICA_SERIES_INVALID path={path} reason=missing_{column}_column"
+                )
+        for row in reader:
+            ts_raw = row.get("timestamp", "").strip()
+            if not ts_raw:
+                continue
+            try:
+                ts = parse_iso8601(ts_raw)
+            except ValueError as exc:
+                raise RuntimeError(
+                    f"REPLICA_SERIES_INVALID path={path} reason=bad_timestamp row={row}"
+                ) from exc
+            spec = _parse_replica_int(row.get("spec_replicas", ""), "spec_replicas", row, path)
+            status = _parse_replica_int(row.get("status_replicas", ""), "status_replicas", row, path)
+            ready = _parse_replica_int(row.get("ready_replicas", ""), "ready_replicas", row, path)
+            samples.append(ReplicaSample(ts=ts, spec=spec, status=status, ready=ready))
+    if not samples:
+        raise RuntimeError(f"REPLICA_SERIES_EMPTY path={path}")
+    samples.sort(key=lambda item: item.ts)
+    return samples
+
+
+def replica_at_timestamp(
+    samples: list[ReplicaSample],
+    ts: float,
+    step: int,
+) -> ReplicaSample | None:
+    tolerance = step / 2
+    best: ReplicaSample | None = None
+    best_delta = tolerance + 1
+    for sample in samples:
+        delta = abs(sample.ts - ts)
+        if delta <= tolerance and delta < best_delta:
+            best = sample
+            best_delta = delta
+    return best
+
+
+def samples_in_window(
+    samples: list[ReplicaSample],
+    start_ts: float,
+    end_ts: float,
+) -> list[ReplicaSample]:
+    return [sample for sample in samples if start_ts <= sample.ts <= end_ts]
+
+
+def evaluate_replica_series(
+    mode: str,
+    samples: list[ReplicaSample],
+    publish_start_ts: float,
+    publish_end_ts: float,
+    assert_replicas: int | None = None,
+    min_replicas: int | None = None,
+) -> tuple[int, int, int, int]:
+    window_samples = samples_in_window(samples, publish_start_ts, publish_end_ts)
+    if not window_samples:
+        raise RuntimeError(
+            "REPLICA_SERIES_EMPTY "
+            f"window_start={datetime.fromtimestamp(publish_start_ts, tz=timezone.utc).isoformat()} "
+            f"window_end={datetime.fromtimestamp(publish_end_ts, tz=timezone.utc).isoformat()}"
+        )
+
+    peak_spec = max(sample.spec for sample in window_samples)
+    peak_ready = max(sample.ready for sample in window_samples)
+    min_ready = min(sample.ready for sample in window_samples)
+
+    if mode == "fixed" and assert_replicas is not None:
+        if peak_ready < assert_replicas:
+            msg = (
+                f"REPLICA_BELOW_DECLARED peak_observed={peak_ready} declared={assert_replicas}"
+            )
+            print(msg, file=sys.stderr)
+            raise RuntimeError(msg)
+        if min_ready < assert_replicas:
+            dip_times = [
+                datetime.fromtimestamp(sample.ts, tz=timezone.utc).isoformat()
+                for sample in window_samples
+                if sample.ready < assert_replicas
+            ]
+            print(
+                "REPLICA_DIP_OBSERVED "
+                f"declared={assert_replicas} minimum={min_ready} "
+                f"dip_timestamps={','.join(dip_times)}"
+            )
+
+    if mode == "hpa" and min_replicas is not None:
+        if peak_spec <= min_replicas:
+            msg = (
+                f"HPA_NEVER_SCALED peak_observed={peak_spec} minReplicas={min_replicas}"
+            )
+            print(msg, file=sys.stderr)
+            raise RuntimeError(msg)
+        print(
+            f"HPA_SCALE_FLOOR_CHECK peak={peak_spec} minReplicas={min_replicas} "
+            f"peak_ready={peak_ready}"
+        )
+
+    return peak_spec, peak_ready, min_ready
 
 
 def collect(
@@ -276,6 +387,7 @@ def collect(
     namespace: str,
     run_id: str,
     cluster_name: str,
+    replica_series_path: Path,
     assert_replicas: int | None = None,
     max_replicas: int | None = None,
     min_replicas: int | None = None,
@@ -300,22 +412,16 @@ def collect(
     if run_label_isolation_check:
         assert_label_isolation(prometheus_url, mode, publish_start_ts, publish_end_ts)
 
-    deployment = DEPLOYMENT_BY_MODE[mode]
-    if mode == "hpa" and min_replicas is not None:
-        peak_replicas = 0
-        ts = publish_start_ts
-        while ts <= publish_end_ts:
-            replica_val = sample_ready_replicas(namespace, deployment)
-            if replica_val is not None:
-                peak_replicas = max(peak_replicas, replica_val)
-            ts += step
-        if peak_replicas <= min_replicas:
-            msg = (
-                f"HPA_NEVER_SCALED peak_observed={peak_replicas} minReplicas={min_replicas}"
-            )
-            print(msg, file=sys.stderr)
-            raise RuntimeError(msg)
-        print(f"HPA_SCALE_FLOOR_CHECK peak={peak_replicas} minReplicas={min_replicas}")
+    replica_samples = load_replica_series(replica_series_path)
+    print(f"REPLICA_SERIES_LOADED path={replica_series_path} samples={len(replica_samples)}")
+    evaluate_replica_series(
+        mode,
+        replica_samples,
+        publish_start_ts,
+        publish_end_ts,
+        assert_replicas=assert_replicas,
+        min_replicas=min_replicas,
+    )
 
     queries = build_queries(mode, step)
     error_queries = build_error_rate_queries(mode, step)
@@ -361,16 +467,14 @@ def collect(
     for ts, _ in ref:
         if ts < publish_start_ts - (step / 2) or ts > publish_end_ts + (step / 2):
             continue
-        replica_val = sample_ready_replicas(namespace, deployment)
-        if assert_replicas is not None and replica_val is not None and replica_val != assert_replicas:
-            msg = (
-                f"ASSERTION FAILED: {mode} arm expected {assert_replicas} replicas, observed {replica_val}"
-            )
-            print(msg, file=sys.stderr)
-            raise RuntimeError(msg)
-        if max_replicas is not None and replica_val is not None and replica_val > max_replicas:
+        sample = replica_at_timestamp(replica_samples, ts, step)
+        if (
+            max_replicas is not None
+            and sample is not None
+            and sample.spec > max_replicas
+        ):
             raise RuntimeError(
-                f"ASSERTION FAILED: {mode} arm replicas {replica_val} exceed maxReplicas {max_replicas}"
+                f"ASSERTION FAILED: {mode} arm spec_replicas {sample.spec} exceed maxReplicas {max_replicas}"
             )
 
         row = {
@@ -381,7 +485,10 @@ def collect(
             "run_id": run_id,
             "cluster_name": cluster_name,
             "collection_timestamp": datetime.now(tz=timezone.utc).isoformat(),
-            "replicas": replica_val if replica_val is not None else MISSING,
+            "replicas": sample.ready if sample is not None else MISSING,
+            "spec_replicas": sample.spec if sample is not None else MISSING,
+            "status_replicas": sample.status if sample is not None else MISSING,
+            "ready_replicas": sample.ready if sample is not None else MISSING,
         }
         for metric, values in series.items():
             val = next((v for t, v in values if abs(t - ts) < step), None)
@@ -411,6 +518,7 @@ def main() -> None:
     parser.add_argument("--run-id", default="local")
     parser.add_argument("--cluster-name", default="local")
     parser.add_argument("--output", required=True)
+    parser.add_argument("--replica-series", required=True, help="CSV of in-run kubectl replica samples")
     parser.add_argument("--assert-replicas", type=int)
     parser.add_argument("--max-replicas", type=int)
     parser.add_argument("--min-replicas", type=int)
@@ -442,6 +550,7 @@ def main() -> None:
         namespace=args.namespace,
         run_id=args.run_id,
         cluster_name=args.cluster_name,
+        replica_series_path=Path(args.replica_series),
         assert_replicas=args.assert_replicas,
         max_replicas=args.max_replicas,
         min_replicas=args.min_replicas,

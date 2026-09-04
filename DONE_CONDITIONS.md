@@ -8,7 +8,7 @@ Format: `item_id | verification_command | expected_output`
 
 `t1-a-coldstart | bash scripts/smoke_test.sh --check coldstart | log contains "PODS_AT_ZERO_CONFIRMED", then "READY_REPLICAS_MATCH_DECLARED", then "LOAD_START t0=" in this exact order`
 
-`t1-b-assertions | bash scripts/smoke_test.sh --check assertions && bash scripts/smoke_test.sh --negative-test fixed-replica-assert && bash scripts/smoke_test.sh --negative-test empty-metrics-column && bash scripts/smoke_test.sh --negative-test missing-locust-hpa && bash scripts/smoke_test.sh --negative-test hpa-never-scaled | positive: DECLARED_REPLICAS_FROM_SPEC; negatives: ASSERTION FAILED replica, empty column, missing locust, HPA_NEVER_SCALED`
+`t1-b-assertions | bash scripts/smoke_test.sh --check assertions && bash scripts/smoke_test.sh --negative-test fixed-replica-assert && bash scripts/smoke_test.sh --negative-test empty-metrics-column && bash scripts/smoke_test.sh --negative-test missing-locust-hpa && bash scripts/smoke_test.sh --negative-test hpa-never-scaled | positive: DECLARED_REPLICAS_FROM_SPEC; negatives: REPLICA_BELOW_DECLARED, empty column, missing locust, HPA_NEVER_SCALED`
 
 `t1-c-fixed-metrics | bash scripts/smoke_test.sh --check fixed-metrics && bash scripts/smoke_test.sh --check error-rate-positive | fixed-metrics: FIXED_METRICS_REQUIRED_COLUMNS_POPULATED and ERROR_RATE_COLUMN_POPULATED with error_rate=0.0 rows; error-rate-positive: ERROR_RATE_NONZERO_VERIFIED and non_zero>=1 in collector output`
 
