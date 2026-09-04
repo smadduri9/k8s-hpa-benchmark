@@ -1301,3 +1301,14 @@ GKE_QUOTA_SSD_TOTAL_GB limit=250 usage=0 required=300 status=FAIL
 PREFLIGHT_FAIL
 ```
 (exit 1)
+
+---
+
+## t1-gke-lb-handoff: LoadBalancer gate + doc cleanup (2026-09-04)
+
+- **Files touched:** `scripts/lib/loadbalancer.sh` (new), `scripts/run_benchmark.sh`, `HANDOFF.md`, `RESULTS.md`
+- **LoadBalancer decision:** Keep `type: LoadBalancer` on GKE; HANDOFF documents why port-forward is unsuitable at 80 users × 18m (~$0.15/session LB cost is correct).
+- **LB readiness gate:** `ensure_loadbalancer_hosts_ready()` runs before cold-start; polls external IP + `GET /health` per Service; **`LOADBALANCER_NOT_READY`** on timeout (default 600s). Skips on kind NodePort (`LOADBALANCER_GATE_SKIPPED`).
+- **HANDOFF fixes:** smoke shape 10m (not 4m); GKE smoke ~25–35 min; default `--repetitions 1`; firewall-rule orphan check (`gcloud compute firewall-rules list --filter="name~'^k8s-'"`).
+- **RESULTS.md:** added **Measurement limitations** (laptop Locust in California → us-central1; comparison valid, absolute latency not internal; in-cluster Locust deferred Tier 2).
+
