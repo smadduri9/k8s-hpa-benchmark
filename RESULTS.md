@@ -15,6 +15,14 @@ Authority split:
 - **Rate lookback:** PromQL `rate(...[N])` uses `N = max(step, 2×scrape_interval)` (30s at default 15s step/scrape) so range queries have enough samples; burst-onset rows are published and assessed like any other row.
 - **Log markers:** `METRIC_QUERY_PREROLL_SEC=60 published_rows_only=true no_row_exclusions=true`
 
+### Burst-onset MISSING rows (rate-derived columns)
+
+Two published rows per arm at the start of the window (`t0` and `t0+step`) are often `MISSING` for `latency_p50_ms`, `latency_p95_ms`, `latency_p99_ms`, `rps`, and `error_rate`. This is inherent to Prometheus counter semantics, not a collection failure: `app_requests_total` has no series until the first request arrives, so `rate(...[30s])` has no prior sample to difference against at the exact burst onset.
+
+- **Gauges are complete from t0:** `replicas` and `cpu_utilization_pct` scrape idle pods during pre-roll and are populated for every published row (e.g. 41/41 at 10m smoke, 73/73 at 18m production). HPA scaling behavior is captured from the first row.
+- **Symmetric across arms:** Both fixed and HPA arms see the same two-row gap, so comparative analysis is unaffected.
+- **Expected coverage (no warm-up traffic):** At `step=15` and `rate_window_sec=30`, expect two `MISSING` rate-derived rows per arm. Published row counts: **41 at 10m smoke** → **39/41 (0.9512)**; **73 at 18m production** → **~71/73 (0.973)**. Do not add pre-burst request traffic to populate these rows — that would alter the counter baseline before `t0`.
+
 ## Failure rate (fixed arm)
 - **Value:** `PENDING_RERUN`
 - **Formula:** `failures / requests` from Locust Aggregated row
