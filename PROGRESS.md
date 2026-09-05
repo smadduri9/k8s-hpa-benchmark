@@ -1342,7 +1342,68 @@ PROM_AUTHORITY=REPLICAS_CPU_TIMING
 ## a0-5: regenerate figures with client-observed latency (2026-09-04)
 
 - **Files touched:** `analysis/analyze_results.py`, `docs/figures/run-20260904T230444Z/*.png`
-- **Verification:** see commit `a676cfd` command output in git log; client-observed p50/p95/p99 recovered: fixed 1200/21000/40000 ms, HPA 310/1300/2200 ms.
+- **Verification command:**
+
+```bash
+".venv/bin/python" analysis/analyze_results.py \
+  --fixed results/runs/run-20260904T230444Z/rep-1/fixed_metrics.csv \
+  --hpa results/runs/run-20260904T230444Z/rep-1/hpa_metrics.csv \
+  --replica-series-fixed results/runs/run-20260904T230444Z/rep-1/replica_series_fixed.csv \
+  --replica-series-hpa results/runs/run-20260904T230444Z/rep-1/replica_series_hpa.csv \
+  --locust-fixed-stats results/runs/run-20260904T230444Z/rep-1/locust_fixed_stats.csv \
+  --locust-hpa-stats results/runs/run-20260904T230444Z/rep-1/locust_hpa_stats.csv \
+  --locust-fixed-history results/runs/run-20260904T230444Z/rep-1/locust_fixed_stats_history.csv \
+  --locust-hpa-history results/runs/run-20260904T230444Z/rep-1/locust_hpa_stats_history.csv \
+  --t0-fixed results/runs/run-20260904T230444Z/rep-1/t0_fixed.txt \
+  --t0-hpa results/runs/run-20260904T230444Z/rep-1/t0_hpa.txt \
+  --output-dir docs/figures/run-20260904T230444Z \
+  --allow-partial-coverage
+```
+
+```
+ALLOW_PARTIAL_COVERAGE=true fixed_metrics_coverage_certified=false
+Loaded: 73 fixed rows, 73 HPA rows
+Generating figures...
+  Saved docs/figures/run-20260904T230444Z/latency_comparison.png
+  Saved docs/figures/run-20260904T230444Z/latency_client_run_level.png
+  Saved docs/figures/run-20260904T230444Z/latency_client_window.png
+  Saved docs/figures/run-20260904T230444Z/throughput_comparison.png
+  Saved docs/figures/run-20260904T230444Z/cpu_replicas.png
+COST_PER_1K_SUCCESSFUL formula=(pod_hours*list_price_per_pod_hour)/(successful_requests/1000) list_price_per_pod_hour=0.002675 (GKE e2-standard-2 $0.0535/hr * 0.1/2.0 vCPU share)
+  fixed pod_hours=0.4472 successful=8963 cost_per_1k=$0.000133 source=replica_series+locust_fixed_stats
+  hpa pod_hours=2.4111 successful=20757 cost_per_1k=$0.000311 source=replica_series+locust_hpa_stats
+  Saved docs/figures/run-20260904T230444Z/cost_performance.png
+
+=======================================================================================
+STATISTICAL SUMMARY — Prometheus service time (in-handler)
+=======================================================================================
+Metric                           Fixed Mean  Fixed Std     HPA Mean    HPA Std       Δ%
+---------------------------------------------------------------------------------------
+Service time p50 (ms)                133.03      26.45       147.50      25.39 +   10.9%
+Service time p95 (ms)                238.51       3.04       238.92       5.79 +    0.2%
+Service time p99 (ms)                253.18      31.26       250.63      19.30    -1.0%
+Throughput (RPS)                       5.44       3.74        15.18       8.24 +  179.0%
+CPU Util (%)                           9.21      17.13        12.88       8.20 +   39.8%
+Replica Count                          1.47       1.07         8.04       3.04 +  448.7%
+Error Rate                             0.00       0.00         0.00       0.00     0.0%
+=======================================================================================
+
+========================================================================
+CLIENT-OBSERVED RESPONSE TIME — locust_*_stats.csv Aggregated row (includes failures)
+========================================================================
+Client-observed (Locust, run-level)        Fixed                     HPA
+------------------------------------------------------------------------
+p50 (ms)                              1,200                     310
+p95 (ms)                             21,000                   1,300
+p99 (ms)                             40,000                   2,200
+Failure share                        12.07%                   0.30%
+========================================================================
+
+All figures saved to docs/figures/run-20260904T230444Z/
+MANIFEST_ALLOW_PARTIAL_COVERAGE path=/Users/srirammadduri/Documents/Personal Projects/k8s-hpa-benchmark/results/runs/run-20260904T230444Z/manifest.json
+```
+
+**Latency PNG dimensions (sips):** `latency_client_run_level.png` 1500×750; `latency_client_window.png` 2100×750; `latency_comparison.png` 2100×750.
 
 ---
 

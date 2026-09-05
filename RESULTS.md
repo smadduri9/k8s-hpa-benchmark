@@ -132,7 +132,7 @@ Published latency is **two separate metrics**. Do not compare or average them.
 
 **Failure-inclusive percentiles.** Locust logs response time for every request before recording a failure (`runners.py:126-129`: `log_request` is unconditional; `log_error` at `stats.py:412-415` increments only `num_failures`). The stats CSV has **no success-only percentile columns**. `success_only_percentiles_available: false` in `locust_summary.json`.
 
-**No configured timeout.** `locust/locustfile.py` sets no `timeout=` on its requests. A connection-level failure (`status_code = 0`) records the full duration until the underlying exception was raised, bounded only by the OS/socket default — not by any value we chose. Failed requests contribute their real elapsed time to the percentiles. The fixed arm's upper percentiles therefore include waits terminated by the network stack (`Max Response Time` **48,293 ms**). The HPA arm has a single long outlier at **57,511 ms** despite only 0.30% failures.
+**No configured timeout.** `locust/locustfile.py` sets no `timeout=` on its requests. A connection-level failure (`status_code = 0`) records the full duration until the underlying exception was raised, bounded only by the OS/socket default — not by any value we chose. Failed requests contribute their real elapsed time to the percentiles. The fixed arm's upper percentiles therefore include waits terminated by the network stack (`Max Response Time` **48,293 ms**). The HPA arm's run max (**57,511 ms**) is accounted for separately under [Scale-up lag (HPA arm)](#hpa-run-max-response-time-57511-ms).
 
 **Distribution-free bound on success-only p95** (not an estimate). With failure fraction `f`, the success at success-rank 0.95 lies between combined percentiles `0.95 × (1 − f)` and `f + 0.95 × (1 − f)`:
 
@@ -164,6 +164,23 @@ The bound is wide for the collapsing fixed arm and nearly tight for the healthy 
 ## Scale-up lag (HPA arm)
 
 During scale-up, `spec_replicas` (HPA desired) leads `ready_replicas` (pods passing readiness). `HPA_SCALE_FLOOR_CHECK` uses peak **`spec_replicas`** to match Kubernetes event rescale lines. The gap between spec and ready is scale-up latency — a real measurement, not missing data.
+
+### HPA run max response time (57,511 ms)
+
+The HPA Aggregated `Max Response Time` (**57,511 ms**) exceeds the fixed arm's (**48,293 ms**) even though HPA's failure share is **0.30%** vs fixed **12.07%**. This is not a contradiction in the percentile headline (p95 **1,300 ms**): the run max is a single sample, and the 63rd failure is the only request at that duration.
+
+**When it completed.** First `locust_hpa_stats_history.csv` Aggregated row where cumulative `Total Max Response Time` reaches **57,511 ms**: epoch **1788565380** = **2026-09-04T23:43:00Z** (`User Count` **5**, recovery phase). On that same row `Total Failure Count` increases **62 → 63** — this sample is the **final** HPA failure. `locust_hpa_failures.csv` records `CatchResponseError('Unexpected status 0')` on `GET /cpu?intensity=low` with **Last Seen 2026-09-04T23:43:00Z**.
+
+**Replica state (does not coincide with scale-up).** In the **90 seconds before 23:43:00Z**, `replica_series_hpa.csv` shows **`spec_replicas` decreases**, not increases: **10 → 7** at 23:41:52Z, **7 → 5** at 23:42:07Z, **5 → 3** at 23:42:53Z. No `spec_replicas` increase appears in that window. Closest in-run samples:
+
+| Source | Timestamp | `spec_replicas` / `replicas` | `ready_replicas` |
+|--------|-----------|------------------------------|------------------|
+| `replica_series_hpa.csv` | 2026-09-04T23:42:07Z | spec **5** | ready **5** |
+| `replica_series_hpa.csv` | 2026-09-04T23:42:53Z | spec **3** | ready **3** |
+| `hpa_metrics.csv` | 2026-09-04T23:42:06Z (elapsed 1041s) | replicas **5** | ready **5** |
+| `hpa_metrics.csv` | 2026-09-04T23:43:06Z (elapsed 1065s) | replicas **2** | ready **2** |
+
+**Finding.** The 57,511 ms sample is a **single connection-level failure** (`status_code = 0`) during the **recovery ramp-down** while HPA was **scaling in**, not during scale-up. It is **not** explained as scale-up cold start (no `spec_replicas` increase precedes it). The mechanism beyond "connection error after ~58s wall-clock with no client timeout configured" is **not further decomposed** from these artifacts — Tier 2 Phase B may attribute client-side delay components if pursued.
 
 ## Derived metrics — run-20260904T230444Z
 
