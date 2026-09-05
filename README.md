@@ -11,7 +11,7 @@ Personal benchmark project that evaluates Kubernetes Horizontal Pod Autoscaler (
 | **Fixed** (declared 3) | 10,193 | 1,230 | **12.07%** (1230 ÷ 10193) | ready hit **0** during collapse | `locust_fixed_stats.csv` |
 | **HPA** (1–10) | 20,820 | 63 | **0.30%** (63 ÷ 20820) | peak **spec=10**, peak **ready=10** | `locust_hpa_stats.csv` |
 
-Fixed availability (73 rows): **14 UNAVAILABLE** / **40 DEGRADED** / **19 AVAILABLE**. HPA successful-request throughput **2.32×** fixed (20757 ÷ 8963).
+Fixed availability (73 rows): **14 UNAVAILABLE** / **40 DEGRADED** / **19 AVAILABLE**. HPA successful-request throughput **2.32×** fixed (20757 ÷ 8963). **Cost:** HPA **$0.000311** vs fixed **$0.000133** per 1k successful requests (**2.33×** premium) — reliability (0.30% vs 12.07% failures) at higher compute cost per success.
 
 ### Latency over time
 

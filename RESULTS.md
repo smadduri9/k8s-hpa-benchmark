@@ -114,8 +114,21 @@ During scale-up, `spec_replicas` (HPA desired) leads `ready_replicas` (pods pass
 - **Source:** `results/runs/run-20260904T230444Z/rep-1/locust_summary.json`
 
 ### Cost per 1k successful requests
-- **Value:** not computed (Tier 2 — requires pod-hour accounting module)
-- **Formula:** `(pod_hours × list_price_per_pod_hour) / (successful_requests / 1000)`
+
+**Formula:** `(pod_hours × list_price_per_pod_hour) / (successful_requests / 1000)`
+
+**Price constant:** `list_price_per_pod_hour = $0.002675` — GKE e2-standard-2 on-demand **$0.0535/hr** (us-central1 public list price) × **0.1/2.0** vCPU share (pod requests 0.1 vCPU on a 2-vCPU node). Defined in `analysis/analyze_results.py`.
+
+**Pod-hours** — integral of `ready_replicas` over time from in-run sampler: `sum(ready_i × Δt) / 3600`.
+
+| Arm | pod_hours | successful (Locust) | Cost per 1k successful | Source |
+|-----|----------:|--------------------:|-----------------------:|--------|
+| Fixed | **0.447** | **8,963** (10193 − 1230) | **$0.000133** | `replica_series_fixed.csv` + `locust_fixed_stats.csv` |
+| HPA | **2.411** | **20,757** (20820 − 63) | **$0.000311** | `replica_series_hpa.csv` + `locust_hpa_stats.csv` |
+
+**Arithmetic check:** HPA used **5.39×** pod-hours (2.411 ÷ 0.447) and delivered **2.32×** successful requests (20757 ÷ 8963) → HPA cost per 1k successful is **2.33×** fixed (5.39 ÷ 2.32), not cheaper. The prior chart was wrong: it divided pod cost by `sum(prometheus_rps)×15` (server-side, incomplete during collapse) instead of Locust successes, and assumed fixed always ran 3 replicas (0.900 pod-hours) rather than measuring collapse (0.447 pod-hours).
+
+**Trade stated plainly:** HPA bought reliability — failure rate **12.07% → 0.30%** — at a **~133% compute premium per successful request** (~2.33×). That is a defensible trade, not a cost saving.
 
 ### SLO burn (14.4× tier, 1h/5m)
 - **Value:** not computed (Tier 3 module)
