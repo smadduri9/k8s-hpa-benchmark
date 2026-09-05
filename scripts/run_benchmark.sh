@@ -29,7 +29,6 @@ PROMETHEUS_URL="http://localhost:9090"
 LOCUST_FILE="locust/locustfile.py"
 RUN_TIME="18m"
 DURATION_MINUTES=18
-HPA_MAX_REPLICAS=10
 FIXED_HOST=""
 HPA_HOST=""
 
@@ -65,7 +64,6 @@ if [[ "${SMOKE}" == "true" ]]; then
   LOCUST_FILE="locust/locustfile_smoke.py"
   RUN_TIME="10m"
   DURATION_MINUTES=10
-  HPA_MAX_REPLICAS=3
 fi
 
 if [[ -z "${RUN_ID}" ]]; then
@@ -75,13 +73,14 @@ fi
 RUN_ROOT="${REPO_ROOT}/results/runs/${RUN_ID}"
 mkdir -p "${RUN_ROOT}"
 MANIFEST_PATH="${RUN_ROOT}/manifest.json"
+manifest_hpa_max="$(hpa_max_replicas 2>/dev/null || echo "null")"
 cat > "${MANIFEST_PATH}" <<EOF
 {
   "run_id": "${RUN_ID}",
   "smoke": ${SMOKE},
   "repetitions": ${REPETITIONS},
   "duration_minutes": ${DURATION_MINUTES},
-  "hpa_max_replicas": ${HPA_MAX_REPLICAS},
+  "hpa_max_replicas": ${manifest_hpa_max},
   "arms": {}
 }
 EOF
@@ -151,8 +150,7 @@ collect_arm_metrics() {
   local start_iso="$2"
   local end_iso="$3"
   local output="$4"
-  local max_replicas="${5:-}"
-  local expected_replicas="${6:-}"
+  local expected_replicas="${5:-}"
   local rep_dir
   rep_dir="$(dirname "${output}")"
   local replica_series
@@ -179,16 +177,22 @@ collect_arm_metrics() {
     echo "ASSERT_REPLICAS_SOURCE=deployment_spec deployment=hpa-eval-fixed declared=${expected_replicas}"
   fi
   if [[ "${mode}" == "hpa" ]]; then
-    local hpa_min
+    local hpa_min hpa_max
     hpa_min="$(hpa_min_replicas)"
-    args+=(--min-replicas "${hpa_min}")
+    hpa_max="$(hpa_max_replicas)"
+    args+=(--min-replicas "${hpa_min}" --max-replicas "${hpa_max}")
     echo "HPA_MIN_REPLICAS_SOURCE=hpa_spec minReplicas=${hpa_min}"
-  fi
-  if [[ -n "${max_replicas}" ]]; then
-    args+=(--max-replicas "${max_replicas}")
+    echo "HPA_MAX_REPLICAS_SOURCE=hpa_spec maxReplicas=${hpa_max}"
   fi
   args+=(--step 15)
-  "${args[@]}"
+  if ! "${args[@]}"; then
+    local err_line
+    err_line="$(grep -E '^(RuntimeError|ValueError|ImportError|OSError|KeyError):' "${rep_dir}/rep.log" 2>/dev/null | tail -1 || true)"
+    if [[ -n "${err_line}" ]]; then
+      die "METRICS_COLLECTION_FAILED mode=${mode} ${err_line}"
+    fi
+    die "METRICS_COLLECTION_FAILED mode=${mode} rc=$?"
+  fi
 }
 
 run_cold_start_only() {
@@ -241,7 +245,7 @@ run_one_repetition() {
     t0_fixed="$(<"${rep_dir}/t0_fixed.txt")"
     local t1_fixed
     t1_fixed="$(iso_add_run_time "${t0_fixed}" "${RUN_TIME}")"
-    collect_arm_metrics fixed "${t0_fixed}" "${t1_fixed}" "${rep_dir}/fixed_metrics.csv" "" "${expected_fixed}"
+    collect_arm_metrics fixed "${t0_fixed}" "${t1_fixed}" "${rep_dir}/fixed_metrics.csv" "${expected_fixed}"
 
     cold_start_arm "hpa-eval-hpa" "app=hpa-eval,experiment=hpa" "${NAMESPACE}" "${MANIFEST_PATH}" "hpa"
     local pods_ready_hpa
@@ -253,7 +257,7 @@ run_one_repetition() {
     t0_hpa="$(<"${rep_dir}/t0_hpa.txt")"
     local t1_hpa
     t1_hpa="$(iso_add_run_time "${t0_hpa}" "${RUN_TIME}")"
-    collect_arm_metrics hpa "${t0_hpa}" "${t1_hpa}" "${rep_dir}/hpa_metrics.csv" "${HPA_MAX_REPLICAS}"
+    collect_arm_metrics hpa "${t0_hpa}" "${t1_hpa}" "${rep_dir}/hpa_metrics.csv"
 
     venv_python "${REPO_ROOT}/analysis/ingest_locust.py" \
       --fixed-stats "${rep_dir}/locust_fixed_stats.csv" \

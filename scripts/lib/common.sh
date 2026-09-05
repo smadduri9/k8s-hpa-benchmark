@@ -141,6 +141,10 @@ hpa_min_replicas() {
   kubectl get hpa hpa-eval-hpa -n "${NAMESPACE}" -o jsonpath='{.spec.minReplicas}'
 }
 
+hpa_max_replicas() {
+  kubectl get hpa hpa-eval-hpa -n "${NAMESPACE}" -o jsonpath='{.spec.maxReplicas}'
+}
+
 heartbeat_start() {
   local log_file="$1"
   local label="$2"
