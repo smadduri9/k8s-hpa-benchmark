@@ -4,4 +4,4 @@ metadata:
   name: hpa-eval-hpa
   namespace: hpa-eval
 spec:
-  maxReplicas: 3
+  maxReplicas: 6

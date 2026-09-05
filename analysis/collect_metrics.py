@@ -79,6 +79,11 @@ FIELDNAMES = [
 
 OPPOSITE_EXPERIMENT = {"fixed": "hpa", "hpa": "fixed"}
 
+# Whether an HPA arm that never left minReplicas aborts the run. Steady-state load
+# shapes expect a calibrated HPA to hold the floor; burst shapes must scale.
+HPA_NO_SCALE_ABORT = "abort"
+HPA_NO_SCALE_WARN = "warn"
+
 # Prometheus default scrape interval in k8s/prometheus/configmap.yaml
 PROMETHEUS_SCRAPE_INTERVAL_SEC = 15
 
@@ -374,6 +379,7 @@ def evaluate_replica_series(
     publish_end_ts: float,
     assert_replicas: int | None = None,
     min_replicas: int | None = None,
+    hpa_no_scale_policy: str = HPA_NO_SCALE_ABORT,
 ) -> tuple[int, int, int, int]:
     window_samples = samples_in_window(samples, publish_start_ts, publish_end_ts)
     if not window_samples:
@@ -408,11 +414,18 @@ def evaluate_replica_series(
 
     if mode == "hpa" and min_replicas is not None:
         if peak_spec <= min_replicas:
-            msg = (
-                f"HPA_NEVER_SCALED peak_observed={peak_spec} minReplicas={min_replicas}"
+            if hpa_no_scale_policy == HPA_NO_SCALE_ABORT:
+                msg = (
+                    f"HPA_NEVER_SCALED peak_observed={peak_spec} minReplicas={min_replicas}"
+                )
+                print(msg, file=sys.stderr)
+                raise RuntimeError(msg)
+            # Steady-load shapes: a calibrated HPA holding the floor is the
+            # measurement, not a harness failure. Aborting would discard the result.
+            print(
+                f"HPA_DID_NOT_SCALE_ON_STEADY_LOAD peak_spec={peak_spec} "
+                f"minReplicas={min_replicas} policy={hpa_no_scale_policy}"
             )
-            print(msg, file=sys.stderr)
-            raise RuntimeError(msg)
         print(
             f"HPA_SCALE_FLOOR_CHECK peak={peak_spec} minReplicas={min_replicas} "
             f"peak_ready={peak_ready}"
@@ -435,6 +448,7 @@ def collect(
     max_replicas: int | None = None,
     min_replicas: int | None = None,
     run_label_isolation_check: bool = True,
+    hpa_no_scale_policy: str = HPA_NO_SCALE_ABORT,
 ) -> list[dict]:
     publish_start_ts = start_ts
     publish_end_ts = end_ts
@@ -464,6 +478,7 @@ def collect(
         publish_end_ts,
         assert_replicas=assert_replicas,
         min_replicas=min_replicas,
+        hpa_no_scale_policy=hpa_no_scale_policy,
     )
 
     queries = build_queries(mode, step)
@@ -599,6 +614,15 @@ def main() -> None:
     parser.add_argument("--min-replicas", type=int)
     parser.add_argument("--check-label-isolation", action="store_true")
     parser.add_argument("--skip-label-isolation", action="store_true")
+    parser.add_argument(
+        "--hpa-no-scale-policy",
+        choices=[HPA_NO_SCALE_ABORT, HPA_NO_SCALE_WARN],
+        default=HPA_NO_SCALE_ABORT,
+        help=(
+            "hpa arm never leaving minReplicas: abort (default; burst shapes must scale) "
+            "or warn (steady-state shapes, where holding the floor is the result)"
+        ),
+    )
     args = parser.parse_args()
 
     if not args.start or not args.end:
@@ -630,6 +654,7 @@ def main() -> None:
         max_replicas=args.max_replicas,
         min_replicas=args.min_replicas,
         run_label_isolation_check=not args.skip_label_isolation,
+        hpa_no_scale_policy=args.hpa_no_scale_policy,
     )
 
     os.makedirs(os.path.dirname(args.output) or ".", exist_ok=True)
