@@ -14,6 +14,7 @@ ANALYSIS_MODULES = (
     "ingest_locust",
     "analyze_results",
     "fill_results",
+    "wilcoxon",
 )
 
 
