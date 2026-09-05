@@ -30,7 +30,7 @@ usage() {
   cat <<'EOF'
 Usage:
   bash scripts/smoke_test.sh --check harness
-  bash scripts/smoke_test.sh --check coldstart|assertions|fixed-metrics|label-isolation|locust-authority|preflight-traps|handoff-docs|error-rate-positive
+  bash scripts/smoke_test.sh --check coldstart|assertions|fixed-metrics|label-isolation|locust-authority|preflight-traps|handoff-docs|error-rate-positive|event-loop-not-blocked
   bash scripts/smoke_test.sh --negative-test fixed-replica-assert|empty-metrics-column|low-metrics-coverage|missing-locust-hpa|missing-locust-fixed|hpa-never-scaled|label-isolation|coldstart-readiness
   bash scripts/smoke_test.sh --full --env-file .env [--reuse-artifacts]
   bash scripts/smoke_test.sh --check locust-authority [--reuse-artifacts]
@@ -273,6 +273,78 @@ check_error_rate_positive() {
 
   reset_prometheus_deployment
   wait_prometheus_scrape_ready
+}
+
+check_event_loop_not_blocked() {
+  kubectl config use-context "kind-${CLUSTER_NAME}" >/dev/null 2>&1 || true
+  build_and_load_image
+  kubectl rollout restart deployment/hpa-eval-fixed -n "${NAMESPACE}"
+  kubectl rollout status deployment/hpa-eval-fixed -n "${NAMESPACE}" --timeout=180s
+
+  local pod
+  pod="$(kubectl get pods -n "${NAMESPACE}" -l app=hpa-eval,experiment=fixed \
+    --field-selector=status.phase=Running \
+    -o jsonpath='{.items[?(@.status.containerStatuses[0].ready==true)].metadata.name}')"
+  pod="${pod%% *}"
+
+  local output rc
+  set +e
+  output="$(kubectl exec -n "${NAMESPACE}" "${pod}" -- python3 -c '
+import sys
+import threading
+import time
+import urllib.request
+
+CPU_URL = "http://127.0.0.1:8000/cpu?intensity=low"
+HEALTH_URL = "http://127.0.0.1:8000/health"
+LOAD_THREADS = 10
+
+
+def cpu_load() -> None:
+    while True:
+        try:
+            urllib.request.urlopen(CPU_URL, timeout=30)
+        except Exception:
+            pass
+
+
+for _ in range(LOAD_THREADS):
+    threading.Thread(target=cpu_load, daemon=True).start()
+time.sleep(1)
+
+latencies_ms: list[float] = []
+failures = 0
+for _ in range(20):
+    start = time.perf_counter()
+    try:
+        resp = urllib.request.urlopen(HEALTH_URL, timeout=5)
+        code = resp.status
+    except Exception:
+        code = 0
+    elapsed_ms = (time.perf_counter() - start) * 1000.0
+    if code != 200:
+        failures += 1
+    else:
+        latencies_ms.append(elapsed_ms)
+
+if not latencies_ms:
+    print("HEALTH_UNDER_LOAD max_ms=MISSING count=0 failures=20", file=sys.stderr)
+    sys.exit(1)
+
+max_ms = max(latencies_ms)
+count = len(latencies_ms)
+print(f"HEALTH_UNDER_LOAD max_ms={max_ms:.3f} count={count} failures={failures}")
+if failures > 0 or max_ms >= 1000.0:
+    sys.exit(1)
+')"
+  rc=$?
+  set -e
+
+  echo "${output}"
+  if [[ "${rc}" -ne 0 ]]; then
+    die "event-loop-not-blocked check failed"
+  fi
+  echo "EVENT_LOOP_NOT_BLOCKED_PASS"
 }
 
 check_locust_authority() {
@@ -847,6 +919,7 @@ run_full_suite() {
   kubectl config use-context "kind-${CLUSTER_NAME}" >/dev/null 2>&1 || true
   reset_prometheus_deployment
   wait_prometheus_scrape_ready
+  check_event_loop_not_blocked
   check_coldstart
   check_assertions
   check_fixed_metrics
@@ -891,6 +964,7 @@ elif [[ -n "${CHECK}" ]]; then
     locust-authority) check_locust_authority ;;
     preflight-traps) check_preflight_traps ;;
     error-rate-positive) check_error_rate_positive ;;
+    event-loop-not-blocked) check_event_loop_not_blocked ;;
     assertions) check_assertions ;;
     handoff-docs) check_handoff_docs ;;
     *) die "unknown check: ${CHECK}" ;;

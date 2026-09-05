@@ -86,6 +86,9 @@ Guards enforced for this run (evidence in `rep.log` and collection output):
 
 ## Measurement limitations
 
+- **Application change after run-20260904T230444Z:** `/cpu` was `async def` (CPU work on the event loop, blocking `/health` under load). It is now sync `def` (Starlette threadpool dispatch). **Future runs are not comparable to run-20260904T230444Z** — the application under test has changed.
+- **Starlette threadpool (40 tokens, unchanged):** At 200m CPU a pod does roughly 2 req/s; running 40 `/cpu` requests concurrently does not add throughput — Python's GIL serialises bytecode execution. The purpose of the `/cpu` handler change is **probe availability**, not throughput. Expect per-request latency to get **worse**, not better, under saturation.
+- **`psutil.cpu_percent(interval=None)`:** Returns CPU since the previous call. It is invoked from `/` and `/fail` on the event loop; `app_cpu_usage_percent` feeds `cpu_utilization_pct` in the metrics CSVs. Higher `/cpu` concurrency may make this gauge noisier (documented only; not fixed).
 - **Load generator location:** Locust runs on the operator's laptop in California; load reaches `us-central1` over the public internet. Client RTT and uplink capacity are included in **client-observed** response time (Locust). Prometheus service time measures in-handler compute only after the request is accepted.
 - **Comparison validity:** Both arms are affected identically (same client, same region path, same LoadBalancer topology), so fixed-vs-HPA comparisons are valid. Absolute latency numbers are **not** datacenter-internal measurements.
 - **Tier 2 deferral:** Running Locust in-cluster (same region as the cluster) is deferred to Tier 2 to remove client-path variance from absolute latency.

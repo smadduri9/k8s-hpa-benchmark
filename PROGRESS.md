@@ -1417,3 +1417,23 @@ MANIFEST_ALLOW_PARTIAL_COVERAGE path=/Users/srirammadduri/Documents/Personal Pro
 - **Deploy manifest:** `results/gke-deploy-manifest.json` records `image_uri`, `image_tag`, `git_sha_short`
 - **Operator resume:** `bash scripts/deploy_gke.sh --env-file .env` against live us-central1-b cluster
 
+---
+
+## event-loop-probe-fix: sync /cpu handler + kind smoke check (2026-09-04)
+
+- **Root cause (run-20260904T230444Z liveness cascade):** `/cpu` was `async def` but calls synchronous `compute_primes(n)` with no `await`, blocking the uvicorn event loop so `/health` could not be served under saturation; kubelet liveness killed working pods and load shifted to survivors.
+- **Fix:** `app/main.py` — `async def cpu_load` → `def cpu_load` (body unchanged). Sync `def` dispatches CPU work to Starlette's default threadpool; event loop stays free for probes.
+- **Smoke check:** `check_event_loop_not_blocked` in `scripts/smoke_test.sh` — deploy fixed arm on kind, 10 concurrent in-pod `/cpu?intensity=low` threads, 20 sequential `/health` latency samples; PASS when all HTTP 200 and max &lt; 1000 ms. Wired into `--full`.
+- **Verification command:**
+
+```bash
+bash scripts/smoke_test.sh --check event-loop-not-blocked
+```
+
+```
+HEALTH_UNDER_LOAD max_ms=590.918 count=20 failures=0
+EVENT_LOOP_NOT_BLOCKED_PASS
+```
+
+- **Documented in RESULTS.md (Measurement limitations):** Starlette default threadpool limiter is 40 tokens (unchanged); GIL limits throughput at 200m CPU; purpose is probe availability not throughput; per-request latency may worsen under saturation; `psutil.cpu_percent(interval=None)` may be noisier under concurrency; **future runs are not comparable to run-20260904T230444Z**.
+

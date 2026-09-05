@@ -88,8 +88,10 @@ async def root():
     }
 
 
+# CPU-bound body with no await: sync `def` runs in Starlette's threadpool so the
+# event loop stays free to serve /health while /cpu work is in flight.
 @app.get("/cpu")
-async def cpu_load(
+def cpu_load(
     intensity: Literal["low", "medium", "high"] = Query(
         "medium",
         description="Workload intensity: low=1k primes, medium=5k primes, high=20k primes",
