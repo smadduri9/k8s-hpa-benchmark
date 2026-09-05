@@ -1314,7 +1314,28 @@ PREFLIGHT_FAIL
 
 ---
 
-## t1-gke-artifact-registry: fix deploy image push target (2026-09-04)
+## a0-1: ingest_locust percentile recovery + LOCUST_ENDPOINT_COUNT_MISMATCH (2026-09-04)
+
+- **Files touched:** `analysis/ingest_locust.py`
+- **Verification command:**
+
+```bash
+".venv/bin/python" analysis/ingest_locust.py \
+  --fixed-stats results/runs/run-20260904T230444Z/rep-1/locust_fixed_stats.csv \
+  --hpa-stats results/runs/run-20260904T230444Z/rep-1/locust_hpa_stats.csv \
+  --output results/runs/run-20260904T230444Z/rep-1/locust_summary.json
+```
+
+```
+LOCUST_ENDPOINT_COUNT_ASSERT_PASS arm=fixed endpoints=2 sum=10193 aggregated=10193
+LOCUST_ENDPOINT_COUNT_ASSERT_PASS arm=hpa endpoints=2 sum=20820 aggregated=20820
+LOCUST_FIXED_STATS_FOUND
+LOCUST_HPA_STATS_FOUND
+REQUEST_AUTHORITY=LOCUST
+LATENCY_AUTHORITY=LOCUST_CLIENT_OBSERVED
+PROM_AUTHORITY=REPLICAS_CPU_TIMING
+```
+
 
 - **Files touched:** `scripts/deploy_gke.sh`, `scripts/lib/gke_shape.sh`, `scripts/lib/preflight_gke.sh`, `k8s/deployment-*.yaml`, `k8s/smoke/kustomization.yaml`, `scripts/deploy_local.sh`
 - **Image URI:** `${REGION}-docker.pkg.dev/${PROJECT_ID}/${ARTIFACT_REGISTRY_REPO}/hpa-eval-app:${git_short_sha}` (immutable tag, no `:latest`)
