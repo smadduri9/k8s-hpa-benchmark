@@ -31,7 +31,7 @@ usage() {
 Usage:
   bash scripts/smoke_test.sh --check harness
   bash scripts/smoke_test.sh --check coldstart|assertions|fixed-metrics|label-isolation|locust-authority|preflight-traps|handoff-docs|error-rate-positive|event-loop-not-blocked
-  bash scripts/smoke_test.sh --negative-test fixed-replica-assert|empty-metrics-column|low-metrics-coverage|missing-locust-hpa|missing-locust-fixed|hpa-never-scaled|label-isolation|coldstart-readiness
+  bash scripts/smoke_test.sh --negative-test fixed-replica-assert|empty-metrics-column|low-metrics-coverage|missing-locust-hpa|missing-locust-fixed|hpa-never-scaled|label-isolation|coldstart-readiness|liveness-restarts-hung
   bash scripts/smoke_test.sh --full --env-file .env [--reuse-artifacts]
   bash scripts/smoke_test.sh --check locust-authority [--reuse-artifacts]
 EOF
@@ -275,19 +275,28 @@ check_error_rate_positive() {
   wait_prometheus_scrape_ready
 }
 
+smoke_ready_fixed_pod() {
+  kubectl get pods -n "${NAMESPACE}" -l app=hpa-eval,experiment=fixed \
+    -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.status.phase}{"\t"}{.status.containerStatuses[0].ready}{"\n"}{end}' \
+    | awk '$2=="Running" && $3=="true"{print $1; exit}'
+}
+
 check_event_loop_not_blocked() {
   # Load generator runs in-container via kubectl exec and shares the pod cgroup
   # (200m CPU, 256Mi memory). /health latency is a conservative upper bound.
   kubectl config use-context "kind-${CLUSTER_NAME}" >/dev/null 2>&1 || true
   build_and_load_image
+  kubectl kustomize "${REPO_ROOT}/k8s/smoke" --load-restrictor LoadRestrictionsNone | kubectl apply -f -
   kubectl rollout restart deployment/hpa-eval-fixed -n "${NAMESPACE}"
   kubectl rollout status deployment/hpa-eval-fixed -n "${NAMESPACE}" --timeout=180s
+  kubectl wait --for=condition=Ready pod -l app=hpa-eval,experiment=fixed -n "${NAMESPACE}" --timeout=120s
+  sleep 3
 
   local pod
-  pod="$(kubectl get pods -n "${NAMESPACE}" -l app=hpa-eval,experiment=fixed \
-    --field-selector=status.phase=Running \
-    -o jsonpath='{.items[?(@.status.containerStatuses[0].ready==true)].metadata.name}')"
-  pod="${pod%% *}"
+  pod="$(smoke_ready_fixed_pod)"
+  if [[ -z "${pod}" ]]; then
+    die "no Running ready fixed pod for event-loop-not-blocked check"
+  fi
 
   local output rc
   set +e
@@ -347,6 +356,129 @@ if failures > 0 or max_ms >= 1000.0:
     die "event-loop-not-blocked check failed"
   fi
   echo "EVENT_LOOP_NOT_BLOCKED_PASS"
+}
+
+negative_liveness_restarts_hung() {
+  kubectl config use-context "kind-${CLUSTER_NAME}" >/dev/null 2>&1 || true
+
+  LIVENESS_HUNG_RESTORED=false
+  restore_fixed_manifest() {
+    if [[ "${LIVENESS_HUNG_RESTORED}" == "true" ]]; then
+      return 0
+    fi
+    kubectl kustomize "${REPO_ROOT}/k8s/smoke" --load-restrictor LoadRestrictionsNone | kubectl apply -f -
+    kubectl patch deployment hpa-eval-fixed -n "${NAMESPACE}" --type='json' \
+      -p='[{"op":"remove","path":"/spec/template/spec/containers/0/command"}]' 2>/dev/null || true
+    kubectl rollout status deployment/hpa-eval-fixed -n "${NAMESPACE}" --timeout=180s
+    LIVENESS_HUNG_RESTORED=true
+  }
+  trap restore_fixed_manifest EXIT
+
+  kubectl kustomize "${REPO_ROOT}/k8s/smoke" --load-restrictor LoadRestrictionsNone | kubectl apply -f -
+  kubectl patch deployment hpa-eval-fixed -n "${NAMESPACE}" --type='json' \
+    -p='[{"op":"remove","path":"/spec/template/spec/containers/0/command"}]' 2>/dev/null || true
+  kubectl rollout restart deployment/hpa-eval-fixed -n "${NAMESPACE}"
+  kubectl rollout status deployment/hpa-eval-fixed -n "${NAMESPACE}" --timeout=180s
+
+  local patch_file="/tmp/liveness-hung-patch-$$.json"
+  PATCH_FILE="${patch_file}" venv_python -c '
+import json
+import os
+
+script = """import socket, threading, time
+RESP = b"HTTP/1.1 200 OK\\r\\nContent-Length: 2\\r\\n\\r\\nok"
+deadline = time.time() + 12
+
+def handle(conn):
+    try:
+        data = conn.recv(4096)
+        if time.time() < deadline and b"/health" in data:
+            conn.sendall(RESP)
+        else:
+            threading.Event().wait()
+    finally:
+        conn.close()
+
+sock = socket.socket()
+sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+sock.bind(("0.0.0.0", 8000))
+sock.listen(128)
+while True:
+    conn, _ = sock.accept()
+    threading.Thread(target=handle, args=(conn,), daemon=True).start()
+"""
+patch = [{"op": "replace", "path": "/spec/template/spec/containers/0/command", "value": ["python3", "-c", script]}]
+with open(os.environ["PATCH_FILE"], "w", encoding="utf-8") as handle:
+    json.dump(patch, handle)
+'
+  if ! kubectl patch deployment hpa-eval-fixed -n "${NAMESPACE}" --type='json' --patch-file="${patch_file}"; then
+    PATCH_FILE="${patch_file}" venv_python -c '
+import json
+import os
+
+script = """import socket, threading, time
+RESP = b"HTTP/1.1 200 OK\\r\\nContent-Length: 2\\r\\n\\r\\nok"
+deadline = time.time() + 12
+
+def handle(conn):
+    try:
+        data = conn.recv(4096)
+        if time.time() < deadline and b"/health" in data:
+            conn.sendall(RESP)
+        else:
+            threading.Event().wait()
+    finally:
+        conn.close()
+
+sock = socket.socket()
+sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+sock.bind(("0.0.0.0", 8000))
+sock.listen(128)
+while True:
+    conn, _ = sock.accept()
+    threading.Thread(target=handle, args=(conn,), daemon=True).start()
+"""
+patch = [{"op": "add", "path": "/spec/template/spec/containers/0/command", "value": ["python3", "-c", script]}]
+with open(os.environ["PATCH_FILE"], "w", encoding="utf-8") as handle:
+    json.dump(patch, handle)
+'
+    kubectl patch deployment hpa-eval-fixed -n "${NAMESPACE}" --type='json' --patch-file="${patch_file}"
+  fi
+  rm -f "${patch_file}"
+  kubectl rollout status deployment/hpa-eval-fixed -n "${NAMESPACE}" --timeout=180s
+  sleep 5
+
+  local pod restart_before restart_after attempt
+  pod="$(kubectl get pods -n "${NAMESPACE}" -l app=hpa-eval,experiment=fixed \
+    --field-selector=status.phase=Running \
+    --sort-by=.metadata.creationTimestamp \
+    -o jsonpath='{.items[-1].metadata.name}')"
+  restart_before="$(kubectl get pod "${pod}" -n "${NAMESPACE}" \
+    -o jsonpath='{.status.containerStatuses[0].restartCount}')"
+
+  restart_after="${restart_before}"
+  for attempt in $(seq 1 24); do
+    sleep 5
+    if ! kubectl get pod "${pod}" -n "${NAMESPACE}" >/dev/null 2>&1; then
+      pod="$(kubectl get pods -n "${NAMESPACE}" -l app=hpa-eval,experiment=fixed \
+        --field-selector=status.phase=Running \
+        --sort-by=.metadata.creationTimestamp \
+        -o jsonpath='{.items[-1].metadata.name}')"
+      restart_before=0
+    fi
+    restart_after="$(kubectl get pod "${pod}" -n "${NAMESPACE}" \
+      -o jsonpath='{.status.containerStatuses[0].restartCount}' 2>/dev/null || echo "")"
+    if [[ -n "${restart_after}" && "${restart_after}" -gt "${restart_before}" ]]; then
+      if ! kubectl describe pod "${pod}" -n "${NAMESPACE}" | grep -q "Liveness probe failed"; then
+        die "container restarted but missing Liveness probe failed event"
+      fi
+      echo "LIVENESS_RESTART_OBSERVED pod=${pod} restart_before=${restart_before} restart_after=${restart_after}"
+      echo "NEGATIVE_LIVENESS_RESTARTS_HUNG_PASS"
+      return 0
+    fi
+  done
+
+  die "liveness probe did not restart hung container (restart_before=${restart_before} restart_after=${restart_after})"
 }
 
 check_locust_authority() {
@@ -922,6 +1054,7 @@ run_full_suite() {
   reset_prometheus_deployment
   wait_prometheus_scrape_ready
   check_event_loop_not_blocked
+  negative_liveness_restarts_hung
   check_coldstart
   check_assertions
   check_fixed_metrics
@@ -955,6 +1088,7 @@ elif [[ -n "${NEGATIVE_TEST}" ]]; then
     hpa-never-scaled) negative_hpa_never_scaled ;;
     label-isolation) negative_label_isolation ;;
     coldstart-readiness) negative_coldstart_readiness ;;
+    liveness-restarts-hung) negative_liveness_restarts_hung ;;
     *) die "unknown negative test: ${NEGATIVE_TEST}" ;;
   esac
 elif [[ -n "${CHECK}" ]]; then

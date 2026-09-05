@@ -37,6 +37,13 @@ spec:
             limits:
               cpu: "200m"
               memory: "256Mi"
+          startupProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            periodSeconds: 5
+            failureThreshold: 24
+            timeoutSeconds: 1
           livenessProbe:
             httpGet:
               path: /health
@@ -44,6 +51,7 @@ spec:
             initialDelaySeconds: 10
             periodSeconds: 10
             failureThreshold: 3
+            timeoutSeconds: 2
           readinessProbe:
             httpGet:
               path: /health
@@ -51,6 +59,7 @@ spec:
             initialDelaySeconds: 5
             periodSeconds: 5
             failureThreshold: 3
+            timeoutSeconds: 1
           env:
             - name: POD_NAME
               valueFrom:
