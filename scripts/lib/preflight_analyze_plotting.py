@@ -13,8 +13,18 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 FIXTURE_DIR = Path(__file__).resolve().parent / "fixtures"
 FIXTURE_FIXED = FIXTURE_DIR / "preflight_fixed_metrics.csv"
 FIXTURE_HPA = FIXTURE_DIR / "preflight_hpa_metrics.csv"
+FIXTURE_LOCUST_FIXED = FIXTURE_DIR / "preflight_locust_fixed_stats.csv"
+FIXTURE_LOCUST_HPA = FIXTURE_DIR / "preflight_locust_hpa_stats.csv"
+FIXTURE_LOCUST_FIXED_HISTORY = FIXTURE_DIR / "preflight_locust_fixed_stats_history.csv"
+FIXTURE_LOCUST_HPA_HISTORY = FIXTURE_DIR / "preflight_locust_hpa_stats_history.csv"
+FIXTURE_REPLICA_FIXED = FIXTURE_DIR / "preflight_replica_series_fixed.csv"
+FIXTURE_REPLICA_HPA = FIXTURE_DIR / "preflight_replica_series_hpa.csv"
+FIXTURE_T0_FIXED = FIXTURE_DIR / "preflight_t0_fixed.txt"
+FIXTURE_T0_HPA = FIXTURE_DIR / "preflight_t0_hpa.txt"
 EXPECTED_FIGURES = (
     "latency_comparison.png",
+    "latency_client_run_level.png",
+    "latency_client_window.png",
     "throughput_comparison.png",
     "cpu_replicas.png",
     "cost_performance.png",
@@ -32,7 +42,19 @@ def _load_analyze_results():
 
 
 def main() -> int:
-    for fixture in (FIXTURE_FIXED, FIXTURE_HPA):
+    required = (
+        FIXTURE_FIXED,
+        FIXTURE_HPA,
+        FIXTURE_LOCUST_FIXED,
+        FIXTURE_LOCUST_HPA,
+        FIXTURE_LOCUST_FIXED_HISTORY,
+        FIXTURE_LOCUST_HPA_HISTORY,
+        FIXTURE_REPLICA_FIXED,
+        FIXTURE_REPLICA_HPA,
+        FIXTURE_T0_FIXED,
+        FIXTURE_T0_HPA,
+    )
+    for fixture in required:
         if not fixture.is_file():
             print(
                 f"ERROR: analyze plotting fixture missing: {fixture}",
@@ -52,9 +74,29 @@ def main() -> int:
         fixed = analyze.load_csv(str(FIXTURE_FIXED))
         hpa = analyze.load_csv(str(FIXTURE_HPA))
         analyze.fig_latency(fixed, hpa, out_dir)
+        analyze.fig_latency_client_run_level(
+            str(FIXTURE_LOCUST_FIXED),
+            str(FIXTURE_LOCUST_HPA),
+            out_dir,
+        )
+        analyze.fig_latency_client_window(
+            str(FIXTURE_LOCUST_FIXED_HISTORY),
+            str(FIXTURE_LOCUST_HPA_HISTORY),
+            str(FIXTURE_T0_FIXED),
+            str(FIXTURE_T0_HPA),
+            out_dir,
+        )
         analyze.fig_throughput(fixed, hpa, out_dir)
         analyze.fig_cpu_replicas(hpa, out_dir)
-        analyze.fig_cost_performance(fixed, hpa, out_dir)
+        analyze.fig_cost_performance(
+            fixed,
+            hpa,
+            out_dir,
+            replica_series_fixed=str(FIXTURE_REPLICA_FIXED),
+            replica_series_hpa=str(FIXTURE_REPLICA_HPA),
+            locust_fixed_stats=str(FIXTURE_LOCUST_FIXED),
+            locust_hpa_stats=str(FIXTURE_LOCUST_HPA),
+        )
         missing = [name for name in EXPECTED_FIGURES if not (out_dir / name).is_file()]
     except Exception as exc:  # noqa: BLE001 - surface plotting failure to operator
         print(f"ERROR: analyze_results plotting preflight failed: {exc}", file=sys.stderr)

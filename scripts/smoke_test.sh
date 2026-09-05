@@ -309,7 +309,7 @@ check_locust_authority() {
     die "locust-authority STATUS not COMPLETE: $(cat "${status_file}" 2>/dev/null || echo MISSING)"
   fi
   local fig
-  for fig in latency_comparison.png throughput_comparison.png cpu_replicas.png cost_performance.png; do
+  for fig in latency_comparison.png latency_client_run_level.png latency_client_window.png throughput_comparison.png cpu_replicas.png cost_performance.png; do
     if [[ ! -f "${run_dir}/figures/${fig}" ]]; then
       die "locust-authority missing figure ${fig}"
     fi
