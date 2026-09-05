@@ -124,13 +124,17 @@ One user therefore delivers 1/(R+W) = 1/3.04 = **0.329 req/s = 19.7 req/min**.
 
 Reported so that cross-shape differences in total volume are visible rather than hidden. All three shapes are exactly **18 minutes (1080 s)**: duration is held constant because unequal durations make pod-hours incommensurable and break the cost-per-1k comparison.
 
-| Shape | Curve | Time-weighted mean users |
+**Every shape is a step function, not a linear ramp.** `tick()` returns a target and Locust rate-limits spawning toward it; it does not interpolate. `locustfile.py`'s docstring reads "Ramp-up (0–3 min): 1 → 20 users, spawn rate 2/s", but `PhasedLoadShape.tick()` returns `(20, 2)` for the whole `0 < t ≤ 180` window, so the shape jumps to 20 and merely takes 20/2 = 10 s to spawn them. Time-weighted means must therefore use **step levels**, not segment midpoints.
+
+| Shape | Curve (step levels) | Time-weighted mean users |
 |---|---|---|
-| hybrid | 1→20, 20→80, hold 60, 60→5 | **45.5** — (180×10.5 + 180×50 + 540×60 + 180×32.5)/1080 |
+| hybrid | 20 → 80 → 60 → 5 | **47.5** — (180×20 + 180×80 + 540×60 + 180×5)/1080 |
 | constant | 45 flat, ±10% seeded noise | **45.4167** — realized value of the 36 seeded plateaus (`NOISE_SEED=1729`, band 41–49); design centre is 45.0 and the seed lands 0.42 above it |
 | flash | 30 → 90 → 30 | **40.0** — (420×30 + 180×90 + 480×30)/1080 |
 
-Ramp segments are credited at midpoint concurrency.
+**Correction.** These load levels were chosen against an earlier hybrid figure of **45.5**, computed as (180×10.5 + 180×50 + 540×60 + 180×32.5)/1080 by crediting each phase at the midpoint between its endpoints — which assumes linear ramps the shape does not perform. The step-correct value is **47.5**. Consequence: `constant` at 45.4167 sits **4.4% below** hybrid rather than the 0.2% originally claimed, and `flash` at 40.0 sits 15.8% below. The levels are still close enough for cross-shape comparison and none of the capacity arithmetic above changes (it is derived from per-user request rate and peak users, not from these means), but the three shapes are **not** equal-volume, which is why each shape's mean is reported rather than assumed.
+
+Including spawn-rate edges raises hybrid's realized mean to about 47.6: 0→20 at 2/s spends 10 s averaging ~10 users, 20→80 at 20/s spends 3 s, and 60→5 at 5/s spends 11 s — 24 s of 1080 s, so under 1%. `SHAPE_TIME_WEIGHTED_MEAN_USERS` reports a slightly higher figure again (~48.0 for hybrid) because it excludes post-transition settling windows, which are the lowest-user samples in the run.
 
 **Locust ignores `--run-time` when a `LoadTestShape` is present** (it warns: "--run-time, --users or --spawn-rate have no impact on LoadShapes unless the shape class explicitly reads them"). Each shape therefore terminates itself by returning `None` from `tick()` at 1080 s, and the harness `--run-time 18m` plus its 60 s wall-clock guard remain the outer bound rather than the mechanism. The two agree by construction; if a shape's internal duration is ever changed, `--run-time` will not correct it.
 
