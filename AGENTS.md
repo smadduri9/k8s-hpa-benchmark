@@ -20,6 +20,7 @@
 - Locust invocations must pass explicit `--run-time`, verify load-target reachability before start (`LOAD_TARGET_UNREACHABLE` on failure), and run under a wall-clock guard (`LOCUST_TIMEOUT` on expiry). Never capture Locust stdout via command substitution.
 - Never use command substitution to capture a function's return value. Functions return status via exit codes; diagnostic output goes to stderr or a log file, never stdout.
 - Record observed symptoms as symptoms only. Attributing a cause requires evidence for that specific cause — exit code 137 is SIGKILL, not OOMKilled; OOMKilled requires container status, an event, or memory observation.
+- Before tuning any parameter against a measurement, run the same measurement at least three times unchanged and confirm run-to-run variance is smaller than the effect being measured. A sweep whose noise exceeds its signal is uninformative regardless of how clean the table looks.
 
 ## Commit and code style
 - Commit messages: imperative mood, one line under 72 chars, optional body.

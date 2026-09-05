@@ -536,6 +536,7 @@ print(f"ENDPOINTS_MIN_OBSERVED min={min_ready} samples={samples} duration_sec={d
 }
 
 check_endpoints_never_empty() {
+  # Cascade detector only: kind in-container load cannot tune probes (see PROGRESS.md).
   smoke_endpoints_prepare_cluster
 
   local threads health_max_ms chosen_threads=0 target_pod sample_ms output
@@ -582,6 +583,7 @@ print((time.perf_counter() - start) * 1000.0)' 2>/dev/null || echo "0")"
 }
 
 check_readiness_sweep() {
+  # Cascade detector only: kind in-container load cannot tune probes (see PROGRESS.md).
   smoke_endpoints_prepare_cluster
 
   local -a sweep_configs=("1:3" "2:3" "2:6" "3:3" "3:6")

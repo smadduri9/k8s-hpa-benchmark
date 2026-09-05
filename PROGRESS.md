@@ -1441,6 +1441,8 @@ EVENT_LOOP_NOT_BLOCKED_PASS
 
 ## readiness-sweep: probe timeout sweep at 15 threads/pod (2026-09-05)
 
+**WITHDRAWN (uninformative).** Repeatability measurement (ec659fd) showed run-to-run `/health` max variance (**715–3992 ms**, 5.6× spread) exceeded between-config variance in this sweep (**593–918 ms**, ~1.5× spread) by roughly five-fold. The table below is retained as raw data only; its recommendation is withdrawn. See readiness-repeat-control below.
+
 - **Harness:** `check_readiness_sweep` in `scripts/smoke_test.sh` (shared helpers with `check_endpoints_never_empty`). Fixed arm scaled to 3 replicas; in-container load on all pods; 60s EndpointSlice sampling at 1s intervals with per-second `/health` max tracking.
 - **Command:** `bash scripts/smoke_test.sh --check readiness-sweep`
 
@@ -1492,9 +1494,9 @@ READINESS_SWEEP_CLIFF_ROW timeoutSeconds=1 failureThreshold=3 threads_per_pod=30
 
 ### Recommendation (measurement only; no manifest change applied)
 
-Keep **readiness timeoutSeconds=1, failureThreshold=3** (current). All five swept configs passed at 15 threads/pod with `min=3`; control is the tightest timeout that passed, preserving maximum load-shedding aggressiveness without measured endpoint loss at that load level in this session.
+~~Keep **readiness timeoutSeconds=1, failureThreshold=3** (current).~~ **WITHDRAWN** — see readiness-repeat-control (ec659fd). The sweep measured noise, not a between-config effect.
 
-**Cliff:** control 1/3 still reaches `min=0` at **30 threads/pod** (`/health` max 2095 ms). Partial shedding at 25 (`min=1`) and 20 (`min=2`). No timeout value removes the cliff under symmetric overload — it only shifts it.
+~~**Cliff:** control 1/3 still reaches `min=0` at **30 threads/pod** (`/health` max 2095 ms). Partial shedding at 25 (`min=1`) and 20 (`min=2`). No timeout value removes the cliff under symmetric overload — it only shifts it.~~ Cliff rows retained as raw data only.
 
 ---
 
@@ -1537,4 +1539,15 @@ ENDPOINTS_MIN_OBSERVED min=1 samples=11 duration_sec=60
 **`ENDPOINTS_MIN_OBSERVED=0`:** **1 of 5** runs (run 3).
 
 **Repeatability note:** The prior sweep session observed `min=3` for all five configs at 15 threads/pod. This repeat session on the same control config produced `min` of 3, 1, 0, 2, 1 — confirming run-to-run variance at fixed load, not a single deterministic outcome.
+
+---
+
+## a3-probe-conservative: stop kind probe tuning (2026-09-05)
+
+- **Decision:** Stop tuning probes on kind. In-container generator shares each pod's 200m CPU / 256Mi cgroup with the app; delivered load varies per run. Kind cannot support probe tuning; **GKE with 80 external Locust users** is the measurement of record (~90 minutes).
+- **A1 sample:** `HEALTH_UNDER_LOAD max_ms=590.918` (event-loop-probe-fix) was one draw near the bottom of the repeatability distribution (715–3992 ms).
+- **A2 values:** `startupProbe`, `livenessProbe timeoutSeconds: 2`, `readinessProbe timeoutSeconds: 1` were derived from that single A1 sample — conservative choices, not measured optima. Liveness and startup unchanged in this pass.
+- **Readiness change:** `readinessProbe.failureThreshold: 3` → **6** (both manifests). `timeoutSeconds: 1` unchanged. Rationale: a single slow probe should not remove a pod from the EndpointSlice; six consecutive failures at `periodSeconds: 5` ≈ 30s sustained unresponsiveness before removal — conservative against symmetric-overload cascade, not a kind-measured optimum.
+- **Sweep 99faf65:** withdrawn (see above). **Repeatability ec659fd:** five back-to-back runs at control 1/3 and 15 threads/pod — `/health` max min 715.4, max 3992.4, median 1712.5 ms; `ENDPOINTS_MIN_OBSERVED=0` in 1 of 5 runs.
+- **Harness role:** `check_endpoints_never_empty` and `check_readiness_sweep` remain as cascade **detectors** on kind; they cannot tune probe values.
 
