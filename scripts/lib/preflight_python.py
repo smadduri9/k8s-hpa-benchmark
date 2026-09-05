@@ -41,6 +41,7 @@ def main() -> int:
             if spec is None or spec.loader is None:
                 raise ImportError("spec load failed")
             module = importlib.util.module_from_spec(spec)
+            sys.modules[name] = module
             spec.loader.exec_module(module)
         except Exception as exc:  # noqa: BLE001 - report module name to operator
             print(f"ERROR: analysis import failed module={name}: {exc}", file=sys.stderr)

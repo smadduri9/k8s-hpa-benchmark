@@ -37,6 +37,7 @@ def _load_analyze_results():
     if spec is None or spec.loader is None:
         raise ImportError(f"spec load failed for {path}")
     module = importlib.util.module_from_spec(spec)
+    sys.modules["analyze_results"] = module
     spec.loader.exec_module(module)
     return module
 
