@@ -1,0 +1,7 @@
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: hpa-eval-hpa
+  namespace: hpa-eval
+spec:
+  maxReplicas: 3

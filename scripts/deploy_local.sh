@@ -47,7 +47,7 @@ kubectl apply -f k8s/namespace.yaml
 # Patch deployments to use local image (no registry pull)
 # Use sed to replace image reference for local build
 for deploy_file in k8s/deployment-fixed.yaml k8s/deployment-hpa.yaml; do
-    kubectl apply -f <(sed 's|gcr.io/PROJECT_ID/hpa-eval-app:latest|hpa-eval-app:latest|g' "$deploy_file")
+    kubectl apply -f <(sed 's|PLACEHOLDER_REGISTRY/hpa-eval-app:PLACEHOLDER_TAG|hpa-eval-app:latest|g' "$deploy_file")
 done
 
 # Patch services to use NodePort instead of LoadBalancer
@@ -90,7 +90,7 @@ echo "  To access Prometheus:"
 echo "    kubectl port-forward svc/prometheus 9090:9090 -n ${NAMESPACE}"
 echo ""
 echo "=== Run Load Test ==="
-echo "  locust -f locust/locustfile.py --host http://${MINIKUBE_IP}:${HPA_PORT} --headless --run-time 18m --users 200 --spawn-rate 10"
+echo "  \"${REPO_ROOT}/.venv/bin/locust\" -f locust/locustfile.py --host http://${MINIKUBE_IP}:${HPA_PORT} --headless --run-time 18m"
 echo ""
 echo "=== Watch HPA scaling ==="
 echo "  kubectl get hpa -n ${NAMESPACE} -w"

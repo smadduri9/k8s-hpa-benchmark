@@ -25,7 +25,7 @@ spec:
     spec:
       containers:
         - name: hpa-eval-app
-          image: gcr.io/PROJECT_ID/hpa-eval-app:latest
+          image: PLACEHOLDER_REGISTRY/hpa-eval-app:PLACEHOLDER_TAG
           imagePullPolicy: Always
           ports:
             - containerPort: 8000

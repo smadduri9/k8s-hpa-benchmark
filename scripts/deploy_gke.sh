@@ -1,30 +1,66 @@
 #!/usr/bin/env bash
-# deploy_gke.sh — Deploy HPA evaluation app to Google Kubernetes Engine
-# Usage: bash scripts/deploy_gke.sh [PROJECT_ID] [REGION]
+# OS/arch assumptions: macOS (darwin) or Linux, bash 4+, gcloud, docker, kubectl.
+# deploy_gke.sh — Deploy HPA evaluation app to Google Kubernetes Engine (zonal cluster).
+# Usage: bash scripts/deploy_gke.sh [--env-file .env]
 #
 # Prerequisites:
 #   - gcloud CLI authenticated: gcloud auth login
 #   - Project billing enabled
-#   - APIs enabled: container.googleapis.com, containerregistry.googleapis.com
+#   - APIs enabled: container.googleapis.com, artifactregistry.googleapis.com
+#   - Docker credential helper for ${REGION}-docker.pkg.dev (gcloud auth configure-docker)
 
 set -euo pipefail
 
-PROJECT_ID="${1:-$(gcloud config get-value project 2>/dev/null)}"
-REGION="${2:-us-central1}"
-CLUSTER_NAME="hpa-eval-cluster"
-NAMESPACE="hpa-eval"
-IMAGE_NAME="gcr.io/${PROJECT_ID}/hpa-eval-app"
-IMAGE_TAG="latest"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=lib/common.sh
+source "${SCRIPT_DIR}/lib/common.sh"
+# shellcheck source=lib/gke_shape.sh
+source "${SCRIPT_DIR}/lib/gke_shape.sh"
 
-if [[ -z "${PROJECT_ID}" ]]; then
-    echo "ERROR: PROJECT_ID not set. Pass as argument or run: gcloud config set project PROJECT_ID"
-    exit 1
+ENV_FILE=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --env-file) ENV_FILE="$2"; shift 2 ;;
+    -h|--help)
+      echo "Usage: bash scripts/deploy_gke.sh [--env-file .env]"
+      exit 0
+      ;;
+    *)
+      die "unknown argument: $1 (use --env-file .env; do not pass PROJECT_ID positionally)"
+      ;;
+  esac
+done
+
+load_env_file "${ENV_FILE}"
+require_env PROJECT_ID
+require_env REGION
+require_env ZONE
+require_env CLUSTER_NAME
+require_env ARTIFACT_REGISTRY_REPO
+
+NAMESPACE="${NAMESPACE:-hpa-eval}"
+MACHINE_TYPE="${GKE_MACHINE_TYPE}"
+NUM_NODES="${GKE_NUM_NODES}"
+NODE_DISK_SIZE_GB="${NODE_DISK_SIZE_GB}"
+
+if ! git -C "${REPO_ROOT}" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  die "deploy requires a git repository to derive immutable IMAGE_TAG"
 fi
+IMAGE_TAG="$(git -C "${REPO_ROOT}" rev-parse --short HEAD)"
+IMAGE_URI="$(artifact_registry_image_uri "${REGION}" "${PROJECT_ID}" "${ARTIFACT_REGISTRY_REPO}" "${IMAGE_TAG}")"
+REGISTRY_HOST="$(artifact_registry_host "${REGION}")"
+DEPLOY_MANIFEST_PATH="${REPO_ROOT}/results/gke-deploy-manifest.json"
 
 echo "=== Kubernetes HPA Evaluation — GKE Deploy ==="
-echo "  Project:  ${PROJECT_ID}"
-echo "  Region:   ${REGION}"
-echo "  Cluster:  ${CLUSTER_NAME}"
+echo "  Project:      ${PROJECT_ID}"
+echo "  Region:       ${REGION} (Artifact Registry)"
+echo "  Zone:         ${ZONE} (GKE cluster)"
+echo "  Cluster:      ${CLUSTER_NAME}"
+echo "  Machine type: ${MACHINE_TYPE}"
+echo "  Nodes:        ${NUM_NODES} (fixed, single zone, no cluster autoscaler)"
+echo "  Boot disk:    ${NODE_DISK_SIZE_GB}GB balanced PD per node (${NUM_NODES}×${NODE_DISK_SIZE_GB}=$(( NUM_NODES * NODE_DISK_SIZE_GB ))GB SSD_TOTAL_GB)"
+echo "  Image:        ${IMAGE_URI}"
+echo "  IMAGE_TAG:    ${IMAGE_TAG}"
 echo ""
 
 # ---------------------------------------------------------------------------
@@ -32,57 +68,73 @@ echo ""
 # ---------------------------------------------------------------------------
 echo "[1/7] Enabling required GCP APIs..."
 gcloud services enable container.googleapis.com \
-    containerregistry.googleapis.com \
+    artifactregistry.googleapis.com \
     --project="${PROJECT_ID}"
 
 # ---------------------------------------------------------------------------
-# Step 2: Create GKE cluster
+# Step 2: Create GKE cluster (zonal — one node pool in ZONE, not triplicated)
 # ---------------------------------------------------------------------------
-echo "[2/7] Creating GKE cluster (this takes ~3–5 minutes)..."
+echo "[2/7] Ensuring GKE cluster exists..."
 if gcloud container clusters describe "${CLUSTER_NAME}" \
-    --region="${REGION}" --project="${PROJECT_ID}" &>/dev/null; then
-    echo "  Cluster already exists, skipping creation."
+    --zone="${ZONE}" --project="${PROJECT_ID}" &>/dev/null; then
+    echo "  CLUSTER_EXISTS zone=${ZONE} name=${CLUSTER_NAME} skipping creation"
 else
+    echo "  Creating GKE cluster (this takes ~3–5 minutes)..."
     gcloud container clusters create "${CLUSTER_NAME}" \
-        --region="${REGION}" \
+        --zone="${ZONE}" \
         --project="${PROJECT_ID}" \
-        --machine-type="e2-standard-2" \
-        --num-nodes=3 \
-        --enable-autoscaling \
-        --min-nodes=2 \
-        --max-nodes=6 \
+        --machine-type="${MACHINE_TYPE}" \
+        --num-nodes="${NUM_NODES}" \
+        --disk-size="${NODE_DISK_SIZE_GB}" \
         --enable-ip-alias \
         --release-channel=regular
 fi
 
 # Configure kubectl
 gcloud container clusters get-credentials "${CLUSTER_NAME}" \
-    --region="${REGION}" \
+    --zone="${ZONE}" \
     --project="${PROJECT_ID}"
 
 # ---------------------------------------------------------------------------
-# Step 3: Build and push Docker image
+# Step 3: Build and push Docker image to Artifact Registry
 # ---------------------------------------------------------------------------
-echo "[3/7] Building and pushing Docker image to GCR..."
-docker build -t "${IMAGE_NAME}:${IMAGE_TAG}" ./app/
-docker push "${IMAGE_NAME}:${IMAGE_TAG}"
+echo "[3/7] Building and pushing Docker image to Artifact Registry (${REGISTRY_HOST})..."
+gcloud auth configure-docker "${REGISTRY_HOST}" --quiet
+# GKE nodes are linux/amd64; explicit platform avoids arm64 host building wrong arch.
+docker build --platform linux/amd64 -t "${IMAGE_URI}" "${REPO_ROOT}/app/"
+docker push "${IMAGE_URI}"
+
+mkdir -p "${REPO_ROOT}/results"
+cat > "${DEPLOY_MANIFEST_PATH}" <<EOF
+{
+  "deployed_at": "$(date -u '+%Y-%m-%dT%H:%M:%SZ')",
+  "project_id": "${PROJECT_ID}",
+  "region": "${REGION}",
+  "zone": "${ZONE}",
+  "cluster_name": "${CLUSTER_NAME}",
+  "artifact_registry_repo": "${ARTIFACT_REGISTRY_REPO}",
+  "image_uri": "${IMAGE_URI}",
+  "image_tag": "${IMAGE_TAG}",
+  "git_sha_short": "${IMAGE_TAG}"
+}
+EOF
+echo "DEPLOY_MANIFEST_WRITTEN path=${DEPLOY_MANIFEST_PATH} IMAGE_TAG=${IMAGE_TAG}"
 
 # ---------------------------------------------------------------------------
 # Step 4: Apply Kubernetes manifests
 # ---------------------------------------------------------------------------
 echo "[4/7] Applying Kubernetes manifests..."
-kubectl apply -f k8s/namespace.yaml
+kubectl apply -f "${REPO_ROOT}/k8s/namespace.yaml"
 
-# Patch image references
-for deploy_file in k8s/deployment-fixed.yaml k8s/deployment-hpa.yaml; do
-    kubectl apply -f <(sed "s|gcr.io/PROJECT_ID/|gcr.io/${PROJECT_ID}/|g" "$deploy_file")
+for deploy_file in "${REPO_ROOT}/k8s/deployment-fixed.yaml" "${REPO_ROOT}/k8s/deployment-hpa.yaml"; do
+    kubectl apply -f <(apply_deployment_image_substitution "${deploy_file}" "${IMAGE_URI}")
 done
 
-kubectl apply -f k8s/service.yaml
-kubectl apply -f k8s/hpa.yaml
-kubectl apply -f k8s/prometheus/configmap.yaml
-kubectl apply -f k8s/prometheus/deployment.yaml
-kubectl apply -f k8s/prometheus/service.yaml
+kubectl apply -f "${REPO_ROOT}/k8s/service.yaml"
+kubectl apply -f "${REPO_ROOT}/k8s/hpa.yaml"
+kubectl apply -f "${REPO_ROOT}/k8s/prometheus/configmap.yaml"
+kubectl apply -f "${REPO_ROOT}/k8s/prometheus/deployment.yaml"
+kubectl apply -f "${REPO_ROOT}/k8s/prometheus/service.yaml"
 
 # ---------------------------------------------------------------------------
 # Step 5: Wait for deployments
@@ -119,11 +171,12 @@ HPA_IP=$(kubectl get svc hpa-eval-hpa-svc -n "${NAMESPACE}" \
 echo ""
 echo "  Fixed app: http://${FIXED_IP}"
 echo "  HPA app:   http://${HPA_IP}"
+echo "  IMAGE_TAG: ${IMAGE_TAG}"
 echo ""
 echo "  To access Prometheus:"
 echo "    kubectl port-forward svc/prometheus 9090:9090 -n ${NAMESPACE}"
 echo ""
 echo "=== Run experiments ==="
-echo "  bash scripts/run_experiment.sh"
+echo "  bash scripts/run_benchmark.sh --env-file .env"
 echo ""
 kubectl get pods -n "${NAMESPACE}"

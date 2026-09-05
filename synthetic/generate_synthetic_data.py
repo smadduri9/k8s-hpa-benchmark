@@ -1,19 +1,16 @@
 """
-Generates realistic synthetic time-series data for the HPA evaluation experiments.
-
-Simulates two scenarios:
-  - fixed:  3 static replicas — latency spikes sharply during load spike, stays high
-  - hpa:    HPA-managed replicas — latency spikes briefly, then recovers as pods scale up
-
-Output: sample_data/fixed_metrics.csv and sample_data/hpa_metrics.csv
+SYNTHETIC DATA GENERATOR — produces fabricated metrics for UI/plot development only.
+Output is NOT benchmark evidence and is never used for any published result in this repository.
 
 Usage:
-  python3 analysis/simulate_results.py
+  python3 synthetic/generate_synthetic_data.py
 """
 
+import argparse
 import os
 import math
 import random
+import sys
 import numpy as np
 import csv
 from datetime import datetime, timedelta
@@ -195,26 +192,52 @@ def simulate_hpa() -> list[dict]:
 # ---------------------------------------------------------------------------
 
 FIELDNAMES = [
-    "timestamp", "elapsed_seconds", "experiment", "replicas",
+    "timestamp", "elapsed_seconds", "experiment", "data_source", "replicas",
     "cpu_utilization_pct", "latency_p50_ms", "latency_p95_ms", "latency_p99_ms",
     "rps", "error_rate", "active_users",
 ]
 
-OUTPUT_DIR = os.path.join(os.path.dirname(__file__), "..", "sample_data")
-os.makedirs(OUTPUT_DIR, exist_ok=True)
+OUTPUT_DIR = os.path.join(os.path.dirname(__file__), "output")
+
+
+def ensure_output_dir(path: str) -> str:
+    resolved = os.path.abspath(path)
+    allowed_root = os.path.abspath(OUTPUT_DIR)
+    if not resolved.startswith(allowed_root + os.sep):
+        print("ERROR: synthetic output must stay under synthetic/output/", file=sys.stderr)
+        sys.exit(1)
+    os.makedirs(resolved, exist_ok=True)
+    return resolved
 
 
 def write_csv(rows: list[dict], filename: str):
-    path = os.path.join(OUTPUT_DIR, filename)
+    out_dir = ensure_output_dir(OUTPUT_DIR)
+    path = os.path.join(out_dir, filename)
     with open(path, "w", newline="") as f:
+        f.write("# SYNTHETIC DATA — NOT BENCHMARK EVIDENCE\n")
         writer = csv.DictWriter(f, fieldnames=FIELDNAMES)
         writer.writeheader()
-        writer.writerows(rows)
+        for row in rows:
+            row["data_source"] = "SYNTHETIC"
+            writer.writerow(row)
     print(f"  Wrote {len(rows)} rows -> {path}")
 
 
 if __name__ == "__main__":
+    print(
+        "\n".join(
+            [
+                "================================================================",
+                "SYNTHETIC DATA GENERATOR — NOT BENCHMARK EVIDENCE",
+                "Outputs are for plot/UI development only.",
+                "================================================================",
+            ]
+        ),
+        file=sys.stderr,
+    )
+    parser = argparse.ArgumentParser(description="Generate synthetic metrics (non-evidence)")
+    parser.parse_args()
     print("Generating synthetic experiment data...")
     write_csv(simulate_fixed(), "fixed_metrics.csv")
     write_csv(simulate_hpa(), "hpa_metrics.csv")
-    print("Done. Run 'python3 analysis/analyze_results.py' to generate figures.")
+    print("Done.")

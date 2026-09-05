@@ -1,0 +1,6 @@
+timestamp,elapsed_seconds,experiment,data_source,run_id,cluster_name,collection_timestamp,replicas,cpu_utilization_pct,latency_p50_ms,latency_p95_ms,latency_p99_ms,rps,error_rate
+2026-09-02T00:00:00+00:00,0,fixed,MEASURED,preflight,kind,2026-09-02T00:00:00+00:00,2,1.0,10.0,20.0,30.0,5.0,0.0
+2026-09-02T00:01:00+00:00,60,fixed,MEASURED,preflight,kind,2026-09-02T00:01:00+00:00,2,2.0,12.0,22.0,32.0,6.0,0.0
+2026-09-02T00:02:00+00:00,120,fixed,MEASURED,preflight,kind,2026-09-02T00:02:00+00:00,2,3.0,14.0,24.0,34.0,7.0,0.0
+2026-09-02T00:03:00+00:00,180,fixed,MEASURED,preflight,kind,2026-09-02T00:03:00+00:00,2,4.0,16.0,26.0,36.0,8.0,0.0
+2026-09-02T00:04:00+00:00,240,fixed,MEASURED,preflight,kind,2026-09-02T00:04:00+00:00,2,5.0,18.0,28.0,38.0,9.0,0.0
