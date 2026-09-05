@@ -662,6 +662,23 @@ check_readiness_sweep() {
   echo "READINESS_SWEEP_DONE"
 }
 
+check_readiness_repeat_control() {
+  smoke_endpoints_prepare_cluster
+  smoke_endpoints_patch_readiness 1 3
+
+  local run trial_output
+  echo "READINESS_REPEAT_BEGIN timeoutSeconds=1 failureThreshold=3 threads_per_pod=15 runs=5"
+  for run in 1 2 3 4 5; do
+    echo "READINESS_REPEAT_RUN run=${run}"
+    trial_output="$(smoke_endpoints_run_trial 15 60)"
+    echo "${trial_output}"
+  done
+
+  kubectl kustomize "${REPO_ROOT}/k8s/smoke" --load-restrictor LoadRestrictionsNone | kubectl apply -f -
+  kubectl rollout status deployment/hpa-eval-fixed -n "${NAMESPACE}" --timeout=180s
+  echo "READINESS_REPEAT_DONE"
+}
+
 negative_liveness_restarts_hung() {
   kubectl config use-context "kind-${CLUSTER_NAME}" >/dev/null 2>&1 || true
 
@@ -1407,6 +1424,7 @@ elif [[ -n "${CHECK}" ]]; then
     event-loop-not-blocked) check_event_loop_not_blocked ;;
     endpoints-never-empty) check_endpoints_never_empty ;;
     readiness-sweep) check_readiness_sweep ;;
+    readiness-repeat-control) check_readiness_repeat_control ;;
     assertions) check_assertions ;;
     handoff-docs) check_handoff_docs ;;
     *) die "unknown check: ${CHECK}" ;;

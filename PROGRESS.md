@@ -1496,3 +1496,45 @@ Keep **readiness timeoutSeconds=1, failureThreshold=3** (current). All five swep
 
 **Cliff:** control 1/3 still reaches `min=0` at **30 threads/pod** (`/health` max 2095 ms). Partial shedding at 25 (`min=1`) and 20 (`min=2`). No timeout value removes the cliff under symmetric overload — it only shifts it.
 
+---
+
+## readiness-repeat-control: five consecutive runs at 15 threads/pod (2026-09-05)
+
+- **Config:** readiness `timeoutSeconds=1`, `failureThreshold=3` (control). No changes between runs.
+- **Command:** `bash scripts/smoke_test.sh --check readiness-repeat-control`
+- **Session:** single kind session; one cluster prepare + one readiness patch; five back-to-back 60s trials.
+
+| run | HEALTH_MAX_UNDER_LOAD max_ms | ENDPOINTS_MIN_OBSERVED |
+|----:|-----------------------------:|------------------------|
+| 1 | 806.906 | min=3 samples=20 |
+| 2 | 2001.165 | min=1 samples=11 |
+| 3 | 3992.427 | min=0 samples=10 |
+| 4 | 715.407 | min=2 samples=20 |
+| 5 | 1712.523 | min=1 samples=11 |
+
+Pasted output:
+
+```
+READINESS_REPEAT_RUN run=1
+HEALTH_MAX_UNDER_LOAD threads_per_pod=15 max_ms=806.906
+ENDPOINTS_MIN_OBSERVED min=3 samples=20 duration_sec=60
+READINESS_REPEAT_RUN run=2
+HEALTH_MAX_UNDER_LOAD threads_per_pod=15 max_ms=2001.165
+ENDPOINTS_MIN_OBSERVED min=1 samples=11 duration_sec=60
+READINESS_REPEAT_RUN run=3
+HEALTH_MAX_UNDER_LOAD threads_per_pod=15 max_ms=3992.427
+ENDPOINTS_MIN_OBSERVED min=0 samples=10 duration_sec=60
+READINESS_REPEAT_RUN run=4
+HEALTH_MAX_UNDER_LOAD threads_per_pod=15 max_ms=715.407
+ENDPOINTS_MIN_OBSERVED min=2 samples=20 duration_sec=60
+READINESS_REPEAT_RUN run=5
+HEALTH_MAX_UNDER_LOAD threads_per_pod=15 max_ms=1712.523
+ENDPOINTS_MIN_OBSERVED min=1 samples=11 duration_sec=60
+```
+
+**`/health` max across five runs:** min **715.407** ms, max **3992.427** ms, median **1712.523** ms, range **715.407–3992.427** ms.
+
+**`ENDPOINTS_MIN_OBSERVED=0`:** **1 of 5** runs (run 3).
+
+**Repeatability note:** The prior sweep session observed `min=3` for all five configs at 15 threads/pod. This repeat session on the same control config produced `min` of 3, 1, 0, 2, 1 — confirming run-to-run variance at fixed load, not a single deterministic outcome.
+
