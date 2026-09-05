@@ -96,6 +96,48 @@ Guards enforced for this run (evidence in `rep.log` and collection output):
 - **Comparison validity:** Both arms are affected identically (same client, same region path, same LoadBalancer topology), so fixed-vs-HPA comparisons are valid. Absolute latency numbers are **not** datacenter-internal measurements.
 - **Tier 2 deferral:** Running Locust in-cluster (same region as the cluster) is deferred to Tier 2 to remove client-path variance from absolute latency.
 
+### Baseline calibration (Tier 2 Phase A, A8)
+
+- **`run-20260905T160157Z` is non-comparable to all future runs.** Its HPA arm ran `minReplicas: 1` against a fixed arm declared at 3, so the HPA arm began at one third the capacity and paid scale-up queueing the fixed arm never incurred. Evidence: `results/runs/run-20260905T160157Z/rep-1/replica_series_hpa.csv` reaches a minimum `spec_replicas` of **1** across its 70 samples. `k8s/hpa.yaml` now sets `minReplicas: 3`, so both arms start at equal capacity and the only remaining difference is HPA's ability to scale **up**. This removes the minimum-size confound; it does not make the earlier run wrong, it makes it a different experiment.
+- **Why this matters (uncalibrated baseline).** RLScale-Bench (arXiv:2605.26418) names this as a gap that makes comparisons unreliable: "When RL studies compare against an uncalibrated baseline, apparent improvements may reflect baseline weakness rather than algorithmic gains." The A7 result — fixed beating HPA on p95, p99 and cost — was measured against exactly such a baseline.
+- **Narrow workload coverage.** A7 used one load shape (ramp-and-hold). The same paper tests six and reports "rankings shifting by up to four positions between steady-state and bursty traffic", with the calibrated baseline winning on steady traffic and losing on bursty/flash. The "fixed wins" conclusion may therefore be specific to this shape, which is why A10 adds `constant` and `flash`.
+
+#### Load level derivation (Little's law)
+
+Concurrency = throughput × mean response time. Both inputs come from A7 artifacts:
+
+- R = **1039.8 ms** — Aggregated `Average Response Time` in `results/runs/run-20260905T160157Z/rep-1/locust_fixed_stats.csv`.
+- W = **2.0 s** — mean of `wait_time = between(1, 3)` in `locust/locustfile.py`.
+
+One user therefore delivers 1/(R+W) = 1/3.04 = **0.329 req/s = 19.7 req/min**.
+
+- **Rejected — the paper's absolute req/min.** Their 80 → 240 → 80 req/min converts to 4.1 → 12.2 → 4.1 users. Their figures describe their simulated service's capacity, not this one. At 4–12 users, three 200m pods never approach the 60% CPU target and the HPA arm would abort with `HPA_NEVER_SCALED`. We preserve their **shape and ratio**, not their absolutes.
+- **Rejected — 60 → 180 users.** 180 users demands 180 × 0.35 ≈ **63 RPS**. A7's fixed arm sustained **15.7 RPS** on 3 pods (16,928 requests ÷ 1,080 s), about 5.2 RPS/pod, so 63 RPS needs roughly **12 pods** — above `maxReplicas: 10`. Both arms would saturate and the run would measure overload, not autoscaling.
+
+**Assumption and sensitivity.** R is drawn from the very run this section declares non-comparable. With `minReplicas: 3` there is no scale-up queueing, so R will **fall**, and each user will therefore deliver **more** load than the estimate assumes:
+
+- If R falls to 500 ms, per-user rate rises from 1/(1.04+2.0) = 0.329 to 1/(0.5+2.0) = **0.400 req/s, a 22% increase**.
+- Flash peak of 90 users then demands 90 × 0.400 = **~36 RPS**, about **7 pods** at 5.2 RPS/pod — still inside `maxReplicas: 10`.
+- The chosen levels are therefore **safe under the expected shift**, but they are calibrated from a superseded run and **must be re-derived after the first calibrated GKE run**.
+
+#### Time-weighted mean user count per shape
+
+Reported so that cross-shape differences in total volume are visible rather than hidden. All three shapes are exactly **18 minutes (1080 s)**: duration is held constant because unequal durations make pod-hours incommensurable and break the cost-per-1k comparison.
+
+| Shape | Curve | Time-weighted mean users |
+|---|---|---|
+| hybrid | 1→20, 20→80, hold 60, 60→5 | **45.5** — (180×10.5 + 180×50 + 540×60 + 180×32.5)/1080 |
+| constant | 45 flat, ±10% seeded noise | **45.0** by construction (noise symmetric about 45); realized value reported as `SHAPE_TIME_WEIGHTED_MEAN_USERS` |
+| flash | 30 → 90 → 30 | **40.0** — (420×30 + 180×90 + 480×30)/1080 |
+
+Ramp segments are credited at midpoint concurrency.
+
+#### Prediction recorded before the calibrated runs
+
+A7's HPA arm averaged **8.16** ready replicas, recomputed from `results/runs/run-20260905T160157Z/rep-1/replica_series_hpa.csv`: pod-hours 2.4289 over a 1,071 s span, so 2.4289 × 3600 ÷ 1071 = 8.16 time-weighted (simple mean over the 70 samples is 8.07). Hybrid's time-weighted mean is 45.5 users — the same load level as `constant` — so **expect roughly 6–8 replicas on constant**.
+
+If `constant` instead holds at 3, that is **the finding, not an error**. It is what RLScale-Bench predicts for a calibrated baseline on steady-state traffic ("zero constraint violations on steady-state traffic"), and aborting on it would convert a result into a failure. Collection reports `HPA_DID_NOT_SCALE_ON_STEADY_LOAD peak_spec=<n> minReplicas=<n>` and continues. Only `hybrid` and `flash`, which must scale, keep `HPA_NEVER_SCALED` as an abort — see `--hpa-no-scale-policy` in `analysis/collect_metrics.py`, which defaults to `abort` so no shape opts into leniency implicitly. Recording the prediction before the run is what makes either outcome interpretable.
+
 ## Prometheus analysis window (published CSV rows)
 
 - **Window:** `LOAD_START t0` through `t0 + RUN_TIME` per arm (inclusive), as recorded in each run's `manifest.json` and echoed as `ANCHOR_WINDOW_ENFORCED start=… end=…` during collection.
