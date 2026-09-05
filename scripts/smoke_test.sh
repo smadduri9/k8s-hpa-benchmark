@@ -771,7 +771,7 @@ with open(os.environ["PATCH_FILE"], "w", encoding="utf-8") as handle:
   kubectl rollout status deployment/hpa-eval-fixed -n "${NAMESPACE}" --timeout=180s
   sleep 5
 
-  local pod restart_before restart_after attempt
+  local pod restart_before restart_after poll_output
   pod="$(kubectl get pods -n "${NAMESPACE}" -l app=hpa-eval,experiment=fixed \
     --field-selector=status.phase=Running \
     --sort-by=.metadata.creationTimestamp \
@@ -779,29 +779,164 @@ with open(os.environ["PATCH_FILE"], "w", encoding="utf-8") as handle:
   restart_before="$(kubectl get pod "${pod}" -n "${NAMESPACE}" \
     -o jsonpath='{.status.containerStatuses[0].restartCount}')"
 
-  restart_after="${restart_before}"
-  for attempt in $(seq 1 24); do
-    sleep 5
-    if ! kubectl get pod "${pod}" -n "${NAMESPACE}" >/dev/null 2>&1; then
-      pod="$(kubectl get pods -n "${NAMESPACE}" -l app=hpa-eval,experiment=fixed \
-        --field-selector=status.phase=Running \
-        --sort-by=.metadata.creationTimestamp \
-        -o jsonpath='{.items[-1].metadata.name}')"
-      restart_before=0
-    fi
-    restart_after="$(kubectl get pod "${pod}" -n "${NAMESPACE}" \
-      -o jsonpath='{.status.containerStatuses[0].restartCount}' 2>/dev/null || echo "")"
-    if [[ -n "${restart_after}" && "${restart_after}" -gt "${restart_before}" ]]; then
-      if ! kubectl describe pod "${pod}" -n "${NAMESPACE}" | grep -q "Liveness probe failed"; then
-        die "container restarted but missing Liveness probe failed event"
-      fi
-      echo "LIVENESS_RESTART_OBSERVED pod=${pod} restart_before=${restart_before} restart_after=${restart_after}"
-      echo "NEGATIVE_LIVENESS_RESTARTS_HUNG_PASS"
-      return 0
-    fi
-  done
+  poll_output="$(POD="${pod}" RESTART_BEFORE="${restart_before}" NAMESPACE="${NAMESPACE}" venv_python -c '
+import json
+import os
+import subprocess
+import sys
+import time
+from datetime import datetime, timedelta, timezone
 
-  die "liveness probe did not restart hung container (restart_before=${restart_before} restart_after=${restart_after})"
+namespace = os.environ["NAMESPACE"]
+pod = os.environ["POD"]
+restart_before = int(os.environ["RESTART_BEFORE"])
+service_name = "hpa-eval-fixed-svc"
+hang_grace_sec = 12
+poll_timeout_sec = 120
+
+
+def kubectl_json(*args):
+    proc = subprocess.run(["kubectl", *args], capture_output=True, text=True, check=True)
+    return json.loads(proc.stdout)
+
+
+def current_pod() -> str:
+  global pod
+  data = kubectl_json(
+      "get",
+      "pods",
+      "-n",
+      namespace,
+      "-l",
+      "app=hpa-eval,experiment=fixed",
+      "--field-selector=status.phase=Running",
+      "--sort-by=.metadata.creationTimestamp",
+      "-o",
+      "json",
+  )
+  items = data.get("items", [])
+  if not items:
+      return pod
+  return items[-1]["metadata"]["name"]
+
+
+def pod_started_at(target_pod: str) -> datetime:
+    data = kubectl_json("get", "pod", target_pod, "-n", namespace, "-o", "json")
+    started = data["status"]["containerStatuses"][0]["state"]["running"]["startedAt"]
+    return datetime.fromisoformat(started.replace("Z", "+00:00"))
+
+
+def pod_ip(target_pod: str) -> str:
+    data = kubectl_json("get", "pod", target_pod, "-n", namespace, "-o", "json")
+    return data["status"].get("podIP", "") or ""
+
+
+def restart_count(target_pod: str) -> int | None:
+    proc = subprocess.run(
+        ["kubectl", "get", "pod", target_pod, "-n", namespace, "-o", "json"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if proc.returncode != 0:
+        return None
+    data = json.loads(proc.stdout)
+    return int(data["status"]["containerStatuses"][0]["restartCount"])
+
+
+def pod_ready_in_endpoints(ip: str) -> bool:
+    if not ip:
+        return False
+    data = kubectl_json(
+        "get",
+        "endpointslice",
+        "-n",
+        namespace,
+        "-l",
+        f"kubernetes.io/service-name={service_name}",
+        "-o",
+        "json",
+    )
+    for slc in data.get("items", []):
+        for endpoint in slc.get("endpoints", []):
+            addresses = endpoint.get("addresses") or []
+            if ip in addresses:
+                return bool(endpoint.get("conditions", {}).get("ready"))
+    return False
+
+
+target_pod = pod
+started_at = pod_started_at(target_pod)
+hang_effective_epoch = (started_at + timedelta(seconds=hang_grace_sec)).timestamp()
+
+endpoint_removed_epoch = None
+restart_epoch = None
+restart_after = restart_before
+poll_start = time.time()
+
+while time.time() - poll_start < poll_timeout_sec:
+    time.sleep(1)
+    if target_pod != current_pod():
+        target_pod = current_pod()
+        restart_before = 0
+        started_at = pod_started_at(target_pod)
+        hang_effective_epoch = (started_at + timedelta(seconds=hang_grace_sec)).timestamp()
+        endpoint_removed_epoch = None
+    now = time.time()
+    ip = pod_ip(target_pod)
+    ready = pod_ready_in_endpoints(ip)
+    if now >= hang_effective_epoch and not ready and endpoint_removed_epoch is None:
+        endpoint_removed_epoch = now
+    rc = restart_count(target_pod)
+    if rc is not None and rc > restart_before:
+        restart_epoch = now
+        restart_after = rc
+        if endpoint_removed_epoch is None and now >= hang_effective_epoch and not ready:
+            endpoint_removed_epoch = now
+        break
+
+if restart_epoch is None:
+    print(
+        f"LIVENESS_RESTART_OBSERVED pod={target_pod} restart_before={restart_before} restart_after={restart_after}",
+        file=sys.stderr,
+    )
+    sys.exit(1)
+
+if endpoint_removed_epoch is None:
+    hung_pod_endpoint_seconds = "MISSING"
+else:
+    hung_pod_endpoint_seconds = max(0, int(round(endpoint_removed_epoch - hang_effective_epoch)))
+
+if endpoint_removed_epoch is None or restart_epoch is None:
+    ordering = "MISSING"
+elif endpoint_removed_epoch < restart_epoch - 1:
+    ordering = "precedes"
+elif endpoint_removed_epoch > restart_epoch + 1:
+    ordering = "follows"
+else:
+    ordering = "coincides"
+
+print(f"POLL_POD={target_pod}")
+print(f"POLL_RESTART_BEFORE={restart_before}")
+print(f"POLL_RESTART_AFTER={restart_after}")
+print(f"HUNG_POD_ENDPOINT_SECONDS={hung_pod_endpoint_seconds}")
+print(f"ENDPOINT_RESTART_ORDERING={ordering}")
+print(f"ENDPOINT_REMOVED_EPOCH={endpoint_removed_epoch}")
+print(f"RESTART_EPOCH={restart_epoch}")
+')"
+  if [[ $? -ne 0 ]]; then
+    die "liveness probe did not restart hung container (restart_before=${restart_before})"
+  fi
+
+  pod="$(echo "${poll_output}" | awk -F= '/^POLL_POD=/{print $2}')"
+  restart_before="$(echo "${poll_output}" | awk -F= '/^POLL_RESTART_BEFORE=/{print $2}')"
+  restart_after="$(echo "${poll_output}" | awk -F= '/^POLL_RESTART_AFTER=/{print $2}')"
+  if ! kubectl describe pod "${pod}" -n "${NAMESPACE}" | grep -q "Liveness probe failed"; then
+    die "container restarted but missing Liveness probe failed event"
+  fi
+  echo "${poll_output}" | grep -E '^(HUNG_POD_ENDPOINT_SECONDS|ENDPOINT_RESTART_ORDERING)='
+  echo "LIVENESS_RESTART_OBSERVED pod=${pod} restart_before=${restart_before} restart_after=${restart_after}"
+  echo "NEGATIVE_LIVENESS_RESTARTS_HUNG_PASS"
 }
 
 check_locust_authority() {

@@ -1542,7 +1542,7 @@ ENDPOINTS_MIN_OBSERVED min=1 samples=11 duration_sec=60
 
 ---
 
-## a3-probe-conservative: stop kind probe tuning (2026-09-05)
+## a2-probe-conservative: stop kind probe tuning (2026-09-05)
 
 - **Decision:** Stop tuning probes on kind. In-container generator shares each pod's 200m CPU / 256Mi cgroup with the app; delivered load varies per run. Kind cannot support probe tuning; **GKE with 80 external Locust users** is the measurement of record (~90 minutes).
 - **A1 sample:** `HEALTH_UNDER_LOAD max_ms=590.918` (event-loop-probe-fix) was one draw near the bottom of the repeatability distribution (715–3992 ms).
@@ -1550,4 +1550,5 @@ ENDPOINTS_MIN_OBSERVED min=1 samples=11 duration_sec=60
 - **Readiness change:** `readinessProbe.failureThreshold: 3` → **6** (both manifests). `timeoutSeconds: 1` unchanged. Rationale: a single slow probe should not remove a pod from the EndpointSlice; six consecutive failures at `periodSeconds: 5` ≈ 30s sustained unresponsiveness before removal — conservative against symmetric-overload cascade, not a kind-measured optimum.
 - **Sweep 99faf65:** withdrawn (see above). **Repeatability ec659fd:** five back-to-back runs at control 1/3 and 15 threads/pod — `/health` max min 715.4, max 3992.4, median 1712.5 ms; `ENDPOINTS_MIN_OBSERVED=0` in 1 of 5 runs.
 - **Harness role:** `check_endpoints_never_empty` and `check_readiness_sweep` remain as cascade **detectors** on kind; they cannot tune probe values.
+- **Liveness negative (failureThreshold 6):** one observation (harness variance per ec659fd): `LIVENESS_RESTART_OBSERVED restart_before=0 restart_after=1`; `HUNG_POD_ENDPOINT_SECONDS=31`; endpoint removal **precedes** liveness restart (`ENDPOINT_RESTART_ORDERING=precedes`).
 
