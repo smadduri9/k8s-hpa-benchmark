@@ -19,8 +19,10 @@ from __future__ import annotations
 
 import argparse
 import csv
+import json
 import os
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 _ANALYSIS_DIR = Path(__file__).resolve().parent
@@ -77,8 +79,11 @@ PHASE_COLORS     = ["#f7f7f7", "#fee8c8", "#edf8e9", "#deebf7"]
 
 FIG_DPI = 150
 
-# GKE e2-standard-2 on-demand list price (us-central1, 2026-03 public pricing).
-# Pod requests 0.1 vCPU on a 2-vCPU node → proportional node-cost share.
+# Cost model (Tier 2 will replace with pricing/ catalog fetcher — not built here).
+# SKU: GKE worker node type e2-standard-2, on-demand, region us-central1.
+# Price basis: Google Cloud published on-demand list price checked 2026-09-04 for
+# this run's publication — NOT billed/invoiced spend from Cloud Billing.
+# Hardcoded constant; no pricing/ module or live price fetch.
 GKE_E2_STANDARD_2_USD_PER_HOUR = 0.0535
 POD_VCPU_REQUEST = 0.1
 NODE_VCPU_CAPACITY = 2.0
@@ -427,6 +432,36 @@ def print_summary(fixed: list[dict], hpa: list[dict]):
 # Entry point
 # ---------------------------------------------------------------------------
 
+def infer_manifest_path(fixed_path: str) -> Path | None:
+    fixed = Path(fixed_path).resolve()
+    if fixed.name != "fixed_metrics.csv":
+        return None
+    if not fixed.parent.name.startswith("rep-"):
+        return None
+    candidate = fixed.parent.parent / "manifest.json"
+    return candidate if candidate.is_file() else None
+
+
+def record_partial_coverage_manifest(manifest_path: Path, *, fixed_metrics: str, output_dir: Path) -> None:
+    with manifest_path.open(encoding="utf-8") as handle:
+        data = json.load(handle)
+    data["analysis"] = {
+        "allow_partial_coverage": True,
+        "coverage_certified": False,
+        "fixed_metrics_path": str(Path(fixed_metrics).resolve()),
+        "figures_output_dir": str(output_dir.resolve()),
+        "recorded_at": datetime.now(tz=timezone.utc).isoformat(),
+        "note": (
+            "Figures generated with METRICS_COLUMN_COVERAGE gate bypassed on fixed arm; "
+            "not a fully coverage-certified run."
+        ),
+    }
+    with manifest_path.open("w", encoding="utf-8") as handle:
+        json.dump(data, handle, indent=2)
+        handle.write("\n")
+    print(f"MANIFEST_ALLOW_PARTIAL_COVERAGE path={manifest_path}")
+
+
 def guard_inputs(
     fixed_path: str,
     hpa_path: str,
@@ -475,7 +510,11 @@ def main():
     parser.add_argument("--replica-series-hpa", default=None)
     parser.add_argument("--allow-synthetic", action="store_true")
     parser.add_argument("--allow-partial-coverage", action="store_true")
+    parser.add_argument("--manifest", default=None, help="Run manifest.json to update when --allow-partial-coverage")
     args = parser.parse_args()
+
+    if args.allow_partial_coverage:
+        print("ALLOW_PARTIAL_COVERAGE=true fixed_metrics_coverage_certified=false")
 
     guard_inputs(
         args.fixed,
@@ -519,6 +558,21 @@ def main():
 
     print_summary(fixed, hpa)
     print(f"\nAll figures saved to {out_dir}/")
+
+    if args.allow_partial_coverage:
+        manifest_path = Path(args.manifest) if args.manifest else infer_manifest_path(args.fixed)
+        if manifest_path is not None:
+            record_partial_coverage_manifest(
+                manifest_path,
+                fixed_metrics=args.fixed,
+                output_dir=out_dir,
+            )
+        else:
+            print(
+                "MANIFEST_ALLOW_PARTIAL_COVERAGE skipped=manifest_not_found "
+                f"fixed={args.fixed}",
+                file=sys.stderr,
+            )
 
 
 if __name__ == "__main__":

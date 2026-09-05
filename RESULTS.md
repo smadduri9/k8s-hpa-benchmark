@@ -51,6 +51,24 @@ Serving rows = `ready_replicas > 0` (**59** of 73 anchored rows: 40 DEGRADED + 1
 
 Per-row investigation table: [docs/run-20260904T230444Z-rate-gap-table.md](docs/run-20260904T230444Z-rate-gap-table.md).
 
+### Figure generation (partial-coverage disclosure)
+
+Published figures under `docs/figures/run-20260904T230444Z/` were **not** produced by a fully coverage-certified analysis pass. Fixed-arm rate coverage is **33/57** (investigated; see appendix). Figures were generated with `--allow-partial-coverage`, which bypasses `METRICS_COLUMN_COVERAGE` on the fixed metrics CSV. The tool logs `ALLOW_PARTIAL_COVERAGE=true fixed_metrics_coverage_certified=false` and records `analysis.allow_partial_coverage: true` in the run `manifest.json`.
+
+```bash
+.venv/bin/python analysis/analyze_results.py \
+  --fixed results/runs/run-20260904T230444Z/rep-1/fixed_metrics.csv \
+  --hpa results/runs/run-20260904T230444Z/rep-1/hpa_metrics.csv \
+  --replica-series-fixed results/runs/run-20260904T230444Z/rep-1/replica_series_fixed.csv \
+  --replica-series-hpa results/runs/run-20260904T230444Z/rep-1/replica_series_hpa.csv \
+  --locust-fixed-stats results/runs/run-20260904T230444Z/rep-1/locust_fixed_stats.csv \
+  --locust-hpa-stats results/runs/run-20260904T230444Z/rep-1/locust_hpa_stats.csv \
+  --output-dir docs/figures/run-20260904T230444Z \
+  --allow-partial-coverage
+```
+
+Do **not** treat a run whose manifest lacks `analysis.allow_partial_coverage: true` (or whose analyze log lacks `ALLOW_PARTIAL_COVERAGE=true`) as using the same figure-generation policy.
+
 ## Reproducibility
 
 Guards enforced for this run (evidence in `rep.log` and collection output):
@@ -117,9 +135,12 @@ During scale-up, `spec_replicas` (HPA desired) leads `ready_replicas` (pods pass
 
 **Formula:** `(pod_hours × list_price_per_pod_hour) / (successful_requests / 1000)`
 
-**Price constant:** `list_price_per_pod_hour = $0.002675` — GKE e2-standard-2 on-demand **$0.0535/hr** (us-central1 public list price) × **0.1/2.0** vCPU share (pod requests 0.1 vCPU on a 2-vCPU node). Defined in `analysis/analyze_results.py`.
+#### Cost model assumptions (not billed spend)
 
-**Pod-hours** — integral of `ready_replicas` over time from in-run sampler: `sum(ready_i × Δt) / 3600`.
+- **`$0.0535/hr`** — hardcoded published on-demand list price for GKE worker SKU **`e2-standard-2`**, region **`us-central1`**, checked **2026-09-04** for this publication. Defined in `analysis/analyze_results.py` (`GKE_E2_STANDARD_2_USD_PER_HOUR`). **Not fetched** from Cloud Billing or a `pricing/` catalog (Tier 2 deferred).
+- **`$0.002675` per pod-hour** — prorated by CPU request share **0.1 / 2.0 vCPU** on that node type (`LIST_PRICE_PER_POD_HOUR`).
+- **Modeled cost only** — reflects **relative pod-hour efficiency** between arms at published list rates; **not invoiced spend**.
+- **Pod-hours** — integrated from in-run `replica_series_*.csv`: `sum(ready_i × Δt) / 3600`. Fixed arm **0.447** pod-hours, **not** the naive `3 × 0.3h = 0.900`, because the deployment **collapsed to 0 ready replicas** for much of the window.
 
 | Arm | pod_hours | successful (Locust) | Cost per 1k successful | Source |
 |-----|----------:|--------------------:|-----------------------:|--------|
@@ -140,7 +161,7 @@ During scale-up, `spec_replicas` (HPA desired) leads `ready_replicas` (pods pass
 
 ## Figures
 
-Generated from recovered metrics (fixed arm PARTIAL; HPA arm complete):
+Generated with `--allow-partial-coverage` (see [Data completeness](#figure-generation-partial-coverage-disclosure)). Fixed arm PARTIAL; HPA arm complete.
 
 - `docs/figures/run-20260904T230444Z/latency_comparison.png`
 - `docs/figures/run-20260904T230444Z/throughput_comparison.png`
