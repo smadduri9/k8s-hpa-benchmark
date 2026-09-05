@@ -180,7 +180,13 @@ The HPA Aggregated `Max Response Time` (**57,511 ms**) exceeds the fixed arm's (
 | `hpa_metrics.csv` | 2026-09-04T23:42:06Z (elapsed 1041s) | replicas **5** | ready **5** |
 | `hpa_metrics.csv` | 2026-09-04T23:43:06Z (elapsed 1065s) | replicas **2** | ready **2** |
 
-**Finding.** The 57,511 ms sample is a **single connection-level failure** (`status_code = 0`) during the **recovery ramp-down** while HPA was **scaling in**, not during scale-up. It is **not** explained as scale-up cold start (no `spec_replicas` increase precedes it). The mechanism beyond "connection error after ~58s wall-clock with no client timeout configured" is **not further decomposed** from these artifacts — Tier 2 Phase B may attribute client-side delay components if pursued.
+**Most likely mechanism: scale-in disruption (consistent-with, not proven).** The manifests define **no** `lifecycle.preStop` hook and **no** explicit `terminationGracePeriodSeconds` on either deployment (`k8s/deployment-fixed.yaml`, `k8s/deployment-hpa.yaml`); the pod spec goes from `readinessProbe` directly to `env`, so shutdown uses the Kubernetes default **30s** grace only. Neither LoadBalancer Service sets connection-draining or backend-timeout annotations (`k8s/service.yaml` has no `metadata.annotations` on either Service).
+
+On graceful shutdown, Kubernetes marks the pod **terminating**, removes it from **ready** EndpointSlices (`ready=false`), but leaves it in **serving** EndpointSlices (`serving=true`) so load balancers can drain in-flight connections ([Pod termination](https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/#pod-termination)). With **no** `preStop` sleep, **no** LB draining annotation, and the default 30s grace, an in-flight client request can still be routed to a pod being torn down during scale-in. That fits this sample: a **single** `status_code = 0` failure completing at **23:43:00Z** while `spec_replicas` was falling **10 → 7 → 5 → 3** in the prior 68s (recovery phase, 5 users).
+
+**Limit of the claim.** The committed artifacts **do not identify which pod served this request** — no per-request server log, no pod termination timestamp correlated to this Locust sample. The config gap plus timing during scale-in make scale-in disruption the **most likely** mechanism; it is **not proven** for this specific request.
+
+**Tier 2 backlog.** Scale-**in** disruption is a measurable and rarely studied cost of autoscaling; this run produced **one** client-observed instance (63rd failure, 57,511 ms). Tier 2 Phase B should instrument **both** scale-out and scale-in (EndpointSlice transitions, pod deletion timestamps, in-flight request correlation) — not scale-out alone.
 
 ## Derived metrics — run-20260904T230444Z
 
