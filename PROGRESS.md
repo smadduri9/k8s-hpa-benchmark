@@ -1423,7 +1423,7 @@ MANIFEST_ALLOW_PARTIAL_COVERAGE path=/Users/srirammadduri/Documents/Personal Pro
 
 - **Root cause (run-20260904T230444Z liveness cascade):** `/cpu` was `async def` but calls synchronous `compute_primes(n)` with no `await`, blocking the uvicorn event loop so `/health` could not be served under saturation; kubelet liveness killed working pods and load shifted to survivors.
 - **Fix:** `app/main.py` — `async def cpu_load` → `def cpu_load` (body unchanged). Sync `def` dispatches CPU work to Starlette's default threadpool; event loop stays free for probes.
-- **Smoke check:** `check_event_loop_not_blocked` in `scripts/smoke_test.sh` — deploy fixed arm on kind, in-container `/cpu?intensity=low` load via `kubectl exec` (10 concurrent threads; 20 threads returned exit code 137 from `kubectl exec`, cause not diagnosed — no `OOMKilled` status, events, restart count, or memory observation checked), 20 sequential `/health` latency samples; PASS when all HTTP 200 and max &lt; 1000 ms. Wired into `--full`. Load generator shares the pod cgroup (200m CPU, 256Mi memory); measured `/health` latency is a conservative upper bound, not external-load reproduction. Tier 2 backlog: external load generator.
+- **Smoke check:** `check_event_loop_not_blocked` in `scripts/smoke_test.sh` — deploy fixed arm on kind, in-container `/cpu?intensity=low` load via `kubectl exec` (10 concurrent threads; 20 threads returned exit code 137 from `kubectl exec`, cause not diagnosed — no `OOMKilled` status, events, restart count, or memory observation checked), 20 sequential `/health` latency samples; PASS when all HTTP 200 and max < 1000 ms. Wired into `--full`. Load generator shares the pod cgroup (200m CPU, 256Mi memory); measured `/health` latency is a conservative upper bound, not external-load reproduction. Tier 2 backlog: external load generator.
 - **Verification command:**
 
 ```bash
@@ -1436,4 +1436,63 @@ EVENT_LOOP_NOT_BLOCKED_PASS
 ```
 
 - **Documented in RESULTS.md (Measurement limitations):** Starlette default threadpool limiter is 40 tokens (unchanged); GIL limits throughput at 200m CPU; purpose is probe availability not throughput; per-request latency may worsen under saturation; `psutil.cpu_percent(interval=None)` may be noisier under concurrency; **future runs are not comparable to run-20260904T230444Z**.
+
+---
+
+## readiness-sweep: probe timeout sweep at 15 threads/pod (2026-09-05)
+
+- **Harness:** `check_readiness_sweep` in `scripts/smoke_test.sh` (shared helpers with `check_endpoints_never_empty`). Fixed arm scaled to 3 replicas; in-container load on all pods; 60s EndpointSlice sampling at 1s intervals with per-second `/health` max tracking.
+- **Command:** `bash scripts/smoke_test.sh --check readiness-sweep`
+
+### Sweep at 15 threads/pod (one session)
+
+| timeoutSeconds | failureThreshold | /health max (ms) | ENDPOINTS_MIN_OBSERVED | result |
+|---------------:|-----------------:|-----------------:|------------------------|--------|
+| 1 | 3 (control) | 593.368 | min=3 samples=20 | pass |
+| 2 | 3 | 713.028 | min=3 samples=18 | pass |
+| 2 | 6 | 700.502 | min=3 samples=19 | pass |
+| 3 | 3 | 917.699 | min=3 samples=19 | pass |
+| 3 | 6 | 795.262 | min=3 samples=19 | pass |
+
+Pasted rows:
+
+```
+READINESS_SWEEP_ROW timeoutSeconds=1 failureThreshold=3 HEALTH_MAX_UNDER_LOAD threads_per_pod=15 max_ms=593.368 ENDPOINTS_MIN_OBSERVED min=3 samples=20 duration_sec=60 result=pass
+HEALTH_MAX_UNDER_LOAD threads_per_pod=15 max_ms=593.368
+ENDPOINTS_MIN_OBSERVED min=3 samples=20 duration_sec=60
+READINESS_SWEEP_ROW timeoutSeconds=2 failureThreshold=3 HEALTH_MAX_UNDER_LOAD threads_per_pod=15 max_ms=713.028 ENDPOINTS_MIN_OBSERVED min=3 samples=18 duration_sec=60 result=pass
+HEALTH_MAX_UNDER_LOAD threads_per_pod=15 max_ms=713.028
+ENDPOINTS_MIN_OBSERVED min=3 samples=18 duration_sec=60
+READINESS_SWEEP_ROW timeoutSeconds=2 failureThreshold=6 HEALTH_MAX_UNDER_LOAD threads_per_pod=15 max_ms=700.502 ENDPOINTS_MIN_OBSERVED min=3 samples=19 duration_sec=60 result=pass
+HEALTH_MAX_UNDER_LOAD threads_per_pod=15 max_ms=700.502
+ENDPOINTS_MIN_OBSERVED min=3 samples=19 duration_sec=60
+READINESS_SWEEP_ROW timeoutSeconds=3 failureThreshold=3 HEALTH_MAX_UNDER_LOAD threads_per_pod=15 max_ms=917.699 ENDPOINTS_MIN_OBSERVED min=3 samples=19 duration_sec=60 result=pass
+HEALTH_MAX_UNDER_LOAD threads_per_pod=15 max_ms=917.699
+ENDPOINTS_MIN_OBSERVED min=3 samples=19 duration_sec=60
+READINESS_SWEEP_ROW timeoutSeconds=3 failureThreshold=6 HEALTH_MAX_UNDER_LOAD threads_per_pod=15 max_ms=795.262 ENDPOINTS_MIN_OBSERVED min=3 samples=19 duration_sec=60 result=pass
+HEALTH_MAX_UNDER_LOAD threads_per_pod=15 max_ms=795.262
+ENDPOINTS_MIN_OBSERVED min=3 samples=19 duration_sec=60
+```
+
+**Note:** Prior `check_endpoints_never_empty` run (c39b1e9) observed `min=0` at 15 threads with control 1/3. This sweep session observed `min=3` for all five configs at the same load level — run-to-run variance on kind, not inferred from neighbours.
+
+### Cliff test (best survivor: tightest passing config = control 1/3)
+
+| threads/pod | /health max (ms) | ENDPOINTS_MIN_OBSERVED | result |
+|------------:|-----------------:|------------------------|--------|
+| 20 | 1102.842 | min=2 samples=21 | pass |
+| 25 | 1598.452 | min=1 samples=16 | pass |
+| 30 | 2095.518 | min=0 samples=12 | fail |
+
+```
+READINESS_SWEEP_CLIFF_ROW timeoutSeconds=1 failureThreshold=3 threads_per_pod=20 HEALTH_MAX_UNDER_LOAD threads_per_pod=20 max_ms=1102.842 ENDPOINTS_MIN_OBSERVED min=2 samples=21 duration_sec=60 result=pass
+READINESS_SWEEP_CLIFF_ROW timeoutSeconds=1 failureThreshold=3 threads_per_pod=25 HEALTH_MAX_UNDER_LOAD threads_per_pod=25 max_ms=1598.452 ENDPOINTS_MIN_OBSERVED min=1 samples=16 duration_sec=60 result=pass
+READINESS_SWEEP_CLIFF_ROW timeoutSeconds=1 failureThreshold=3 threads_per_pod=30 HEALTH_MAX_UNDER_LOAD threads_per_pod=30 max_ms=2095.518 ENDPOINTS_MIN_OBSERVED min=0 samples=12 duration_sec=60 result=fail
+```
+
+### Recommendation (measurement only; no manifest change applied)
+
+Keep **readiness timeoutSeconds=1, failureThreshold=3** (current). All five swept configs passed at 15 threads/pod with `min=3`; control is the tightest timeout that passed, preserving maximum load-shedding aggressiveness without measured endpoint loss at that load level in this session.
+
+**Cliff:** control 1/3 still reaches `min=0` at **30 threads/pod** (`/health` max 2095 ms). Partial shedding at 25 (`min=1`) and 20 (`min=2`). No timeout value removes the cliff under symmetric overload — it only shifts it.
 
