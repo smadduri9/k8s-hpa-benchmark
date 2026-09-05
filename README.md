@@ -2,6 +2,37 @@
 
 Personal benchmark project that evaluates Kubernetes Horizontal Pod Autoscaler (HPA) behavior on bursty traffic patterns.
 
+## Results — run-20260904T230444Z (GKE, production)
+
+**Status: PARTIAL** — fixed arm collapsed under burst; metrics gaps are measured, not hidden. Full write-up: [RESULTS.md](RESULTS.md).
+
+| Arm | Requests | Failures | Failure rate | Replicas | Source |
+|-----|---------:|---------:|-------------:|----------|--------|
+| **Fixed** (declared 3) | 10,193 | 1,230 | **12.07%** (1230 ÷ 10193) | ready hit **0** during collapse | `locust_fixed_stats.csv` |
+| **HPA** (1–10) | 20,820 | 63 | **0.30%** (63 ÷ 20820) | peak **spec=10**, peak **ready=10** | `locust_hpa_stats.csv` |
+
+Fixed availability (73 rows): **14 UNAVAILABLE** / **40 DEGRADED** / **19 AVAILABLE**. HPA successful-request throughput **2.32×** fixed (20757 ÷ 8963).
+
+### Latency over time
+
+![Latency comparison — fixed vs HPA](docs/figures/run-20260904T230444Z/latency_comparison.png)
+
+### Throughput (RPS)
+
+![Throughput comparison](docs/figures/run-20260904T230444Z/throughput_comparison.png)
+
+### CPU and replica count (HPA arm)
+
+![CPU and replicas](docs/figures/run-20260904T230444Z/cpu_replicas.png)
+
+### Cost vs performance
+
+![Cost performance](docs/figures/run-20260904T230444Z/cost_performance.png)
+
+Paths above are relative to repo root. Run artifacts live under `results/runs/run-20260904T230444Z/rep-1/` (gitignored locally).
+
+---
+
 ## Quick Start
 
 See [HANDOFF.md](HANDOFF.md) for the full reproducible runbook.
@@ -44,7 +75,7 @@ The benchmark measures reliability, latency, throughput, scaling behavior, and c
 - `k8s/` namespace, deployments, services, HPA, Prometheus manifests
 - `locust/` workload generator with phased traffic shape
 - `analysis/` metric collection and report plotting scripts
-- `sample_data/` captured metrics and generated figures
+- `docs/` published figures and investigation tables for completed runs
 - `scripts/` local and GKE deployment + experiment orchestration
 
 ## Tooling setup (required)
@@ -94,21 +125,6 @@ bash scripts/deploy_gke.sh YOUR_PROJECT_ID us-central1
 bash scripts/run_experiment.sh
 ```
 
-## Results (Current)
-
-From the benchmark runs in `sample_data/`:
-
-- Failure rate improved from **51.7%** (fixed) to **0.97%** (HPA)
-- Total requests served increased by **2.5x**
-- Cost per 1k successful requests reduced by **~74%**
-
-After running `analysis/analyze_results.py`, figures are written to:
-
-- `sample_data/figures/latency_comparison.png`
-- `sample_data/figures/throughput_comparison.png`
-- `sample_data/figures/cpu_replicas.png`
-- `sample_data/figures/cost_performance.png`
-
 ## Reproducible Demo Path
 
 If you do not want to provision a cluster immediately, generate synthetic benchmark data and plots:
@@ -117,3 +133,5 @@ If you do not want to provision a cluster immediately, generate synthetic benchm
 ".venv/bin/python" synthetic/generate_synthetic_data.py
 ".venv/bin/python" analysis/analyze_results.py
 ```
+
+Synthetic data is quarantined and not comparable to measured GKE runs — see `DATA_PROVENANCE.md`.
