@@ -7,14 +7,14 @@ Authority split:
 
 ## Headline — run-20260904T230444Z (production, GKE)
 
-The fixed 3-replica baseline **collapsed under burst**: `REPLICA_DIP_OBSERVED declared=3 minimum=0` across 51 timestamps in `replica_series_fixed.csv` — zero ready replicas for a measurable fraction of the 18-minute window. With no pods serving, Prometheus app metrics are absent; those rows are **`TARGET_UNAVAILABLE`**, not collection failure. Evidence is in `replica_series_fixed.csv`, independent of Prometheus.
+The fixed 3-replica baseline **collapsed under burst**: `REPLICA_DIP_OBSERVED declared=3 minimum=0` across 51 timestamps in `replica_series_fixed.csv` — zero ready replicas for a measurable fraction of the 18-minute window. With no pods serving, Prometheus app metrics are absent; those rows are **`UNAVAILABLE`**, not collection failure. Evidence is in `replica_series_fixed.csv`, independent of Prometheus.
 
 | Arm | Locust requests | Locust failures | Failure rate | HPA / replica outcome |
 |-----|----------------:|----------------:|-------------:|------------------------|
 | **Fixed** | 10,193 | 1,230 | **12.07%** | Declared 3 replicas; ready hit **0** during collapse |
 | **HPA** | 20,820 | 63 | **0.30%** | Scaled to **spec=10** (`HPA_SCALE_FLOOR_CHECK peak=10`); ready tracked to 10 |
 
-Availability gaps are **recorded, not hidden**: metrics CSV includes `availability_state` (`AVAILABLE` vs `TARGET_UNAVAILABLE`). Coverage is assessed only over rows with `ready_replicas > 0`; `TARGET_AVAILABILITY` reports the fraction of the window with serving capacity.
+Availability gaps are **recorded, not hidden**: metrics CSV includes `availability_state` (`UNAVAILABLE`, `DEGRADED`, `AVAILABLE`). Coverage is assessed over **serving rows** (`ready_replicas > 0`); `TARGET_AVAILABILITY` reports all three counts separately.
 
 Prior run `run-20260904T220808Z` replica time series is unrecoverable (no in-run sampler); see `results/runs/run-20260904T220808Z/RECOVERY.md`.
 
@@ -29,8 +29,8 @@ Prior run `run-20260904T220808Z` replica time series is unrecoverable (no in-run
 - **Window:** `LOAD_START t0` through `t0 + RUN_TIME` per arm (inclusive), as recorded in each run's `manifest.json` and echoed as `ANCHOR_WINDOW_ENFORCED start=… end=…` during collection.
 - **Burst included:** The first minute of load is in the published window. A 60s scrape pre-roll during the post-cold-start ready wait (`METRIC_SCRAPE_PREROLL_*` in `rep.log`) warms Prometheus scrapes before `t0`; pre-roll samples are queried but not written as CSV rows.
 - **Every anchored timestamp produces a row:** 73 rows at 18m / 15s step. Rows are never dropped when Prometheus series end early.
-- **TARGET_UNAVAILABLE:** Row is unavailable when `ready_replicas == 0`, or (fixed arm) when `ready_replicas` is below declared capacity. Rate-derived cells may also be `TARGET_UNAVAILABLE` when counters are absent despite a CPU gauge (collapse onset). These rows/cells are excluded from coverage denominators.
-- **Coverage:** `METRICS_COLUMN_COVERAGE` is over **available rows only** (fixed: `ready_replicas >= declared`; HPA: `ready_replicas > 0`). Rate columns skip the first two available rows (burst-onset) and cells marked `TARGET_UNAVAILABLE`. `TARGET_AVAILABILITY rows_available/rows_total` is reported separately.
+- **Three availability states:** `UNAVAILABLE` when `ready_replicas == 0` (metric cells are `TARGET_UNAVAILABLE`). `DEGRADED` when `0 < ready_replicas < declared` (fixed arm; pods serving below capacity). `AVAILABLE` when `ready_replicas == declared` (fixed) or `ready_replicas > 0` (HPA). A cell's value must never contradict its row's `availability_state`.
+- **Coverage:** `METRICS_COLUMN_COVERAGE` is over **serving rows** (`AVAILABLE` + `DEGRADED`, i.e. `ready_replicas > 0`). Rate columns skip the first two serving rows (burst-onset `MISSING`). `TARGET_AVAILABILITY` reports `rows_unavailable`, `rows_degraded`, and `rows_available` each out of `rows_total`.
 - **Rate lookback:** PromQL `rate(...[N])` uses `N = max(step, 2×scrape_interval)` (30s at default 15s step/scrape).
 - **Log markers:** `METRIC_QUERY_PREROLL_SEC=60 published_rows_only=true no_row_exclusions=true`
 

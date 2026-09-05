@@ -3,7 +3,8 @@ Queries Prometheus HTTP API to collect experiment metrics and export to CSV.
 
 Published analysis window (--start/--end): inclusive LOAD_START t0 through t0+RUN_TIME.
 Every timestamp in that window is written to CSV. Rows with ready_replicas == 0 are
-TARGET_UNAVAILABLE (no serving pods); coverage is assessed only over available rows.
+UNAVAILABLE (metric cells TARGET_UNAVAILABLE). Coverage is over serving rows
+(AVAILABLE + DEGRADED: ready_replicas > 0).
 
 Prometheus error_rate counts SERVER-OBSERVED non-200 responses
 (app_requests_total{status_code!="200"}). Locust is authoritative for the published
@@ -41,20 +42,18 @@ if str(_ANALYSIS_DIR) not in sys.path:
     sys.path.insert(0, str(_ANALYSIS_DIR))
 
 from metrics_contract import (
-    AVAILABILITY_AVAILABLE,
+    AVAILABILITY_UNAVAILABLE,
     METRIC_QUERY_PREROLL_SEC,
     METRIC_VALUE_COLUMNS,
     MISSING,
     RATE_DERIVED_COLUMNS,
     REQUIRED_VALUE_COLUMNS,
-    RATE_DERIVED_COLUMNS,
     TARGET_UNAVAILABLE,
     assert_column_coverage,
-    column_coverage,
     column_coverage_available_rows,
-    is_available_row,
     is_populated_metric_value,
-    is_available_row,
+    is_serving_row,
+    row_availability_state,
 )
 
 FIELDNAMES = [
@@ -533,10 +532,11 @@ def collect(
                 f"timestamp={datetime.fromtimestamp(ts, tz=timezone.utc).isoformat()} "
                 f"path={replica_series_path}"
             )
-        target_unavailable = not is_available_row(
+        availability_state = row_availability_state(
             {"ready_replicas": sample.ready},
             declared_replicas=declared_for_availability,
         )
+        target_unavailable = availability_state == AVAILABILITY_UNAVAILABLE
         if (
             max_replicas is not None
             and sample.spec > max_replicas
@@ -557,9 +557,7 @@ def collect(
             "spec_replicas": sample.spec,
             "status_replicas": sample.status,
             "ready_replicas": sample.ready,
-            "availability_state": (
-                TARGET_UNAVAILABLE if target_unavailable else AVAILABILITY_AVAILABLE
-            ),
+            "availability_state": availability_state,
         }
         for metric in METRIC_VALUE_COLUMNS:
             if metric == "error_rate":
@@ -578,18 +576,6 @@ def collect(
             target_unavailable=target_unavailable,
         )
         rows.append(row)
-
-    for row in rows:
-        if row.get("availability_state") != AVAILABILITY_AVAILABLE:
-            continue
-        if row.get("cpu_utilization_pct") in (MISSING, TARGET_UNAVAILABLE):
-            row["availability_state"] = TARGET_UNAVAILABLE
-            for metric in METRIC_VALUE_COLUMNS:
-                row[metric] = TARGET_UNAVAILABLE
-            continue
-        for metric in RATE_DERIVED_COLUMNS:
-            if row.get(metric) == MISSING:
-                row[metric] = TARGET_UNAVAILABLE
 
     assert_column_coverage(rows, declared_replicas=declared_for_availability)
     return rows
@@ -656,17 +642,12 @@ def main() -> None:
         rows, "error_rate", declared_replicas=args.assert_replicas if args.mode == "fixed" else None
     )
     unavailable_rows = sum(
-        1
-        for row in rows
-        if not is_available_row(
-            row,
-            declared_replicas=args.assert_replicas if args.mode == "fixed" else None,
-        )
+        1 for row in rows if row.get("availability_state") == AVAILABILITY_UNAVAILABLE
     )
     nonzero_error = sum(
         1
         for row in rows
-        if is_available_row(row)
+        if is_serving_row(row)
         and is_populated_metric_value(row.get("error_rate"))
         and float(row["error_rate"]) > 0
     )
