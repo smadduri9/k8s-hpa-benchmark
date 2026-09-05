@@ -220,6 +220,12 @@ def assert_no_run_level_percentile_from_history(source: str) -> None:
         sys.exit(1)
 
 
+def _history_percentile_value(raw: str | None) -> float:
+    if raw is None or raw == "" or raw == "N/A":
+        return float("nan")
+    return float(raw)
+
+
 def load_locust_stats_history(path: str) -> list[dict]:
     rows: list[dict] = []
     with open(path, newline="") as handle:
@@ -229,9 +235,9 @@ def load_locust_stats_history(path: str) -> list[dict]:
             rows.append(
                 {
                     "timestamp": int(row["Timestamp"]),
-                    "p50_ms": float(row["50%"]),
-                    "p95_ms": float(row["95%"]),
-                    "p99_ms": float(row["99%"]),
+                    "p50_ms": _history_percentile_value(row.get("50%")),
+                    "p95_ms": _history_percentile_value(row.get("95%")),
+                    "p99_ms": _history_percentile_value(row.get("99%")),
                     "percentile_source": HISTORY_PERCENTILE_SOURCE,
                 }
             )
