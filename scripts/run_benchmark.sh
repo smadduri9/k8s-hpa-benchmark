@@ -31,14 +31,27 @@ RUN_TIME="18m"
 DURATION_MINUTES=18
 FIXED_HOST=""
 HPA_HOST=""
+SHAPE="hybrid"
+SHAPE_EXPLICIT=false
+HPA_NO_SCALE_POLICY="abort"
 
 usage() {
   cat <<'EOF'
-Usage: bash scripts/run_benchmark.sh [--env-file .env] [--smoke] [--repetitions N]
+Usage: bash scripts/run_benchmark.sh [--env-file .env] [--shape hybrid|constant|flash] [--smoke] [--repetitions N]
        bash scripts/run_benchmark.sh --cold-start-only --arm fixed|hpa [--smoke]
 
 Runs fixed then HPA arms with cold-start enforcement and anchored metric collection.
 Declared replica counts are read from each deployment's spec at cold-start time.
+
+--shape selects the load profile; all three are exactly 18 minutes, because unequal
+durations make pod-hours incommensurable and break the cost-per-1k comparison.
+  hybrid   locust/locustfile.py           ramp/spike/hold/recover (default, unchanged)
+  constant locust/locustfile_constant.py  flat 45 users +/-10% noise
+  flash    locust/locustfile_flash.py     30 -> 90 -> 30 users, 3x spike at 7-10 min
+
+The results directory is keyed by shape so runs of different shapes cannot collide.
+On the constant shape an HPA arm that holds minReplicas is a result, not a failure,
+so collection runs with --hpa-no-scale-policy warn; hybrid and flash keep abort.
 EOF
 }
 
@@ -52,6 +65,7 @@ while [[ $# -gt 0 ]]; do
     --hpa-host) HPA_HOST="$2"; shift 2 ;;
     --cold-start-only) COLD_START_ONLY=true; shift ;;
     --arm) ARM="$2"; shift 2 ;;
+    --shape) SHAPE="$2"; SHAPE_EXPLICIT=true; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     *) die "unknown argument: $1" ;;
   esac
@@ -60,14 +74,35 @@ done
 load_env_file "${ENV_FILE}"
 require_venv
 
-if [[ "${SMOKE}" == "true" ]]; then
+case "${SHAPE}" in
+  hybrid)   LOCUST_FILE="locust/locustfile.py" ;;
+  constant) LOCUST_FILE="locust/locustfile_constant.py" ;;
+  flash)    LOCUST_FILE="locust/locustfile_flash.py" ;;
+  *) die "unsupported --shape: ${SHAPE} (expected hybrid, constant or flash)" ;;
+esac
+# Steady-state load is the one shape where a calibrated HPA is expected to hold the
+# floor; aborting on that would discard the finding. Burst shapes must scale.
+if [[ "${SHAPE}" == "constant" ]]; then
+  HPA_NO_SCALE_POLICY="warn"
+fi
+
+# --smoke alone keeps the pre-existing 10-minute kind profile byte-compatible. An
+# explicit --shape wins for the load profile; --smoke then governs only the overlay.
+if [[ "${SMOKE}" == "true" && "${SHAPE_EXPLICIT}" == "false" ]]; then
   LOCUST_FILE="locust/locustfile_smoke.py"
   RUN_TIME="10m"
   DURATION_MINUTES=10
+  SHAPE="smoke"
 fi
 
+if [[ ! -f "${REPO_ROOT}/${LOCUST_FILE}" ]]; then
+  die "missing locustfile for shape ${SHAPE}: ${REPO_ROOT}/${LOCUST_FILE}"
+fi
+printf '%s\n' "SHAPE_SELECTED shape=${SHAPE} locust_file=${LOCUST_FILE} run_time=${RUN_TIME}"
+printf '%s\n' "HPA_NO_SCALE_POLICY=${HPA_NO_SCALE_POLICY} shape=${SHAPE}"
+
 if [[ -z "${RUN_ID}" ]]; then
-  RUN_ID="run-$(date -u '+%Y%m%dT%H%M%SZ')"
+  RUN_ID="run-$(date -u '+%Y%m%dT%H%M%SZ')-${SHAPE}"
 fi
 
 RUN_ROOT="${REPO_ROOT}/results/runs/${RUN_ID}"
@@ -81,6 +116,9 @@ cat > "${MANIFEST_PATH}" <<EOF
   "repetitions": ${REPETITIONS},
   "duration_minutes": ${DURATION_MINUTES},
   "hpa_max_replicas": ${manifest_hpa_max},
+  "shape": "${SHAPE}",
+  "locust_file": "${LOCUST_FILE}",
+  "hpa_no_scale_policy": "${HPA_NO_SCALE_POLICY}",
   "arms": {}
 }
 EOF
@@ -181,8 +219,10 @@ collect_arm_metrics() {
     hpa_min="$(hpa_min_replicas)"
     hpa_max="$(hpa_max_replicas)"
     args+=(--min-replicas "${hpa_min}" --max-replicas "${hpa_max}")
+    args+=(--hpa-no-scale-policy "${HPA_NO_SCALE_POLICY}")
     echo "HPA_MIN_REPLICAS_SOURCE=hpa_spec minReplicas=${hpa_min}"
     echo "HPA_MAX_REPLICAS_SOURCE=hpa_spec maxReplicas=${hpa_max}"
+    echo "HPA_NO_SCALE_POLICY=${HPA_NO_SCALE_POLICY} shape=${SHAPE}"
   fi
   args+=(--step 15)
   if ! "${args[@]}"; then
@@ -226,6 +266,8 @@ run_one_repetition() {
   set +e
   {
     echo "RUN_ID=${RUN_ID} REP=${rep} SMOKE=${SMOKE}"
+    echo "SHAPE_SELECTED shape=${SHAPE} locust_file=${LOCUST_FILE} run_time=${RUN_TIME}"
+    echo "HPA_NO_SCALE_POLICY=${HPA_NO_SCALE_POLICY} shape=${SHAPE}"
     echo "LOCUST_FILE=${LOCUST_FILE} RUN_TIME=${RUN_TIME} FIXED_HOST=${FIXED_HOST} HPA_HOST=${HPA_HOST}"
 
     kubectl port-forward svc/prometheus 9090:9090 -n "${NAMESPACE}" >/dev/null 2>&1 &
