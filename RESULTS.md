@@ -127,10 +127,12 @@ Reported so that cross-shape differences in total volume are visible rather than
 | Shape | Curve | Time-weighted mean users |
 |---|---|---|
 | hybrid | 1→20, 20→80, hold 60, 60→5 | **45.5** — (180×10.5 + 180×50 + 540×60 + 180×32.5)/1080 |
-| constant | 45 flat, ±10% seeded noise | **45.0** by construction (noise symmetric about 45); realized value reported as `SHAPE_TIME_WEIGHTED_MEAN_USERS` |
+| constant | 45 flat, ±10% seeded noise | **45.4167** — realized value of the 36 seeded plateaus (`NOISE_SEED=1729`, band 41–49); design centre is 45.0 and the seed lands 0.42 above it |
 | flash | 30 → 90 → 30 | **40.0** — (420×30 + 180×90 + 480×30)/1080 |
 
 Ramp segments are credited at midpoint concurrency.
+
+**Locust ignores `--run-time` when a `LoadTestShape` is present** (it warns: "--run-time, --users or --spawn-rate have no impact on LoadShapes unless the shape class explicitly reads them"). Each shape therefore terminates itself by returning `None` from `tick()` at 1080 s, and the harness `--run-time 18m` plus its 60 s wall-clock guard remain the outer bound rather than the mechanism. The two agree by construction; if a shape's internal duration is ever changed, `--run-time` will not correct it.
 
 #### Prediction recorded before the calibrated runs
 
