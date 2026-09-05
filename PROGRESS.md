@@ -1423,7 +1423,7 @@ MANIFEST_ALLOW_PARTIAL_COVERAGE path=/Users/srirammadduri/Documents/Personal Pro
 
 - **Root cause (run-20260904T230444Z liveness cascade):** `/cpu` was `async def` but calls synchronous `compute_primes(n)` with no `await`, blocking the uvicorn event loop so `/health` could not be served under saturation; kubelet liveness killed working pods and load shifted to survivors.
 - **Fix:** `app/main.py` — `async def cpu_load` → `def cpu_load` (body unchanged). Sync `def` dispatches CPU work to Starlette's default threadpool; event loop stays free for probes.
-- **Smoke check:** `check_event_loop_not_blocked` in `scripts/smoke_test.sh` — deploy fixed arm on kind, 10 concurrent in-pod `/cpu?intensity=low` threads, 20 sequential `/health` latency samples; PASS when all HTTP 200 and max &lt; 1000 ms. Wired into `--full`.
+- **Smoke check:** `check_event_loop_not_blocked` in `scripts/smoke_test.sh` — deploy fixed arm on kind, in-container `/cpu?intensity=low` load via `kubectl exec` (10 concurrent threads; 20 threads returned exit code 137 from `kubectl exec`, cause not diagnosed — no `OOMKilled` status, events, restart count, or memory observation checked), 20 sequential `/health` latency samples; PASS when all HTTP 200 and max &lt; 1000 ms. Wired into `--full`. Load generator shares the pod cgroup (200m CPU, 256Mi memory); measured `/health` latency is a conservative upper bound, not external-load reproduction. Tier 2 backlog: external load generator.
 - **Verification command:**
 
 ```bash

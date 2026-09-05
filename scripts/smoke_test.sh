@@ -276,6 +276,8 @@ check_error_rate_positive() {
 }
 
 check_event_loop_not_blocked() {
+  # Load generator runs in-container via kubectl exec and shares the pod cgroup
+  # (200m CPU, 256Mi memory). /health latency is a conservative upper bound.
   kubectl config use-context "kind-${CLUSTER_NAME}" >/dev/null 2>&1 || true
   build_and_load_image
   kubectl rollout restart deployment/hpa-eval-fixed -n "${NAMESPACE}"

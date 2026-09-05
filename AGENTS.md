@@ -19,3 +19,12 @@
 - No operation may block indefinitely. Every wait has an explicit timeout and a named error on expiry.
 - Locust invocations must pass explicit `--run-time`, verify load-target reachability before start (`LOAD_TARGET_UNREACHABLE` on failure), and run under a wall-clock guard (`LOCUST_TIMEOUT` on expiry). Never capture Locust stdout via command substitution.
 - Never use command substitution to capture a function's return value. Functions return status via exit codes; diagnostic output goes to stderr or a log file, never stdout.
+- Record observed symptoms as symptoms only. Attributing a cause requires evidence for that specific cause — exit code 137 is SIGKILL, not OOMKilled; OOMKilled requires container status, an event, or memory observation.
+
+## Commit and code style
+- Commit messages: imperative mood, one line under 72 chars, optional body.
+  No trailers, no attribution lines, no emoji, no "Generated with".
+- No decorative comment banners, no restating the obvious, no "# Step 1:" style
+  narration. Comments explain WHY, not WHAT.
+- Match the surrounding file's existing style. Do not reformat untouched code.
+- No AI-assistant references anywhere in code, comments, docs, or messages.
