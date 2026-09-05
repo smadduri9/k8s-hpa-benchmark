@@ -126,21 +126,37 @@ Reported so that cross-shape differences in total volume are visible rather than
 
 **Every shape is a step function, not a linear ramp.** `tick()` returns a target and Locust rate-limits spawning toward it; it does not interpolate. `locustfile.py`'s docstring reads "Ramp-up (0–3 min): 1 → 20 users, spawn rate 2/s", but `PhasedLoadShape.tick()` returns `(20, 2)` for the whole `0 < t ≤ 180` window, so the shape jumps to 20 and merely takes 20/2 = 10 s to spawn them. Time-weighted means must therefore use **step levels**, not segment midpoints.
 
-| Shape | Curve (step levels) | Time-weighted mean users |
-|---|---|---|
-| hybrid | 20 → 80 → 60 → 5 | **47.5** — (180×20 + 180×80 + 540×60 + 180×5)/1080 |
-| constant | 45 flat, ±10% seeded noise | **45.4167** — realized value of the 36 seeded plateaus (`NOISE_SEED=1729`, band 41–49); design centre is 45.0 and the seed lands 0.42 above it |
-| flash | 30 → 90 → 30 | **40.0** — (420×30 + 180×90 + 480×30)/1080 |
+| Shape | Curve (step levels) | Analytic step mean | Measured mean (Step 6a) |
+|---|---|---:|---:|
+| hybrid | 20 → 80 → 60 → 5 | **47.5** — (180×20 + 180×80 + 540×60 + 180×5)/1080 | **47.9916** |
+| constant | 45 flat, ±10% seeded noise | **45.4167** — 36 seeded plateaus (`NOISE_SEED=1729`, band 41–49) | **45.3876** |
+| flash | 30 → 90 → 30 | **40.0** — (420×30 + 180×90 + 480×30)/1080 | **40.1124** |
 
-**Correction.** These load levels were chosen against an earlier hybrid figure of **45.5**, computed as (180×10.5 + 180×50 + 540×60 + 180×32.5)/1080 by crediting each phase at the midpoint between its endpoints — which assumes linear ramps the shape does not perform. The step-correct value is **47.5**. Consequence: `constant` at 45.4167 sits **4.4% below** hybrid rather than the 0.2% originally claimed, and `flash` at 40.0 sits 15.8% below. The levels are still close enough for cross-shape comparison and none of the capacity arithmetic above changes (it is derived from per-user request rate and peak users, not from these means), but the three shapes are **not** equal-volume, which is why each shape's mean is reported rather than assumed.
+Measured means are from the authoritative **sequential** Step 6a run (`check_shape_achieves_target` on `/tmp/shape6a/*_stats_history.csv`; parallel runs on one host were discarded because CPU contention distorts spawn timing). All three shapes passed `SHAPE_ACHIEVES_TARGET` with `max_abs_err_users=0`. Flash 30→90 transition completed in **1 s** (`spawn_rate=60`); hybrid 20→80 in **2 s**.
 
-Including spawn-rate edges raises hybrid's realized mean to about 47.6: 0→20 at 2/s spends 10 s averaging ~10 users, 20→80 at 20/s spends 3 s, and 60→5 at 5/s spends 11 s — 24 s of 1080 s, so under 1%. `SHAPE_TIME_WEIGHTED_MEAN_USERS` reports a slightly higher figure again (~48.0 for hybrid) because it excludes post-transition settling windows, which are the lowest-user samples in the run.
+**Constant anchoring error.** `constant` was set to **45** users because hybrid was estimated at **45.5**, computed as (180×10.5 + 180×50 + 540×60 + 180×32.5)/1080 by averaging each stage's endpoints — which assumes `tick()` ramps linearly between levels. It does not; `tick()` is a step function. The step-correct hybrid analytic mean is **47.5**, and the measured hybrid mean is **47.9916** (~48). `constant` at **45.3876** therefore runs **5.4% lighter** than hybrid ((47.9916 − 45.3876) ÷ 47.9916), not the ~0.2% originally claimed. The shapes were **not** rebuilt: the difference is small, and each shape's mean is reported precisely so the mismatch stays visible rather than hidden. `flash` at 40.1124 sits **16.4%** below hybrid.
+
+**Reconciling analytic, full-history, and settled means.** Three bases apply; they must not be mixed in one sentence.
+
+1. **Analytic step integral** — plateau levels × stage duration ÷ 1080 s; instant attainment at each boundary.
+2. **Full-history sample mean** — trapezoidal integration of achieved `User Count` over all ~1 Hz `locust_*_stats_history.csv` samples spanning 1080 s, including spawn ramps.
+3. **`SHAPE_TIME_WEIGHTED_MEAN_USERS` (headline measured value)** — same integration as (2) but **excluding** samples in 12 s windows after t=0 and each target change (`check_shape_achieves_target` default). Those windows hold below-target ramp samples; dropping them shifts weight toward plateaus.
+
+| Shape | Analytic | Full-history | Settled (headline) | Settled − analytic |
+|---|---:|---:|---:|---:|
+| hybrid | 47.5 | 47.6389 | **47.9916** | +1.03% |
+| constant | 45.4167 | 45.3102 | **45.3876** | −0.06% |
+| flash | 40.0 | 39.9722 | **40.1124** | +0.28% |
+
+**Hybrid 47.5 vs 47.9916.** Full-history (47.6389) is within **0.29%** of analytic: the t=0 ramp (0→20 at 2/s, ~10 s sub-target) and brief catch-up ramps at stage edges (20→80 in 3 s, 60→5 in 11 s) pull the all-sample mean up slightly. Settled-sample mean is **0.35 pp higher** than full-history because the 12 s exclusion removes those below-target windows (34 transitions including t=0); with `max_abs_err_users=0` the excluded samples are systematically low, not random noise.
+
+**Flash 40.0 vs 40.1124.** Full-history (39.9722) is within **0.07%** of analytic. Settled mean sits **0.14 pp above** 40.0 for the same mechanism: excluding the 30→90 ramp window (12 s below 90 users) and the 90→30 decay window raises the settled weight above the step integral. The 30→90 step itself completed in **1 s**, confirming `spawn_rate=60` behaved as designed.
 
 **Locust ignores `--run-time` when a `LoadTestShape` is present** (it warns: "--run-time, --users or --spawn-rate have no impact on LoadShapes unless the shape class explicitly reads them"). Each shape therefore terminates itself by returning `None` from `tick()` at 1080 s, and the harness `--run-time 18m` plus its 60 s wall-clock guard remain the outer bound rather than the mechanism. The two agree by construction; if a shape's internal duration is ever changed, `--run-time` will not correct it.
 
 #### Prediction recorded before the calibrated runs
 
-A7's HPA arm averaged **8.16** ready replicas, recomputed from `results/runs/run-20260905T160157Z/rep-1/replica_series_hpa.csv`: pod-hours 2.4289 over a 1,071 s span, so 2.4289 × 3600 ÷ 1071 = 8.16 time-weighted (simple mean over the 70 samples is 8.07). Hybrid's time-weighted mean is 45.5 users — the same load level as `constant` — so **expect roughly 6–8 replicas on constant**.
+A7's HPA arm averaged **8.16** ready replicas, recomputed from `results/runs/run-20260905T160157Z/rep-1/replica_series_hpa.csv`: pod-hours 2.4289 over a 1,071 s span, so 2.4289 × 3600 ÷ 1071 = 8.16 time-weighted (simple mean over the 70 samples is 8.07). Hybrid's measured time-weighted mean is **47.9916** users; `constant` at **45.3876** is ~5.4% lighter, not matched volume — so **expect roughly 6–8 replicas on constant** (same order as A7 hybrid-level load, not a like-for-like match).
 
 If `constant` instead holds at 3, that is **the finding, not an error**. It is what RLScale-Bench predicts for a calibrated baseline on steady-state traffic ("zero constraint violations on steady-state traffic"), and aborting on it would convert a result into a failure. Collection reports `HPA_DID_NOT_SCALE_ON_STEADY_LOAD peak_spec=<n> minReplicas=<n>` and continues. Only `hybrid` and `flash`, which must scale, keep `HPA_NEVER_SCALED` as an abort — see `--hpa-no-scale-policy` in `analysis/collect_metrics.py`, which defaults to `abort` so no shape opts into leniency implicitly. Recording the prediction before the run is what makes either outcome interpretable.
 
