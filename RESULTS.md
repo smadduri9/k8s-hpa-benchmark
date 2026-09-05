@@ -1,8 +1,8 @@
 # RESULTS
 
 Authority split:
-- **Locust:** request counts, successes, failures (published failure rate)
-- **Prometheus:** CPU and timing (server-side observations only)
+- **Locust:** request counts, successes, failures (published failure rate), and **client-observed response time** (run-level percentiles from `locust_*_stats.csv`)
+- **Prometheus:** CPU and **in-handler service time** (`app_request_latency_seconds` on `/cpu` only)
 - **kubectl in-run sampling:** `spec_replicas`, `status_replicas`, `ready_replicas` in `replica_series_<arm>.csv` and metrics CSV
 
 ## Headline — run-20260904T230444Z (production, GKE)
@@ -47,13 +47,13 @@ Serving rows = `ready_replicas > 0` (**59** of 73 anchored rows: 40 DEGRADED + 1
 - **Rate coverage 33/57:** 24 assessable serving rows have `MISSING` rate-derived cells. **21/24** coincide with replica transition or pod restart (`Killing`/`Started`/`BackOff`/`Created`) within the prior 30s. The remaining **3/24** lack that strict correlation but have direct Prometheus evidence of **≤1** `app_requests_total` counter sample in the 30s rate window — `rate()` correctly returns empty after series restart/staleness during crash loops.
 - **CPU coverage 56/59:** 3 serving rows have `MISSING` `cpu_utilization_pct` at collapse/recovery boundaries (gauge series not yet scraped after `ready_replicas` recovery from 0).
 - **No collection-defect signature:** Zero rows show a populated CPU gauge with capturable rate data that collection missed.
-- **Latency percentiles:** Derived from **33 of 57** assessable serving rows (58% of the serving window where rate data exists). Treat fixed-arm latency figures as **indicative**, not precise, during the collapse period.
+- **Latency percentiles (Prometheus service time):** Derived from **33 of 57** assessable serving rows (58% of the serving window where rate data exists). Treat fixed-arm Prometheus service-time figures as **indicative**, not precise, during the collapse period. Client-observed response time comes from Locust and is **not** affected by this gap (see [Latency — two metrics, never merged](#latency--two-metrics-never-merged)).
 
 Per-row investigation table: [docs/run-20260904T230444Z-rate-gap-table.md](docs/run-20260904T230444Z-rate-gap-table.md).
 
 ### Figure generation (partial-coverage disclosure)
 
-Published figures under `docs/figures/run-20260904T230444Z/` were **not** produced by a fully coverage-certified analysis pass. Fixed-arm rate coverage is **33/57** (investigated; see appendix). Figures were generated with `--allow-partial-coverage`, which bypasses `METRICS_COLUMN_COVERAGE` on the fixed metrics CSV. The tool logs `ALLOW_PARTIAL_COVERAGE=true fixed_metrics_coverage_certified=false` and records `analysis.allow_partial_coverage: true` in the run `manifest.json`.
+Published figures under `docs/figures/run-20260904T230444Z/` were **not** produced by a fully coverage-certified analysis pass. Fixed-arm Prometheus rate coverage is **33/57** (investigated; see appendix). The **service-time** figure (`latency_comparison.png`) was generated with `--allow-partial-coverage`, which bypasses `METRICS_COLUMN_COVERAGE` on the fixed metrics CSV. Client-observed figures (`latency_client_*.png`) come from Locust CSVs and are **not** affected by Prometheus coverage gaps. The tool logs `ALLOW_PARTIAL_COVERAGE=true fixed_metrics_coverage_certified=false` and records `analysis.allow_partial_coverage: true` in the run `manifest.json`.
 
 ```bash
 .venv/bin/python analysis/analyze_results.py \
@@ -63,6 +63,10 @@ Published figures under `docs/figures/run-20260904T230444Z/` were **not** produc
   --replica-series-hpa results/runs/run-20260904T230444Z/rep-1/replica_series_hpa.csv \
   --locust-fixed-stats results/runs/run-20260904T230444Z/rep-1/locust_fixed_stats.csv \
   --locust-hpa-stats results/runs/run-20260904T230444Z/rep-1/locust_hpa_stats.csv \
+  --locust-fixed-history results/runs/run-20260904T230444Z/rep-1/locust_fixed_stats_history.csv \
+  --locust-hpa-history results/runs/run-20260904T230444Z/rep-1/locust_hpa_stats_history.csv \
+  --t0-fixed results/runs/run-20260904T230444Z/rep-1/t0_fixed.txt \
+  --t0-hpa results/runs/run-20260904T230444Z/rep-1/t0_hpa.txt \
   --output-dir docs/figures/run-20260904T230444Z \
   --allow-partial-coverage
 ```
@@ -82,7 +86,7 @@ Guards enforced for this run (evidence in `rep.log` and collection output):
 
 ## Measurement limitations
 
-- **Load generator location:** Locust runs on the operator's laptop in California; load reaches `us-central1` over the public internet. Client RTT and uplink capacity are included in all reported latency figures.
+- **Load generator location:** Locust runs on the operator's laptop in California; load reaches `us-central1` over the public internet. Client RTT and uplink capacity are included in **client-observed** response time (Locust). Prometheus service time measures in-handler compute only after the request is accepted.
 - **Comparison validity:** Both arms are affected identically (same client, same region path, same LoadBalancer topology), so fixed-vs-HPA comparisons are valid. Absolute latency numbers are **not** datacenter-internal measurements.
 - **Tier 2 deferral:** Running Locust in-cluster (same region as the cluster) is deferred to Tier 2 to remove client-path variance from absolute latency.
 
@@ -112,6 +116,50 @@ Two published **serving** rows at the start of the window (`t0` and `t0+step`) a
 **Worked example (run-20260904T230444Z):**
 - HPA arm: Locust **63 / 20,820 (0.30%)**; Prometheus `error_rate` **non_zero=0** for the run — consistent (connection-level failures).
 - Fixed arm: Locust **1,230 / 10,193 (12.07%)**; Prometheus `error_rate` **~0.0** — same mechanism during baseline collapse.
+
+## Latency — two metrics, never merged
+
+Published latency is **two separate metrics**. Do not compare or average them.
+
+### Response time (client-observed, Locust)
+
+**Authority:** Locust `locust_*_stats.csv` Aggregated row. Includes queueing, connection setup, TLS, and failures — the full wall-clock time from the load generator's perspective.
+
+| Arm | p50 (ms) | p95 (ms) | p99 (ms) | Failure share | Source |
+|-----|---------:|---------:|---------:|--------------:|--------|
+| **Fixed** | **1,200** | **21,000** | **40,000** | **12.07%** (1230 ÷ 10193) | `locust_fixed_stats.csv` |
+| **HPA** | **310** | **1,300** | **2,200** | **0.30%** (63 ÷ 20820) | `locust_hpa_stats.csv` |
+
+**Failure-inclusive percentiles.** Locust logs response time for every request before recording a failure (`runners.py:126-129`: `log_request` is unconditional; `log_error` at `stats.py:412-415` increments only `num_failures`). The stats CSV has **no success-only percentile columns**. `success_only_percentiles_available: false` in `locust_summary.json`.
+
+**No configured timeout.** `locust/locustfile.py` sets no `timeout=` on its requests. A connection-level failure (`status_code = 0`) records the full duration until the underlying exception was raised, bounded only by the OS/socket default — not by any value we chose. Failed requests contribute their real elapsed time to the percentiles. The fixed arm's upper percentiles therefore include waits terminated by the network stack (`Max Response Time` **48,293 ms**). The HPA arm has a single long outlier at **57,511 ms** despite only 0.30% failures.
+
+**Distribution-free bound on success-only p95** (not an estimate). With failure fraction `f`, the success at success-rank 0.95 lies between combined percentiles `0.95 × (1 − f)` and `f + 0.95 × (1 − f)`:
+
+| Arm | f | Percentile interval | Value bracket (grid columns only, no interpolation) |
+|-----|--:|--------------------:|-----------------------------------------------------|
+| Fixed | 0.120671 | **p83.5363 – p95.6034** | ≥ p80 (**2,600 ms**) and ≤ p98 (**34,000 ms**) |
+| HPA | 0.003026 | **p94.7125 – p95.0151** | ≥ p90 (**960 ms**) and ≤ p98 (**1,800 ms**) |
+
+The bound is wide for the collapsing fixed arm and nearly tight for the healthy HPA arm — the HPA combined p95 of 1,300 ms is effectively its success-only p95.
+
+**Rejected approach (do not re-propose):** filtering `locust_*_stats_history.csv` to windows where cumulative `Total Failure Count` did not increase would yield windows with no failures, but those windows are preferentially the low-load periods before the spike and after recovery — coordinated omission in another form. Not used.
+
+**Sliding-window figure (`latency_client_window.png`):** Percentile columns in `locust_*_stats_history.csv` are **not** cumulative run percentiles. Locust documents them as "current response time … sliding window of (approximately) the last 10 seconds" (`CURRENT_RESPONSE_TIME_PERCENTILE_WINDOW = 10` in Locust 2.46.4 `stats.py`). Run-level headline numbers come from `locust_*_stats.csv` only; history is plotted as a time series and never aggregated (`assert_no_run_level_percentile_from_history` guard).
+
+### Service time (in-handler, Prometheus)
+
+**Authority:** `histogram_quantile` over `app_request_latency_seconds_bucket` in `fixed_metrics.csv` / `hpa_metrics.csv`. Times only `compute_primes()` inside the `/cpu` handler — after the request is accepted and dequeued. Never records a request that timed out or hit a dead pod.
+
+| Arm | Mean p50 (ms) | Mean p95 (ms) | Mean p99 (ms) | Populated rows | Source |
+|-----|-------------:|--------------:|--------------:|---------------:|--------|
+| **Fixed** | 133 | 239 | 253 | 33/57 assessable serving rows | `fixed_metrics.csv` |
+| **HPA** | 148 | 239 | 251 | full window | `hpa_metrics.csv` |
+
+**Documented limitations (not fixed in this pass):**
+
+- **`GET /` is not instrumented.** `app/main.py` does not observe `REQUEST_LATENCY` or `REQUEST_COUNT` on the health-check route — **20% of offered traffic** is invisible server-side. This affects `rps` and `error_rate` as well as service-time percentiles.
+- **Histogram bucket resolution.** Buckets `[..., 0.1, 0.25, 0.5, ...]` (`app/main.py:38`) place the published p95 of ~237 ms inside the single 0.1–0.25 s bucket, making it a linear interpolation within one bucket rather than a resolved measurement.
 
 ## Scale-up lag (HPA arm)
 
@@ -161,9 +209,11 @@ During scale-up, `spec_replicas` (HPA desired) leads `ready_replicas` (pods pass
 
 ## Figures
 
-Generated with `--allow-partial-coverage` (see [Data completeness](#figure-generation-partial-coverage-disclosure)). Fixed arm PARTIAL; HPA arm complete.
+Generated with `--allow-partial-coverage` for the Prometheus service-time figure only (see [Data completeness](#figure-generation-partial-coverage-disclosure)). Fixed arm PARTIAL on Prometheus metrics; HPA arm complete. Client-observed figures are Locust-sourced.
 
-- `docs/figures/run-20260904T230444Z/latency_comparison.png`
+- `docs/figures/run-20260904T230444Z/latency_client_run_level.png` — client-observed p50/p95/p99 (headline)
+- `docs/figures/run-20260904T230444Z/latency_client_window.png` — client-observed, 10-second sliding window
+- `docs/figures/run-20260904T230444Z/latency_comparison.png` — service time (in-handler, Prometheus)
 - `docs/figures/run-20260904T230444Z/throughput_comparison.png`
 - `docs/figures/run-20260904T230444Z/cpu_replicas.png`
 - `docs/figures/run-20260904T230444Z/cost_performance.png`
