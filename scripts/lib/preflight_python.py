@@ -15,6 +15,7 @@ ANALYSIS_MODULES = (
     "analyze_results",
     "fill_results",
     "wilcoxon",
+    "aggregate_runs",
 )
 
 
