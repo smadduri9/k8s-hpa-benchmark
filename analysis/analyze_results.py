@@ -1,11 +1,13 @@
 """
 Reads fixed_metrics.csv and hpa_metrics.csv and generates publication-quality figures.
 
-Outputs 4 PNG plots to sample_data/figures/:
-  1. latency_comparison.png   — p50/p95/p99 over time, Fixed vs HPA
-  2. throughput_comparison.png — RPS over time
-  3. cpu_replicas.png          — CPU utilization + replica count (HPA only)
-  4. cost_performance.png      — Pod-hours × cost bar chart
+Outputs PNG plots:
+  1. latency_comparison.png        — service time p50/p95/p99 (Prometheus, in-handler)
+  2. latency_client_run_level.png — client-observed p50/p95/p99 (Locust stats CSV)
+  3. latency_client_window.png     — client-observed sliding 10s window (Locust history)
+  4. throughput_comparison.png     — RPS over time
+  5. cpu_replicas.png              — CPU utilization + replica count (HPA only)
+  6. cost_performance.png          — Pod-hours × cost bar chart
 
 Also prints a statistical summary table.
 
@@ -187,13 +189,81 @@ def successful_requests_from_locust_stats(path: str) -> int:
     raise RuntimeError(f"LOCUST_STATS_MISSING_AGGREGATED path={path}")
 
 
+def load_locust_aggregated_stats(path: str) -> dict:
+    with open(path, newline="") as handle:
+        for row in csv.DictReader(handle):
+            if row.get("Name") != "Aggregated":
+                continue
+            request_count = int(row["Request Count"])
+            failure_count = int(row["Failure Count"])
+            failure_rate = (failure_count / request_count) if request_count else 0.0
+            return {
+                "request_count": request_count,
+                "failure_count": failure_count,
+                "failure_rate": failure_rate,
+                "p50_ms": float(row["50%"]),
+                "p95_ms": float(row["95%"]),
+                "p99_ms": float(row["99%"]),
+                "avg_ms": float(row["Average Response Time"]),
+                "min_ms": float(row["Min Response Time"]),
+                "max_ms": float(row["Max Response Time"]),
+            }
+    raise RuntimeError(f"LOCUST_STATS_MISSING_AGGREGATED path={path}")
+
+
+HISTORY_PERCENTILE_SOURCE = "window_sliding_10s"
+
+
+def assert_no_run_level_percentile_from_history(source: str) -> None:
+    if source == HISTORY_PERCENTILE_SOURCE:
+        print("RUN_LEVEL_PERCENTILE_FROM_HISTORY_FORBIDDEN", file=sys.stderr)
+        sys.exit(1)
+
+
+def load_locust_stats_history(path: str) -> list[dict]:
+    rows: list[dict] = []
+    with open(path, newline="") as handle:
+        for row in csv.DictReader(handle):
+            if row.get("Name") != "Aggregated":
+                continue
+            rows.append(
+                {
+                    "timestamp": int(row["Timestamp"]),
+                    "p50_ms": float(row["50%"]),
+                    "p95_ms": float(row["95%"]),
+                    "p99_ms": float(row["99%"]),
+                    "percentile_source": HISTORY_PERCENTILE_SOURCE,
+                }
+            )
+    if not rows:
+        raise RuntimeError(f"LOCUST_HISTORY_MISSING_AGGREGATED path={path}")
+    return rows
+
+
+def read_t0_epoch(path: str) -> float:
+    with open(path, encoding="utf-8") as handle:
+        return parse_iso8601(handle.read().strip())
+
+
 # ---------------------------------------------------------------------------
-# Figure 1 — Latency Comparison
+# Figure — Service time (Prometheus, in-handler)
 # ---------------------------------------------------------------------------
 
 def fig_latency(fixed: list[dict], hpa: list[dict], out_dir: Path):
     fig, axes = plt.subplots(1, 2, figsize=(14, 5), sharey=True)
-    fig.suptitle("Response Latency Over Time: Fixed vs HPA", fontsize=13, fontweight="bold")
+    fig.suptitle(
+        "Service time (in-handler, Prometheus) — compute duration only",
+        fontsize=13,
+        fontweight="bold",
+    )
+    fig.text(
+        0.5,
+        0.93,
+        "GET / is not instrumented in app_request_latency_seconds_bucket",
+        ha="center",
+        fontsize=9,
+        color="#555555",
+    )
 
     max_y = 1100
 
@@ -216,18 +286,139 @@ def fig_latency(fixed: list[dict], hpa: list[dict], out_dir: Path):
 
         ax.set_title(title, fontsize=11)
         ax.set_xlabel("Time (minutes)", fontsize=10)
-        ax.set_ylabel("Latency (ms)", fontsize=10) if ax == axes[0] else None
+        ax.set_ylabel("Service time (ms)", fontsize=10) if ax == axes[0] else None
         ax.legend(loc="upper left", fontsize=9)
         ax.set_xlim(0, 18)
         ax.set_ylim(0, max_y)
         ax.grid(True, alpha=0.3)
 
-    plt.tight_layout()
+    plt.tight_layout(rect=(0, 0, 1, 0.92))
     save_figure(fig, out_dir / "latency_comparison.png")
 
 
 # ---------------------------------------------------------------------------
-# Figure 2 — Throughput Comparison
+# Figure — Client-observed response time (Locust stats CSV, run-level)
+# ---------------------------------------------------------------------------
+
+def fig_latency_client_run_level(
+    locust_fixed_stats: str,
+    locust_hpa_stats: str,
+    out_dir: Path,
+) -> None:
+    fixed = load_locust_aggregated_stats(locust_fixed_stats)
+    hpa = load_locust_aggregated_stats(locust_hpa_stats)
+
+    fig, ax = plt.subplots(figsize=(10, 5))
+    fig.suptitle(
+        "Response time (client-observed, Locust) — run-level, includes failures",
+        fontsize=12,
+        fontweight="bold",
+    )
+    fig.text(
+        0.5,
+        0.91,
+        f"Fixed failure share: {fixed['failure_rate'] * 100:.2f}%  |  "
+        f"HPA failure share: {hpa['failure_rate'] * 100:.2f}%",
+        ha="center",
+        fontsize=9,
+        color="#555555",
+    )
+
+    labels = ["Fixed", "HPA"]
+    x = np.arange(len(labels))
+    width = 0.22
+    percentiles = [
+        ("p50", "p50_ms", COLORS["fixed_p50"], COLORS["hpa_p50"]),
+        ("p95", "p95_ms", COLORS["fixed_p95"], COLORS["hpa_p95"]),
+        ("p99", "p99_ms", COLORS["fixed_p99"], COLORS["hpa_p99"]),
+    ]
+    for index, (label, key, color_fixed, color_hpa) in enumerate(percentiles):
+        offset = (index - 1) * width
+        values = [fixed[key], hpa[key]]
+        bars = ax.bar(
+            x + offset,
+            values,
+            width,
+            label=label,
+            color=[color_fixed, color_hpa],
+            edgecolor="black",
+            linewidth=0.5,
+        )
+        for bar, value in zip(bars, values):
+            ax.text(
+                bar.get_x() + bar.get_width() / 2,
+                bar.get_height(),
+                f"{value:,.0f}",
+                ha="center",
+                va="bottom",
+                fontsize=8,
+            )
+
+    ax.set_xticks(x)
+    ax.set_xticklabels(labels)
+    ax.set_ylabel("Response time, ms (log scale)")
+    ax.set_yscale("log")
+    ax.legend(fontsize=9)
+    ax.grid(True, axis="y", alpha=0.3)
+    plt.tight_layout(rect=(0, 0, 1, 0.90))
+    save_figure(fig, out_dir / "latency_client_run_level.png")
+
+
+# ---------------------------------------------------------------------------
+# Figure — Client-observed response time (Locust history, 10s sliding window)
+# ---------------------------------------------------------------------------
+
+def fig_latency_client_window(
+    locust_fixed_history: str,
+    locust_hpa_history: str,
+    t0_fixed_path: str,
+    t0_hpa_path: str,
+    out_dir: Path,
+) -> None:
+    fixed_rows = load_locust_stats_history(locust_fixed_history)
+    hpa_rows = load_locust_stats_history(locust_hpa_history)
+    t0_fixed = read_t0_epoch(t0_fixed_path)
+    t0_hpa = read_t0_epoch(t0_hpa_path)
+
+    fig, axes = plt.subplots(1, 2, figsize=(14, 5), sharey=True)
+    fig.suptitle(
+        "Response time (client-observed, Locust) — 10-second sliding window",
+        fontsize=13,
+        fontweight="bold",
+    )
+
+    max_y = 60000.0
+    for ax, rows, t0, title, prefix in [
+        (axes[0], fixed_rows, t0_fixed, "Fixed Deployment (3 replicas)", "fixed"),
+        (axes[1], hpa_rows, t0_hpa, "HPA Deployment (1–10 replicas)", "hpa"),
+    ]:
+        elapsed_min = np.array([(r["timestamp"] - t0) / 60.0 for r in rows])
+        phase_bands(ax, max_y)
+        for key, lw, alpha, color, label in [
+            ("p99_ms", 1.5, 0.6, COLORS[f"{prefix}_p99"], "p99"),
+            ("p95_ms", 2.0, 0.8, COLORS[f"{prefix}_p95"], "p95"),
+            ("p50_ms", 2.5, 1.0, COLORS[f"{prefix}_p50"], "p50"),
+        ]:
+            values = np.array([r[key] for r in rows], dtype=float)
+            tx, vx = finite_xy(elapsed_min, values)
+            ax.plot(tx, vx, lw=lw, alpha=alpha, color=color, label=label)
+
+        ax.set_title(title, fontsize=11)
+        ax.set_xlabel("Time (minutes)", fontsize=10)
+        if ax == axes[0]:
+            ax.set_ylabel("Response time, ms (10-second sliding window, log scale)")
+        ax.set_yscale("log")
+        ax.legend(loc="upper left", fontsize=9)
+        ax.set_xlim(0, 18)
+        ax.set_ylim(10, max_y)
+        ax.grid(True, alpha=0.3)
+
+    plt.tight_layout()
+    save_figure(fig, out_dir / "latency_client_window.png")
+
+
+# ---------------------------------------------------------------------------
+# Figure — Throughput Comparison
 # ---------------------------------------------------------------------------
 
 def fig_throughput(fixed: list[dict], hpa: list[dict], out_dir: Path):
@@ -367,7 +558,7 @@ def fig_cost_performance(
     axes[1].bar(x, [mean_p95_fixed, mean_p95_hpa], color=[COLORS["fixed_p50"], COLORS["hpa_p50"]], **bar_kw)
     axes[1].set_xticks(x)
     axes[1].set_xticklabels(experiments)
-    axes[1].set_title("Mean p95 Latency (ms)\n(Prometheus, populated rows only)", fontsize=10)
+    axes[1].set_title("Mean p95 service time (ms)\n(Prometheus in-handler, populated rows only)", fontsize=10)
     axes[1].set_ylabel("Milliseconds")
     axes[1].grid(True, axis="y", alpha=0.3)
     for xi, v in zip(x, [mean_p95_fixed, mean_p95_hpa]):
@@ -400,19 +591,25 @@ def fig_cost_performance(
 # Statistical summary table
 # ---------------------------------------------------------------------------
 
-def print_summary(fixed: list[dict], hpa: list[dict]):
+def print_summary(
+    fixed: list[dict],
+    hpa: list[dict],
+    *,
+    locust_fixed_stats: str,
+    locust_hpa_stats: str,
+) -> None:
     metrics = [
-        ("latency_p50_ms", "Latency p50 (ms)"),
-        ("latency_p95_ms", "Latency p95 (ms)"),
-        ("latency_p99_ms", "Latency p99 (ms)"),
+        ("latency_p50_ms", "Service time p50 (ms)"),
+        ("latency_p95_ms", "Service time p95 (ms)"),
+        ("latency_p99_ms", "Service time p99 (ms)"),
         ("rps",            "Throughput (RPS)"),
         ("cpu_utilization_pct", "CPU Util (%)"),
         ("replicas",       "Replica Count"),
         ("error_rate",     "Error Rate"),
     ]
-    header = f"{'Metric':<25} {'Fixed Mean':>12} {'Fixed Std':>10} {'HPA Mean':>12} {'HPA Std':>10} {'Δ%':>8}"
+    header = f"{'Metric':<30} {'Fixed Mean':>12} {'Fixed Std':>10} {'HPA Mean':>12} {'HPA Std':>10} {'Δ%':>8}"
     print("\n" + "=" * len(header))
-    print("STATISTICAL SUMMARY")
+    print("STATISTICAL SUMMARY — Prometheus service time (in-handler)")
     print("=" * len(header))
     print(header)
     print("-" * len(header))
@@ -424,8 +621,32 @@ def print_summary(fixed: list[dict], hpa: list[dict]):
         mh, sh = float(np.nanmean(vh)), float(np.nanstd(vh))
         delta = (mh - mf) / mf * 100 if mf != 0 else 0
         sign = "+" if delta > 0 else ""
-        print(f"{label:<25} {mf:>12.2f} {sf:>10.2f} {mh:>12.2f} {sh:>10.2f} {sign}{delta:>7.1f}%")
+        print(f"{label:<30} {mf:>12.2f} {sf:>10.2f} {mh:>12.2f} {sh:>10.2f} {sign}{delta:>7.1f}%")
     print("=" * len(header))
+
+    fixed_locust = load_locust_aggregated_stats(locust_fixed_stats)
+    hpa_locust = load_locust_aggregated_stats(locust_hpa_stats)
+    client_header = (
+        f"{'Client-observed (Locust, run-level)':<30} {'Fixed':>12} {'':>10} {'HPA':>12}"
+    )
+    print("\n" + "=" * len(client_header))
+    print("CLIENT-OBSERVED RESPONSE TIME — locust_*_stats.csv Aggregated row (includes failures)")
+    print("=" * len(client_header))
+    print(client_header)
+    print("-" * len(client_header))
+    for label, key in [
+        ("p50 (ms)", "p50_ms"),
+        ("p95 (ms)", "p95_ms"),
+        ("p99 (ms)", "p99_ms"),
+    ]:
+        print(
+            f"{label:<30} {fixed_locust[key]:>12,.0f} {'':>10} {hpa_locust[key]:>12,.0f}"
+        )
+    print(
+        f"{'Failure share':<30} {fixed_locust['failure_rate'] * 100:>11.2f}% "
+        f"{'':>10} {hpa_locust['failure_rate'] * 100:>11.2f}%"
+    )
+    print("=" * len(client_header))
 
 
 # ---------------------------------------------------------------------------
@@ -504,8 +725,12 @@ def main():
     parser.add_argument("--fixed", default=str(base_dir / "fixed_metrics.csv"))
     parser.add_argument("--hpa",   default=str(base_dir / "hpa_metrics.csv"))
     parser.add_argument("--output-dir", default=None)
-    parser.add_argument("--locust-hpa-stats", default=None)
     parser.add_argument("--locust-fixed-stats", default=None)
+    parser.add_argument("--locust-hpa-stats", default=None)
+    parser.add_argument("--locust-fixed-history", default=None)
+    parser.add_argument("--locust-hpa-history", default=None)
+    parser.add_argument("--t0-fixed", default=None)
+    parser.add_argument("--t0-hpa", default=None)
     parser.add_argument("--replica-series-fixed", default=None)
     parser.add_argument("--replica-series-hpa", default=None)
     parser.add_argument("--allow-synthetic", action="store_true")
@@ -534,9 +759,22 @@ def main():
     replica_series_hpa = args.replica_series_hpa or str(Path(args.hpa).parent / "replica_series_hpa.csv")
     locust_fixed_stats = args.locust_fixed_stats or str(fixed_dir / "locust_fixed_stats.csv")
     locust_hpa_stats = args.locust_hpa_stats or str(Path(args.hpa).parent / "locust_hpa_stats.csv")
-    for path in [replica_series_fixed, replica_series_hpa, locust_fixed_stats, locust_hpa_stats]:
+    locust_fixed_history = args.locust_fixed_history or str(fixed_dir / "locust_fixed_stats_history.csv")
+    locust_hpa_history = args.locust_hpa_history or str(Path(args.hpa).parent / "locust_hpa_stats_history.csv")
+    t0_fixed = args.t0_fixed or str(fixed_dir / "t0_fixed.txt")
+    t0_hpa = args.t0_hpa or str(Path(args.hpa).parent / "t0_hpa.txt")
+    for path in [
+        replica_series_fixed,
+        replica_series_hpa,
+        locust_fixed_stats,
+        locust_hpa_stats,
+        locust_fixed_history,
+        locust_hpa_history,
+        t0_fixed,
+        t0_hpa,
+    ]:
         if not os.path.exists(path):
-            print(f"ERROR: required cost input missing: {path}", file=sys.stderr)
+            print(f"ERROR: required analysis input missing: {path}", file=sys.stderr)
             sys.exit(1)
 
     out_dir = Path(args.output_dir) if args.output_dir else fixed_dir / "figures"
@@ -544,6 +782,14 @@ def main():
 
     print("Generating figures...")
     fig_latency(fixed, hpa, out_dir)
+    fig_latency_client_run_level(locust_fixed_stats, locust_hpa_stats, out_dir)
+    fig_latency_client_window(
+        locust_fixed_history,
+        locust_hpa_history,
+        t0_fixed,
+        t0_hpa,
+        out_dir,
+    )
     fig_throughput(fixed, hpa, out_dir)
     fig_cpu_replicas(hpa, out_dir)
     fig_cost_performance(
@@ -556,7 +802,12 @@ def main():
         locust_hpa_stats=locust_hpa_stats,
     )
 
-    print_summary(fixed, hpa)
+    print_summary(
+        fixed,
+        hpa,
+        locust_fixed_stats=locust_fixed_stats,
+        locust_hpa_stats=locust_hpa_stats,
+    )
     print(f"\nAll figures saved to {out_dir}/")
 
     if args.allow_partial_coverage:
