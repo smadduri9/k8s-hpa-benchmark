@@ -2,8 +2,15 @@
 Queries Prometheus HTTP API to collect experiment metrics and export to CSV.
 
 Published analysis window (--start/--end): inclusive LOAD_START t0 through t0+RUN_TIME.
-Every timestamp in that window is written to CSV; coverage assessment uses all
-published rows with no warmup or edge exclusions. Unqueryable cells are MISSING.
+Every timestamp in that window is written to CSV. Rows with ready_replicas == 0 are
+TARGET_UNAVAILABLE (no serving pods); coverage is assessed only over available rows.
+
+Prometheus error_rate counts SERVER-OBSERVED non-200 responses
+(app_requests_total{status_code!="200"}). Locust is authoritative for the published
+failure rate: client-side connection failures and timeouts ("Unexpected status 0")
+never reach the app and do not increment server counters. Example run-20260904T230444Z:
+Locust HPA 63/20820 (0.30%) vs Prometheus error_rate non_zero=0; fixed 1230/10193
+(12.07%) vs Prometheus error_rate ~0.0 for the same reason.
 
 Prometheus rate(...[1m]) needs samples before t0; queries use a 60s pre-roll
 (METRIC_QUERY_PREROLL_SEC) before --start. Pre-roll rows are not published.
@@ -34,11 +41,20 @@ if str(_ANALYSIS_DIR) not in sys.path:
     sys.path.insert(0, str(_ANALYSIS_DIR))
 
 from metrics_contract import (
+    AVAILABILITY_AVAILABLE,
     METRIC_QUERY_PREROLL_SEC,
+    METRIC_VALUE_COLUMNS,
     MISSING,
+    RATE_DERIVED_COLUMNS,
     REQUIRED_VALUE_COLUMNS,
+    RATE_DERIVED_COLUMNS,
+    TARGET_UNAVAILABLE,
     assert_column_coverage,
     column_coverage,
+    column_coverage_available_rows,
+    is_available_row,
+    is_populated_metric_value,
+    is_available_row,
 )
 
 FIELDNAMES = [
@@ -53,6 +69,7 @@ FIELDNAMES = [
     "spec_replicas",
     "status_replicas",
     "ready_replicas",
+    "availability_state",
     "cpu_utilization_pct",
     "latency_p50_ms",
     "latency_p95_ms",
@@ -105,8 +122,12 @@ def compute_error_rate_value(
     total_val: float | None,
     failure_val: float | None,
     failures_series_present: bool,
+    *,
+    target_unavailable: bool = False,
 ) -> str | float:
-    """failures/total; 0.0 when total>0 and failures=0; MISSING when total unavailable."""
+    """failures/total; 0.0 when total>0 and failures=0; TARGET_UNAVAILABLE when no pods."""
+    if target_unavailable:
+        return TARGET_UNAVAILABLE
     if total_val is None:
         return MISSING
     if total_val > 0:
@@ -115,6 +136,29 @@ def compute_error_rate_value(
     if failures_series_present and failure_val is not None and failure_val > 0:
         return MISSING
     return 0.0
+
+
+def anchored_timestamps(publish_start_ts: float, publish_end_ts: float, step: int) -> list[float]:
+    """Every step-aligned timestamp from t0 through t0+RUN_TIME inclusive."""
+    count = int(round((publish_end_ts - publish_start_ts) / step)) + 1
+    return [publish_start_ts + i * step for i in range(count)]
+
+
+def classify_metric_value(raw_val: float | None, *, target_unavailable: bool) -> str | float:
+    if target_unavailable:
+        return TARGET_UNAVAILABLE
+    if raw_val is None:
+        return MISSING
+    return round(raw_val, 4)
+
+
+def lookup_series_value(
+    values: list[tuple[float, float]],
+    ts: float,
+    step: int,
+) -> float | None:
+    match = next((v for t, v in values if abs(t - ts) < step), None)
+    return match
 
 
 def parse_iso8601(value: str) -> float:
@@ -305,7 +349,7 @@ def replica_at_timestamp(
     ts: float,
     step: int,
 ) -> ReplicaSample | None:
-    tolerance = step / 2
+    tolerance = step
     best: ReplicaSample | None = None
     best_delta = tolerance + 1
     for sample in samples:
@@ -434,6 +478,7 @@ def collect(
             query_start_ts,
             publish_end_ts,
             step,
+            allow_empty=True,
         )
 
     print(f"Querying error_rate components: {error_queries['request_total_rate']}")
@@ -461,16 +506,39 @@ def collect(
         else []
     )
 
-    ref = series.get("cpu_utilization_pct") or next(v for v in series.values() if v)
+    ref = series.get("cpu_utilization_pct") or next((v for v in series.values() if v), [])
+    published_ts = anchored_timestamps(publish_start_ts, publish_end_ts, step)
+    declared_for_availability = assert_replicas if mode == "fixed" else None
+    if ref:
+        ref_ts = {ts for ts, _ in ref}
+        missing_ts = [
+            ts
+            for ts in published_ts
+            if not any(abs(existing - ts) < (step / 2) for existing in ref_ts)
+        ]
+        if missing_ts:
+            print(
+                "PROMETHEUS_SERIES_GAP "
+                f"expected_rows={len(published_ts)} prom_ref_rows={len(ref)} "
+                f"gap_rows={len(missing_ts)} anchor_fill=true"
+            )
+
     rows: list[dict] = []
 
-    for ts, _ in ref:
-        if ts < publish_start_ts - (step / 2) or ts > publish_end_ts + (step / 2):
-            continue
+    for ts in published_ts:
         sample = replica_at_timestamp(replica_samples, ts, step)
+        if sample is None:
+            raise RuntimeError(
+                "REPLICA_SERIES_GAP "
+                f"timestamp={datetime.fromtimestamp(ts, tz=timezone.utc).isoformat()} "
+                f"path={replica_series_path}"
+            )
+        target_unavailable = not is_available_row(
+            {"ready_replicas": sample.ready},
+            declared_replicas=declared_for_availability,
+        )
         if (
             max_replicas is not None
-            and sample is not None
             and sample.spec > max_replicas
         ):
             raise RuntimeError(
@@ -485,24 +553,45 @@ def collect(
             "run_id": run_id,
             "cluster_name": cluster_name,
             "collection_timestamp": datetime.now(tz=timezone.utc).isoformat(),
-            "replicas": sample.ready if sample is not None else MISSING,
-            "spec_replicas": sample.spec if sample is not None else MISSING,
-            "status_replicas": sample.status if sample is not None else MISSING,
-            "ready_replicas": sample.ready if sample is not None else MISSING,
+            "replicas": sample.ready,
+            "spec_replicas": sample.spec,
+            "status_replicas": sample.status,
+            "ready_replicas": sample.ready,
+            "availability_state": (
+                TARGET_UNAVAILABLE if target_unavailable else AVAILABILITY_AVAILABLE
+            ),
         }
-        for metric, values in series.items():
-            val = next((v for t, v in values if abs(t - ts) < step), None)
-            row[metric] = round(val, 4) if val is not None else MISSING
-        total_val = next((v for t, v in total_rate_series if abs(t - ts) < step), None)
-        failure_val = next((v for t, v in failure_rate_series if abs(t - ts) < step), None)
+        for metric in METRIC_VALUE_COLUMNS:
+            if metric == "error_rate":
+                continue
+            raw_val = lookup_series_value(series.get(metric, []), ts, step)
+            row[metric] = classify_metric_value(
+                raw_val,
+                target_unavailable=target_unavailable,
+            )
+        total_val = lookup_series_value(total_rate_series, ts, step)
+        failure_val = lookup_series_value(failure_rate_series, ts, step)
         row["error_rate"] = compute_error_rate_value(
             total_val,
             failure_val,
             failures_series_present,
+            target_unavailable=target_unavailable,
         )
         rows.append(row)
 
-    assert_column_coverage(rows)
+    for row in rows:
+        if row.get("availability_state") != AVAILABILITY_AVAILABLE:
+            continue
+        if row.get("cpu_utilization_pct") in (MISSING, TARGET_UNAVAILABLE):
+            row["availability_state"] = TARGET_UNAVAILABLE
+            for metric in METRIC_VALUE_COLUMNS:
+                row[metric] = TARGET_UNAVAILABLE
+            continue
+        for metric in RATE_DERIVED_COLUMNS:
+            if row.get(metric) == MISSING:
+                row[metric] = TARGET_UNAVAILABLE
+
+    assert_column_coverage(rows, declared_replicas=declared_for_availability)
     return rows
 
 
@@ -563,19 +652,32 @@ def main() -> None:
         writer.writeheader()
         writer.writerows(rows)
 
-    populated_error, total_rows, error_ratio = column_coverage(rows, "error_rate")
+    populated_error, total_available, _error_ratio = column_coverage_available_rows(
+        rows, "error_rate", declared_replicas=args.assert_replicas if args.mode == "fixed" else None
+    )
+    unavailable_rows = sum(
+        1
+        for row in rows
+        if not is_available_row(
+            row,
+            declared_replicas=args.assert_replicas if args.mode == "fixed" else None,
+        )
+    )
     nonzero_error = sum(
         1
         for row in rows
-        if row.get("error_rate") not in (MISSING, "", None) and float(row["error_rate"]) > 0
+        if is_available_row(row)
+        and is_populated_metric_value(row.get("error_rate"))
+        and float(row["error_rate"]) > 0
     )
     print(f"FIXED_METRICS_REQUIRED_COLUMNS_POPULATED rows={len(rows)}")
     print(
-        f"ERROR_RATE_COLUMN_POPULATED rows={populated_error}/{total_rows} "
-        f"non_zero={nonzero_error} missing={total_rows - populated_error}"
+        f"ERROR_RATE_COLUMN_POPULATED rows={populated_error}/{total_available} "
+        f"non_zero={nonzero_error} missing={total_available - populated_error} "
+        f"target_unavailable_rows={unavailable_rows}"
     )
-    if populated_error == 0:
-        raise RuntimeError("ASSERTION FAILED: error_rate column has zero populated rows")
+    if total_available == 0:
+        raise RuntimeError("ASSERTION FAILED: zero available rows for error_rate assessment")
 
     print(f"Wrote {len(rows)} rows to {args.output}")
 

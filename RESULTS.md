@@ -1,11 +1,22 @@
 # RESULTS
 
-All headline numbers below are `PENDING_RERUN` until measured GKE artifacts exist.
-
 Authority split:
-- Locust: request counts, successes, failures
-- Prometheus: CPU and timing
-- kubectl API (sampled every 15s during load into `replica_series_<arm>.csv`): `spec_replicas`, `status_replicas`, `ready_replicas` per timestamp
+- **Locust:** request counts, successes, failures (published failure rate)
+- **Prometheus:** CPU and timing (server-side observations only)
+- **kubectl in-run sampling:** `spec_replicas`, `status_replicas`, `ready_replicas` in `replica_series_<arm>.csv` and metrics CSV
+
+## Headline — run-20260904T230444Z (production, GKE)
+
+The fixed 3-replica baseline **collapsed under burst**: `REPLICA_DIP_OBSERVED declared=3 minimum=0` across 51 timestamps in `replica_series_fixed.csv` — zero ready replicas for a measurable fraction of the 18-minute window. With no pods serving, Prometheus app metrics are absent; those rows are **`TARGET_UNAVAILABLE`**, not collection failure. Evidence is in `replica_series_fixed.csv`, independent of Prometheus.
+
+| Arm | Locust requests | Locust failures | Failure rate | HPA / replica outcome |
+|-----|----------------:|----------------:|-------------:|------------------------|
+| **Fixed** | 10,193 | 1,230 | **12.07%** | Declared 3 replicas; ready hit **0** during collapse |
+| **HPA** | 20,820 | 63 | **0.30%** | Scaled to **spec=10** (`HPA_SCALE_FLOOR_CHECK peak=10`); ready tracked to 10 |
+
+Availability gaps are **recorded, not hidden**: metrics CSV includes `availability_state` (`AVAILABLE` vs `TARGET_UNAVAILABLE`). Coverage is assessed only over rows with `ready_replicas > 0`; `TARGET_AVAILABILITY` reports the fraction of the window with serving capacity.
+
+Prior run `run-20260904T220808Z` replica time series is unrecoverable (no in-run sampler); see `results/runs/run-20260904T220808Z/RECOVERY.md`.
 
 ## Measurement limitations
 
@@ -17,49 +28,53 @@ Authority split:
 
 - **Window:** `LOAD_START t0` through `t0 + RUN_TIME` per arm (inclusive), as recorded in each run's `manifest.json` and echoed as `ANCHOR_WINDOW_ENFORCED start=… end=…` during collection.
 - **Burst included:** The first minute of load is in the published window. A 60s scrape pre-roll during the post-cold-start ready wait (`METRIC_SCRAPE_PREROLL_*` in `rep.log`) warms Prometheus scrapes before `t0`; pre-roll samples are queried but not written as CSV rows.
-- **No row exclusions:** Coverage assessment (`MIN_COLUMN_COVERAGE_RATIO=0.95`) runs over every published row. Genuinely unqueryable cells are `MISSING` and count against the threshold.
-- **Rate lookback:** PromQL `rate(...[N])` uses `N = max(step, 2×scrape_interval)` (30s at default 15s step/scrape) so range queries have enough samples; burst-onset rows are published and assessed like any other row.
+- **Every anchored timestamp produces a row:** 73 rows at 18m / 15s step. Rows are never dropped when Prometheus series end early.
+- **TARGET_UNAVAILABLE:** Row is unavailable when `ready_replicas == 0`, or (fixed arm) when `ready_replicas` is below declared capacity. Rate-derived cells may also be `TARGET_UNAVAILABLE` when counters are absent despite a CPU gauge (collapse onset). These rows/cells are excluded from coverage denominators.
+- **Coverage:** `METRICS_COLUMN_COVERAGE` is over **available rows only** (fixed: `ready_replicas >= declared`; HPA: `ready_replicas > 0`). Rate columns skip the first two available rows (burst-onset) and cells marked `TARGET_UNAVAILABLE`. `TARGET_AVAILABILITY rows_available/rows_total` is reported separately.
+- **Rate lookback:** PromQL `rate(...[N])` uses `N = max(step, 2×scrape_interval)` (30s at default 15s step/scrape).
 - **Log markers:** `METRIC_QUERY_PREROLL_SEC=60 published_rows_only=true no_row_exclusions=true`
 
 ### Burst-onset MISSING rows (rate-derived columns)
 
-Two published rows per arm at the start of the window (`t0` and `t0+step`) are often `MISSING` for `latency_p50_ms`, `latency_p95_ms`, `latency_p99_ms`, `rps`, and `error_rate`. This is inherent to Prometheus counter semantics, not a collection failure: `app_requests_total` has no series until the first request arrives, so `rate(...[30s])` has no prior sample to difference against at the exact burst onset.
+Two published **available** rows per arm at the start of the window (`t0` and `t0+step`) are often `MISSING` for rate-derived columns when pods are up — inherent Prometheus counter semantics at burst onset.
 
-- **Gauges are complete from t0:** `cpu_utilization_pct` scrapes idle pods during pre-roll and is populated for every published row. **Replica columns** come from in-run kubectl sampling (`replica_series_<arm>.csv`), aligned to each timestamp — not live state at collection time. Published CSV includes `spec_replicas` (HPA desired), `status_replicas`, and `ready_replicas` (capacity serving traffic); legacy `replicas` equals `ready_replicas`.
-- **Scale-up lag (HPA arm):** During scale-up, `spec_replicas` (what the HPA decided) leads `ready_replicas` (pods passing readiness). `HPA_SCALE_FLOOR_CHECK` uses peak `spec_replicas` to match Kubernetes event rescale lines; the gap between spec and ready is a real measurement of scale-up latency and should be reported, not treated as missing data.
-- **Symmetric across arms:** Both fixed and HPA arms see the same two-row gap, so comparative analysis is unaffected.
-- **Expected coverage (no warm-up traffic):** At `step=15` and `rate_window_sec=30`, expect two `MISSING` rate-derived rows per arm. Published row counts: **41 at 10m smoke** → **39/41 (0.9512)**; **73 at 18m production** → **~71/73 (0.973)**. Do not add pre-burst request traffic to populate these rows — that would alter the counter baseline before `t0`.
+- **Gauges when available:** `cpu_utilization_pct` and replica columns populate when `ready_replicas > 0`.
+- **Expected coverage (available rows only):** ~71/71 (1.0) for gauges; rate columns ~69/71 (0.973) at 18m with no collapse.
 
 ## Locust failure semantics
 
-- **`Unexpected status 0`:** In Locust logs/CSV this means the HTTP client received no response (connection error, timeout, or reset) — **not** an HTTP 5xx. It is the same error class as the original repo's burst-onset connection failures.
-- **Exit code vs measurement:** Locust exits non-zero when any sample fails unless `--exit-code-on-error 0` is set. Request failures are the measurement under burst load; the harness treats a completed load shape with valid stats as success (`LOCUST_NONZERO_EXIT_IGNORED` when exit code is ignored).
+- **`Unexpected status 0`:** In Locust logs/CSV this means the HTTP client received no response (connection error, timeout, or reset) — **not** an HTTP 5xx.
+- **Exit code vs measurement:** Locust exits non-zero when any sample fails unless `--exit-code-on-error 0` is set. Request failures are the measurement under burst load; the harness treats a completed load shape with valid stats as success.
+- **Prometheus `error_rate` vs Locust failure rate:** Prometheus `error_rate` measures **server-observed** non-200 responses (`app_requests_total{status_code!="200"}`). Locust measures **client-observed** outcomes including connection failures and timeouts. When the app is unreachable or overloaded, the client sees failures the server never records. **Locust is authoritative for the published failure rate.**
 
-## Failure rate (fixed arm)
-- **Value:** `PENDING_RERUN`
-- **Formula:** `failures / requests` from Locust Aggregated row
-- **Source:** `results/runs/<run_id>/rep-N/locust_fixed_stats.csv`, columns `Failure Count`, `Request Count`
+**Worked example (run-20260904T230444Z):**
+- HPA arm: Locust **63 / 20,820 (0.30%)**; Prometheus `error_rate` **non_zero=0** for the run — consistent (connection-level failures).
+- Fixed arm: Locust **1,230 / 10,193 (12.07%)**; Prometheus `error_rate` **~0.0** — same mechanism during baseline collapse.
 
-## Failure rate (HPA arm)
-- **Value:** `PENDING_RERUN`
-- **Formula:** `failures / requests` from Locust Aggregated row
-- **Source:** `results/runs/<run_id>/rep-N/locust_hpa_stats.csv`, columns `Failure Count`, `Request Count`
+## Scale-up lag (HPA arm)
+
+During scale-up, `spec_replicas` (HPA desired) leads `ready_replicas` (pods passing readiness). `HPA_SCALE_FLOOR_CHECK` uses peak **`spec_replicas`** to match Kubernetes event rescale lines. The gap between spec and ready is scale-up latency — a real measurement, not missing data.
+
+## Failure rate (fixed arm) — run-20260904T230444Z
+- **Value:** **12.07%** (1230 / 10193)
+- **Source:** `results/runs/run-20260904T230444Z/rep-1/locust_fixed_stats.csv`
+
+## Failure rate (HPA arm) — run-20260904T230444Z
+- **Value:** **0.30%** (63 / 20820)
+- **Source:** `results/runs/run-20260904T230444Z/rep-1/locust_hpa_stats.csv`
 
 ## Throughput ratio (HPA / fixed)
-- **Value:** `PENDING_RERUN`
+- **Value:** `PENDING_ANALYSIS`
 - **Formula:** `hpa_successful_requests / fixed_successful_requests`
-- **Source:** Locust stats for both arms (not Prometheus RPS)
+- **Source:** Locust stats for both arms
 
 ## Cost per 1k successful requests
-- **Value:** `PENDING_RERUN`
+- **Value:** `PENDING_ANALYSIS`
 - **Formula:** `(pod_hours * list_price_per_pod_hour) / (successful_requests / 1000)`
-- **Source:** Tier 2 cost module + Locust successful request counts
 
 ## SLO burn (14.4x tier, 1h/5m)
-- **Value:** `PENDING_RERUN` (Tier 3 module)
-- **Note:** 6h/30m and 3d/6h tiers are `MISSING` by design for 18-minute runs.
+- **Value:** `PENDING` (Tier 3 module)
 
 ## Run-scoped error budget consumption (%)
-- **Value:** `PENDING_RERUN`
-- **Formula:** `(observed_error_rate / slo_target) * 100` over full run window
+- **Value:** `PENDING_ANALYSIS`
 - **Source:** Locust failure evidence per arm

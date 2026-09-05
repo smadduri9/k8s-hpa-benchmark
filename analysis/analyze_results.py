@@ -30,7 +30,9 @@ if str(_ANALYSIS_DIR) not in sys.path:
 from metrics_contract import (
     MISSING,
     REQUIRED_VALUE_COLUMNS,
+    TARGET_UNAVAILABLE,
     assert_column_coverage,
+    infer_declared_replicas,
 )
 
 # Plotting deps load after guard_inputs in main() so publication guards run without numpy/matplotlib.
@@ -108,7 +110,7 @@ def extract(rows: list[dict], key: str):
     values = []
     for r in rows:
         val = r.get(key)
-        if val in (None, "", "MISSING"):
+        if val in (None, "", "MISSING", "TARGET_UNAVAILABLE"):
             values.append(np.nan)
         else:
             try:
@@ -357,7 +359,8 @@ def guard_inputs(fixed_path: str, hpa_path: str, locust_hpa_stats: str | None = 
                 print("ERROR: synthetic data detected; pass --allow-synthetic to analyze", file=sys.stderr)
                 sys.exit(1)
             try:
-                assert_column_coverage(rows, label=f"path={path}")
+                declared = infer_declared_replicas(rows)
+                assert_column_coverage(rows, label=f"path={path}", declared_replicas=declared)
             except RuntimeError as exc:
                 print(str(exc), file=sys.stderr)
                 sys.exit(1)
