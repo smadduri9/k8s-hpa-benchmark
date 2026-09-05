@@ -1337,6 +1337,17 @@ PROM_AUTHORITY=REPLICAS_CPU_TIMING
 ```
 
 
+---
+
+## a0-5: regenerate figures with client-observed latency (2026-09-04)
+
+- **Files touched:** `analysis/analyze_results.py`, `docs/figures/run-20260904T230444Z/*.png`
+- **Verification:** see commit `a676cfd` command output in git log; client-observed p50/p95/p99 recovered: fixed 1200/21000/40000 ms, HPA 310/1300/2200 ms.
+
+---
+
+## t1-gke-artifact-registry: fix deploy image push target (2026-09-04)
+
 - **Files touched:** `scripts/deploy_gke.sh`, `scripts/lib/gke_shape.sh`, `scripts/lib/preflight_gke.sh`, `k8s/deployment-*.yaml`, `k8s/smoke/kustomization.yaml`, `scripts/deploy_local.sh`
 - **Image URI:** `${REGION}-docker.pkg.dev/${PROJECT_ID}/${ARTIFACT_REGISTRY_REPO}/hpa-eval-app:${git_short_sha}` (immutable tag, no `:latest`)
 - **Manifests:** placeholder `PLACEHOLDER_REGISTRY/hpa-eval-app:PLACEHOLDER_TAG` substituted at deploy; `grep -r gcr.io` returns **no hits** in deploy scripts or k8s manifests

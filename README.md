@@ -6,16 +6,26 @@ Personal benchmark project that evaluates Kubernetes Horizontal Pod Autoscaler (
 
 **Status: PARTIAL** — fixed arm collapsed under burst; metrics gaps are measured, not hidden. Full write-up: [RESULTS.md](RESULTS.md).
 
-| Arm | Requests | Failures | Failure rate | Replicas | Source |
-|-----|---------:|---------:|-------------:|----------|--------|
-| **Fixed** (declared 3) | 10,193 | 1,230 | **12.07%** (1230 ÷ 10193) | ready hit **0** during collapse | `locust_fixed_stats.csv` |
-| **HPA** (1–10) | 20,820 | 63 | **0.30%** (63 ÷ 20820) | peak **spec=10**, peak **ready=10** | `locust_hpa_stats.csv` |
+| Arm | Requests | Failures | Failure rate | Client p50 / p95 / p99 (ms) | Replicas | Source |
+|-----|---------:|---------:|-------------:|----------------------------|----------|--------|
+| **Fixed** (declared 3) | 10,193 | 1,230 | **12.07%** | **1,200 / 21,000 / 40,000** (12.07% failures) | ready hit **0** during collapse | `locust_fixed_stats.csv` |
+| **HPA** (1–10) | 20,820 | 63 | **0.30%** | **310 / 1,300 / 2,200** (0.30% failures) | peak **spec=10**, peak **ready=10** | `locust_hpa_stats.csv` |
+
+Client-observed response time includes queueing, connection setup, and failures (Locust). Prometheus in-handler service time (~239 ms mean p95) is a separate metric — see [RESULTS.md](RESULTS.md#latency--two-metrics-never-merged).
 
 Fixed availability (73 rows): **14 UNAVAILABLE** / **40 DEGRADED** / **19 AVAILABLE**. HPA successful-request throughput **2.32×** fixed (20757 ÷ 8963). **Cost:** HPA **$0.000311** vs fixed **$0.000133** per 1k successful requests (**2.33×** premium) — reliability (0.30% vs 12.07% failures) at higher compute cost per success.
 
-### Latency over time
+### Client-observed response time (Locust, run-level)
 
-![Latency comparison — fixed vs HPA](docs/figures/run-20260904T230444Z/latency_comparison.png)
+![Client-observed response time — run-level p50/p95/p99](docs/figures/run-20260904T230444Z/latency_client_run_level.png)
+
+### Client-observed response time (10-second sliding window)
+
+![Client-observed response time over time](docs/figures/run-20260904T230444Z/latency_client_window.png)
+
+### Service time (in-handler, Prometheus)
+
+![Service time — in-handler compute duration](docs/figures/run-20260904T230444Z/latency_comparison.png)
 
 ### Throughput (RPS)
 
