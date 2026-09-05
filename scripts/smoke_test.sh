@@ -30,7 +30,7 @@ usage() {
   cat <<'EOF'
 Usage:
   bash scripts/smoke_test.sh --check harness
-  bash scripts/smoke_test.sh --check coldstart|assertions|fixed-metrics|label-isolation|locust-authority|preflight-traps|handoff-docs|error-rate-positive|event-loop-not-blocked
+  bash scripts/smoke_test.sh --check coldstart|assertions|fixed-metrics|label-isolation|locust-authority|preflight-traps|handoff-docs|error-rate-positive|event-loop-not-blocked|endpoints-never-empty
   bash scripts/smoke_test.sh --negative-test fixed-replica-assert|empty-metrics-column|low-metrics-coverage|missing-locust-hpa|missing-locust-fixed|hpa-never-scaled|label-isolation|coldstart-readiness|liveness-restarts-hung
   bash scripts/smoke_test.sh --full --env-file .env [--reuse-artifacts]
   bash scripts/smoke_test.sh --check locust-authority [--reuse-artifacts]
@@ -356,6 +356,171 @@ if failures > 0 or max_ms >= 1000.0:
     die "event-loop-not-blocked check failed"
   fi
   echo "EVENT_LOOP_NOT_BLOCKED_PASS"
+}
+
+check_endpoints_never_empty() {
+  kubectl config use-context "kind-${CLUSTER_NAME}" >/dev/null 2>&1 || true
+  build_and_load_image
+  kubectl kustomize "${REPO_ROOT}/k8s/smoke" --load-restrictor LoadRestrictionsNone | kubectl apply -f -
+  kubectl scale deployment/hpa-eval-fixed -n "${NAMESPACE}" --replicas=3
+  kubectl rollout status deployment/hpa-eval-fixed -n "${NAMESPACE}" --timeout=180s
+  kubectl wait --for=condition=Ready pod -l app=hpa-eval,experiment=fixed -n "${NAMESPACE}" --timeout=180s
+  sleep 3
+
+  local -a smoke_fixed_pods=()
+  local pod_line
+  while IFS= read -r pod_line; do
+    smoke_fixed_pods+=("${pod_line}")
+  done < <(kubectl get pods -n "${NAMESPACE}" -l app=hpa-eval,experiment=fixed \
+    -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.status.phase}{"\t"}{.status.containerStatuses[0].ready}{"\n"}{end}' \
+    | awk '$2=="Running" && $3=="true"{print $1}')
+
+  if [[ "${#smoke_fixed_pods[@]}" -ne 3 ]]; then
+    die "endpoints-never-empty requires 3 Running ready fixed pods, got ${#smoke_fixed_pods[@]}"
+  fi
+
+  local -a smoke_load_pids=()
+  smoke_stop_fixed_load_all() {
+    local pid
+    for pid in "${smoke_load_pids[@]:-}"; do
+      kill -9 "${pid}" 2>/dev/null || true
+    done
+    if [[ "${#smoke_load_pids[@]}" -gt 0 ]]; then
+      wait "${smoke_load_pids[@]}" 2>/dev/null || true
+    fi
+    smoke_load_pids=()
+  }
+
+  smoke_start_fixed_load_all() {
+    local threads="$1"
+    local target_pod
+    smoke_stop_fixed_load_all
+    for target_pod in "${smoke_fixed_pods[@]}"; do
+      kubectl exec -n "${NAMESPACE}" "${target_pod}" -- python3 -c \
+        "import threading, time, urllib.request
+CPU_URL = 'http://127.0.0.1:8000/cpu?intensity=low'
+def cpu_load() -> None:
+    while True:
+        try:
+            urllib.request.urlopen(CPU_URL, timeout=30)
+        except Exception:
+            pass
+for _ in range(${threads}):
+    threading.Thread(target=cpu_load, daemon=True).start()
+time.sleep(600)" >/dev/null 2>&1 &
+      smoke_load_pids+=("$!")
+    done
+    sleep 2
+  }
+
+  smoke_max_health_ms_all_pods() {
+    local target_pod max_ms sample_ms output
+    max_ms=0
+    for target_pod in "${smoke_fixed_pods[@]}"; do
+      output="$(kubectl exec -n "${NAMESPACE}" "${target_pod}" -- python3 -c \
+        'import time, urllib.request
+start = time.perf_counter()
+urllib.request.urlopen("http://127.0.0.1:8000/health", timeout=5)
+print((time.perf_counter() - start) * 1000.0)' 2>/dev/null || echo "0")"
+      sample_ms="${output%%$'\n'*}"
+      if awk -v a="${sample_ms}" -v b="${max_ms}" 'BEGIN{exit !(a>b)}'; then
+        max_ms="${sample_ms}"
+      fi
+    done
+    echo "${max_ms}"
+  }
+
+  local threads health_max_ms chosen_threads=0
+  for threads in 10 15 20 25 30 35 40; do
+    smoke_start_fixed_load_all "${threads}"
+    health_max_ms="$(smoke_max_health_ms_all_pods)"
+    echo "ENDPOINTS_LOAD_TRIAL threads_per_pod=${threads} health_max_ms=${health_max_ms}"
+    if awk -v ms="${health_max_ms}" 'BEGIN{exit !(ms >= 1000)}'; then
+      chosen_threads="${threads}"
+      break
+    fi
+    smoke_stop_fixed_load_all
+  done
+
+  if [[ "${chosen_threads}" -eq 0 ]]; then
+    smoke_stop_fixed_load_all
+    die "could not drive /health to >=1000ms on kind with up to 40 threads per pod"
+  fi
+
+  smoke_start_fixed_load_all "${chosen_threads}"
+  health_max_ms="$(smoke_max_health_ms_all_pods)"
+  echo "HEALTH_MAX_UNDER_LOAD threads_per_pod=${chosen_threads} max_ms=${health_max_ms}"
+
+  local duration_sec=60
+  local endpoints_output endpoints_rc
+  set +e
+  endpoints_output="$(PODS="${smoke_fixed_pods[*]}" \
+    DURATION_SEC="${duration_sec}" \
+    NAMESPACE="${NAMESPACE}" \
+    venv_python -c '
+import os
+import json
+import subprocess
+import time
+
+namespace = os.environ["NAMESPACE"]
+duration_sec = int(os.environ["DURATION_SEC"])
+service_name = "hpa-eval-fixed-svc"
+
+
+def ready_endpoint_count() -> int:
+    proc = subprocess.run(
+        [
+            "kubectl",
+            "get",
+            "endpointslice",
+            "-n",
+            namespace,
+            "-l",
+            f"kubernetes.io/service-name={service_name}",
+            "-o",
+            "json",
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    payload = json.loads(proc.stdout)
+    ready = 0
+    for slc in payload.get("items", []):
+        for endpoint in slc.get("endpoints", []):
+            if endpoint.get("conditions", {}).get("ready"):
+                ready += 1
+    return ready
+
+
+samples = 0
+min_ready = ready_endpoint_count()
+start = time.perf_counter()
+while time.perf_counter() - start < duration_sec:
+    time.sleep(1.0)
+    count = ready_endpoint_count()
+    min_ready = min(min_ready, count)
+    samples += 1
+
+print(
+    f"ENDPOINTS_MIN_OBSERVED min={min_ready} samples={samples} duration_sec={duration_sec}"
+)
+')"
+  endpoints_rc=$?
+  set -e
+
+  smoke_stop_fixed_load_all
+
+  echo "${endpoints_output}"
+  if [[ "${endpoints_rc}" -ne 0 ]]; then
+    die "endpoints-never-empty sampling failed"
+  fi
+
+  if echo "${endpoints_output}" | grep -q "ENDPOINTS_MIN_OBSERVED min=0"; then
+    die "ENDPOINTS_EMPTY_UNDER_LOAD"
+  fi
+  echo "ENDPOINTS_NEVER_EMPTY_PASS"
 }
 
 negative_liveness_restarts_hung() {
@@ -1101,6 +1266,7 @@ elif [[ -n "${CHECK}" ]]; then
     preflight-traps) check_preflight_traps ;;
     error-rate-positive) check_error_rate_positive ;;
     event-loop-not-blocked) check_event_loop_not_blocked ;;
+    endpoints-never-empty) check_endpoints_never_empty ;;
     assertions) check_assertions ;;
     handoff-docs) check_handoff_docs ;;
     *) die "unknown check: ${CHECK}" ;;
