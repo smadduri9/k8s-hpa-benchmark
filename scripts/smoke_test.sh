@@ -1560,6 +1560,8 @@ shape_curve_port() {
 check_shape_curve() {
   # Client-side only. Locust spawns users per tick() regardless of the target, so
   # a fast local responder is a better surface than kind: no cluster variance.
+  # Run one shape at a time: parallel Locust processes contend for CPU and lag
+  # spawn targets, which distorts the achieved-vs-target count this check measures.
   local shape="${SHAPE}"
   if [[ -z "${shape}" ]]; then
     die "shape-curve requires --shape hybrid|constant|flash"

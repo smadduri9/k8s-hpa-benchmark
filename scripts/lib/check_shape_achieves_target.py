@@ -12,6 +12,11 @@ reimplemented here, so target and achieved cannot drift apart.
 
 Samples inside a transition window after each target change are excluded: spawning
 is not instantaneous and asserting there would measure spawn rate, not the curve.
+
+Shape validation runs must be sequential, never parallel. Locust spawns users on a
+schedule; multiple Locust processes on one host contend for CPU and a starved
+process lags its spawn target. Achieved-vs-target user count is exactly what this
+check measures, so parallel execution can distort the quantity being validated.
 """
 
 from __future__ import annotations
