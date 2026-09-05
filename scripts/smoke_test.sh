@@ -13,11 +13,14 @@ source "${SCRIPT_DIR}/lib/cold_start.sh"
 source "${SCRIPT_DIR}/lib/cleanup.sh"
 # shellcheck source=lib/replica_sampler.sh
 source "${SCRIPT_DIR}/lib/replica_sampler.sh"
+# shellcheck source=lib/locust_run.sh
+source "${SCRIPT_DIR}/lib/locust_run.sh"
 
 ENV_FILE=""
 CHECK=""
 NEGATIVE_TEST=""
 MODE="fixed"
+SHAPE=""
 BOTH_DEPLOYMENTS_UP=false
 FULL=false
 REUSE_ARTIFACTS=false
@@ -30,7 +33,8 @@ usage() {
   cat <<'EOF'
 Usage:
   bash scripts/smoke_test.sh --check harness
-  bash scripts/smoke_test.sh --check coldstart|assertions|fixed-metrics|label-isolation|locust-authority|preflight-traps|handoff-docs|error-rate-positive|event-loop-not-blocked|endpoints-never-empty|readiness-sweep
+  bash scripts/smoke_test.sh --check coldstart|assertions|fixed-metrics|label-isolation|locust-authority|preflight-traps|handoff-docs|error-rate-positive|event-loop-not-blocked|endpoints-never-empty|readiness-sweep|shape-curve|shape-wiring
+  bash scripts/smoke_test.sh --check shape-curve --shape hybrid|constant|flash
   bash scripts/smoke_test.sh --negative-test fixed-replica-assert|empty-metrics-column|low-metrics-coverage|missing-locust-hpa|missing-locust-fixed|hpa-never-scaled|label-isolation|coldstart-readiness|liveness-restarts-hung
   bash scripts/smoke_test.sh --full --env-file .env [--reuse-artifacts]
   bash scripts/smoke_test.sh --check locust-authority [--reuse-artifacts]
@@ -46,6 +50,7 @@ while [[ $# -gt 0 ]]; do
     --both-deployments-up) BOTH_DEPLOYMENTS_UP=true; shift ;;
     --full) FULL=true; shift ;;
     --reuse-artifacts) REUSE_ARTIFACTS=true; shift ;;
+    --shape) SHAPE="$2"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     *) die "unknown argument: $1" ;;
   esac
@@ -1534,6 +1539,170 @@ run_full_suite() {
   echo "SMOKE_SUITE_PASS"
 }
 
+shape_locust_rel() {
+  case "$1" in
+    hybrid) echo "locust/locustfile.py" ;;
+    constant) echo "locust/locustfile_constant.py" ;;
+    flash) echo "locust/locustfile_flash.py" ;;
+    *) die "unsupported --shape: $1 (expected hybrid, constant or flash)" ;;
+  esac
+}
+
+shape_curve_port() {
+  case "$1" in
+    hybrid) echo 18091 ;;
+    constant) echo 18092 ;;
+    flash) echo 18093 ;;
+    *) die "no curve-target port for shape $1" ;;
+  esac
+}
+
+check_shape_curve() {
+  # Client-side only. Locust spawns users per tick() regardless of the target, so
+  # a fast local responder is a better surface than kind: no cluster variance.
+  local shape="${SHAPE}"
+  if [[ -z "${shape}" ]]; then
+    die "shape-curve requires --shape hybrid|constant|flash"
+  fi
+  local locust_rel
+  locust_rel="$(shape_locust_rel "${shape}")"
+  local port
+  port="$(shape_curve_port "${shape}")"
+  local work_dir="${REPO_ROOT}/results/runs/shape-curve-${shape}"
+  mkdir -p "${work_dir}"
+  local csv_base="${work_dir}/locust_curve"
+  local locust_log="${work_dir}/locust_curve.log"
+  local harness_log="${work_dir}/harness.log"
+  : > "${harness_log}"
+
+  echo "SHAPE_CURVE_NOTE response_times_from_this_target_are_not_comparable=true"
+  echo "SHAPE_CURVE_START shape=${shape} locust_file=${locust_rel} port=${port} run_time=18m"
+
+  "${VENV_PYTHON}" "${SCRIPT_DIR}/lib/shape_curve_target.py" --port "${port}" >> "${harness_log}" 2>&1 &
+  local target_pid=$!
+  register_heartbeat_pid "${target_pid}"
+
+  local attempt
+  local listening=false
+  for attempt in $(seq 1 25); do
+    if grep -q "SHAPE_CURVE_TARGET_LISTENING port=${port}" "${harness_log}" 2>/dev/null; then
+      listening=true
+      break
+    fi
+    if ! kill -0 "${target_pid}" 2>/dev/null; then
+      die "SHAPE_CURVE_TARGET_DIED port=${port} log=${harness_log}"
+    fi
+    sleep 0.2
+  done
+  if [[ "${listening}" != "true" ]]; then
+    die "SHAPE_CURVE_TARGET_NOT_LISTENING port=${port} timeout_sec=5"
+  fi
+  echo "SHAPE_CURVE_TARGET_READY port=${port}"
+
+  local host="http://127.0.0.1:${port}"
+  run_locust_bounded \
+    "${REPO_ROOT}/${locust_rel}" \
+    "${host}" \
+    "18m" \
+    "${csv_base}" \
+    "${locust_log}" \
+    "${harness_log}"
+
+  kill "${target_pid}" 2>/dev/null || true
+  wait "${target_pid}" 2>/dev/null || true
+
+  venv_python "${SCRIPT_DIR}/lib/check_shape_achieves_target.py" \
+    --shape "${shape}" \
+    --history-csv "${csv_base}_stats_history.csv"
+}
+
+check_shape_wiring() {
+  # Plumbing only. LoadTestShape ignores --run-time, so a shortened runner
+  # invocation cannot validate the 18-minute curve (Step 6a already did).
+  # This proves the runner selects the locustfile, keys RUN_ID by shape,
+  # records shape and HPA_NO_SCALE_POLICY, and that the checker parses a CSV.
+  local shape="${SHAPE:-constant}"
+  if [[ "${shape}" != "constant" ]]; then
+    die "shape-wiring uses --shape constant (one shape, one arm); got ${shape}"
+  fi
+  ensure_kind_cluster
+  build_and_load_image
+  kubectl config use-context "kind-${CLUSTER_NAME}" >/dev/null 2>&1 || true
+  kubectl kustomize "${REPO_ROOT}/k8s/smoke" --load-restrictor LoadRestrictionsNone | kubectl apply -f -
+  kubectl rollout status deployment/hpa-eval-fixed -n "${NAMESPACE}" --timeout=180s
+
+  local wiring_id="wiring-$(date -u '+%Y%m%dT%H%M%SZ')-constant"
+  bash "${SCRIPT_DIR}/run_benchmark.sh" \
+    --shape constant \
+    --smoke \
+    --cold-start-only \
+    --arm fixed \
+    --run-id "${wiring_id}"
+  local run_root="${REPO_ROOT}/results/runs/${wiring_id}"
+  echo "WIRING_RUN_ROOT=${run_root}"
+  cat "${run_root}/manifest.json"
+  if ! grep -q '"shape": "constant"' "${run_root}/manifest.json"; then
+    die "shape-wiring missing shape=constant in manifest.json"
+  fi
+  if ! grep -q '"hpa_no_scale_policy": "warn"' "${run_root}/manifest.json"; then
+    die "shape-wiring missing hpa_no_scale_policy=warn in manifest.json"
+  fi
+
+  kubectl port-forward -n "${NAMESPACE}" svc/hpa-eval-fixed-svc 18094:80 >/dev/null 2>&1 &
+  local pf_pid=$!
+  register_port_forward_pid "${pf_pid}"
+  sleep 2
+  if ! curl -sf --max-time 5 "http://127.0.0.1:18094/health" >/dev/null; then
+    die "SHAPE_WIRING_TARGET_UNREACHABLE url=http://127.0.0.1:18094/health"
+  fi
+
+  local work_dir="${run_root}/rep-1"
+  mkdir -p "${work_dir}"
+  local csv_base="${work_dir}/locust_fixed"
+  local locust_log="${work_dir}/locust_fixed.log"
+  local harness_log="${work_dir}/rep.log"
+  : > "${harness_log}"
+  echo "SHAPE_SELECTED shape=constant locust_file=locust/locustfile_constant.py run_time=90s" >> "${harness_log}"
+  echo "HPA_NO_SCALE_POLICY=warn shape=constant" >> "${harness_log}"
+
+  # LoadTestShape ignores --run-time, so a shortened wiring run must be killed
+  # by wall clock. That is intentional here and must not use run_locust_bounded,
+  # which treats LOCUST_TIMEOUT as a failure.
+  "${VENV_LOCUST}" \
+    -f "${REPO_ROOT}/locust/locustfile_constant.py" \
+    --host "http://127.0.0.1:18094" \
+    --headless \
+    --run-time 90s \
+    --csv "${csv_base}" \
+    --csv-full-history \
+    --exit-code-on-error 0 \
+    --logfile "${locust_log}" >> "${locust_log}" 2>&1 &
+  local locust_pid=$!
+  register_locust_pid "${locust_pid}"
+  sleep 90
+  kill "${locust_pid}" 2>/dev/null || true
+  sleep 2
+  kill -9 "${locust_pid}" 2>/dev/null || true
+  wait "${locust_pid}" 2>/dev/null || true
+
+  echo "WIRING_HARNESS_BEGIN"
+  grep -E '^(SHAPE_SELECTED|HPA_NO_SCALE_POLICY)=' "${harness_log}" || true
+  echo "WIRING_HARNESS_END"
+
+  # Parse only: a 90s slice cannot be required to pass the 1080s curve gate.
+  set +e
+  venv_python "${SCRIPT_DIR}/lib/check_shape_achieves_target.py" \
+    --shape constant \
+    --history-csv "${csv_base}_stats_history.csv"
+  local checker_rc=$?
+  set -e
+  echo "SHAPE_WIRING_CHECKER_RC=${checker_rc} history_csv=${csv_base}_stats_history.csv"
+  if [[ ! -f "${csv_base}_stats_history.csv" ]]; then
+    die "shape-wiring missing history CSV"
+  fi
+  echo "SHAPE_WIRING_PASS run_id=${wiring_id}"
+}
+
 if [[ "${FULL}" == "true" ]]; then
   run_full_suite
 elif [[ -n "${NEGATIVE_TEST}" ]]; then
@@ -1564,6 +1733,8 @@ elif [[ -n "${CHECK}" ]]; then
     readiness-repeat-control) check_readiness_repeat_control ;;
     assertions) check_assertions ;;
     handoff-docs) check_handoff_docs ;;
+    shape-curve) check_shape_curve ;;
+    shape-wiring) check_shape_wiring ;;
     *) die "unknown check: ${CHECK}" ;;
   esac
 else
