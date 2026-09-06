@@ -177,6 +177,16 @@ Two published **serving** rows at the start of the window (`t0` and `t0+step`) a
 - **Gauges when serving:** `cpu_utilization_pct` and replica columns populate when `ready_replicas > 0`.
 - **Healthy-run expectation (no collapse):** gauge coverage ~1.0 on serving rows; rate columns ~0.97 on assessable serving rows after burst exclusion.
 
+### `active_requests` (in-flight saturation gauge)
+
+Collected as `sum(app_active_requests{experiment="<mode>"})` and written to the `active_requests` CSV column (backfilled on GKE runs from 2026-09-05 onward while the live cluster TSDB was still available).
+
+**Limitations — read before interpreting this column:**
+
+1. **Partial traffic coverage.** `ACTIVE_REQUESTS` is incremented only in the `/cpu` handler (`app/main.py`). `GET /` and `GET /fail` never touch the gauge, so it reflects roughly **80%** of offered Locust traffic (the `@task(4)` `/cpu` share vs `@task(1)` `/`).
+2. **Hard cap at 40.** `/cpu` is a sync `def` handler; Starlette runs it in AnyIO's default thread limiter (**40** tokens). `ACTIVE_REQUESTS.inc()` is inside the handler body, so requests queued waiting for a token are **not** counted. The series cannot show queueing beyond 40 in-flight `/cpu` calls per pod.
+3. **Scale-down staleness exclusion.** Prometheus retains a target's last scraped gauge value for up to **5 minutes** after the pod disappears (default lookback delta). During HPA scale-down, `sum(app_active_requests)` can therefore include terminated pods' last non-zero in-flight counts. Collection and backfill write **`MISSING`** (not the inflated sum) for any row whose `ready_replicas` changed within the preceding **300 s**, as recorded in `replica_series_<arm>.csv`. Rows with `ready_replicas == 0` remain `TARGET_UNAVAILABLE` per the usual availability contract.
+
 ## Locust failure semantics
 
 - **`Unexpected status 0`:** In Locust logs/CSV this means the HTTP client received no response (connection error, timeout, or reset) — **not** an HTTP 5xx.

@@ -40,6 +40,7 @@ METRIC_VALUE_COLUMNS = [
     "latency_p95_ms",
     "latency_p99_ms",
     "rps",
+    "active_requests",
     "error_rate",
 ]
 

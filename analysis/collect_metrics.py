@@ -74,8 +74,12 @@ FIELDNAMES = [
     "latency_p95_ms",
     "latency_p99_ms",
     "rps",
+    "active_requests",
     "error_rate",
 ]
+
+# Prometheus retains stale gauge values for terminated targets for up to this long.
+ACTIVE_REQUESTS_STALENESS_LOOKBACK_SEC = 300
 
 OPPOSITE_EXPERIMENT = {"fixed": "hpa", "hpa": "fixed"}
 
@@ -108,6 +112,7 @@ def build_queries(mode: str, step: int) -> dict[str, str]:
             f"histogram_quantile(0.99, sum(rate(app_request_latency_seconds_bucket{{{label}}}[{rate_window}])) by (le)) * 1000"
         ),
         "rps": f'sum(rate(app_requests_total{{{label},status_code="200"}}[{rate_window}]))',
+        "active_requests": f"sum(app_active_requests{{{label}}})",
     }
 
 
@@ -372,6 +377,21 @@ def samples_in_window(
     return [sample for sample in samples if start_ts <= sample.ts <= end_ts]
 
 
+def ready_replicas_changed_in_lookback(
+    samples: list[ReplicaSample],
+    ts: float,
+    lookback_sec: int = ACTIVE_REQUESTS_STALENESS_LOOKBACK_SEC,
+) -> bool:
+    """True when ready_replicas varied in (ts - lookback, ts] — stale sum() risk."""
+    window_start = ts - lookback_sec
+    ready_values = {
+        sample.ready
+        for sample in samples
+        if window_start < sample.ts <= ts
+    }
+    return len(ready_values) > 1
+
+
 def evaluate_replica_series(
     mode: str,
     samples: list[ReplicaSample],
@@ -449,6 +469,8 @@ def collect(
     min_replicas: int | None = None,
     run_label_isolation_check: bool = True,
     hpa_no_scale_policy: str = HPA_NO_SCALE_ABORT,
+    *,
+    skip_coverage_gate: bool = False,
 ) -> list[dict]:
     publish_start_ts = start_ts
     publish_end_ts = end_ts
@@ -577,6 +599,11 @@ def collect(
         for metric in METRIC_VALUE_COLUMNS:
             if metric == "error_rate":
                 continue
+            if metric == "active_requests" and ready_replicas_changed_in_lookback(
+                replica_samples, ts
+            ):
+                row[metric] = MISSING
+                continue
             raw_val = lookup_series_value(series.get(metric, []), ts, step)
             row[metric] = classify_metric_value(
                 raw_val,
@@ -592,7 +619,10 @@ def collect(
         )
         rows.append(row)
 
-    assert_column_coverage(rows, declared_replicas=declared_for_availability)
+    if skip_coverage_gate:
+        print("METRICS_COVERAGE_GATE_SKIPPED reason=recovery_or_operator_override")
+    else:
+        assert_column_coverage(rows, declared_replicas=declared_for_availability)
     return rows
 
 
@@ -614,6 +644,11 @@ def main() -> None:
     parser.add_argument("--min-replicas", type=int)
     parser.add_argument("--check-label-isolation", action="store_true")
     parser.add_argument("--skip-label-isolation", action="store_true")
+    parser.add_argument(
+        "--skip-coverage-gate",
+        action="store_true",
+        help="write CSV without METRICS_COLUMN_COVERAGE abort (recovery when TSDB lacks history)",
+    )
     parser.add_argument(
         "--hpa-no-scale-policy",
         choices=[HPA_NO_SCALE_ABORT, HPA_NO_SCALE_WARN],
@@ -655,6 +690,7 @@ def main() -> None:
         min_replicas=args.min_replicas,
         run_label_isolation_check=not args.skip_label_isolation,
         hpa_no_scale_policy=args.hpa_no_scale_policy,
+        skip_coverage_gate=args.skip_coverage_gate,
     )
 
     os.makedirs(os.path.dirname(args.output) or ".", exist_ok=True)
