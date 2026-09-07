@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import errno
 import json
 import os
 import sys
@@ -36,6 +37,7 @@ import urllib.request
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.error import URLError
 
 _ANALYSIS_DIR = Path(__file__).resolve().parent
 if str(_ANALYSIS_DIR) not in sys.path:
@@ -90,6 +92,29 @@ HPA_NO_SCALE_WARN = "warn"
 
 # Prometheus default scrape interval in k8s/prometheus/configmap.yaml
 PROMETHEUS_SCRAPE_INTERVAL_SEC = 15
+
+_TRANSPORT_ERRNOS = frozenset(
+    {
+        errno.ECONNREFUSED,
+        errno.ECONNRESET,
+        errno.EPIPE,
+        errno.ECONNABORTED,
+    }
+)
+
+
+def _is_transport_error(exc: BaseException) -> bool:
+    if isinstance(exc, ConnectionRefusedError):
+        return True
+    if isinstance(exc, OSError) and exc.errno in _TRANSPORT_ERRNOS:
+        return True
+    if isinstance(exc, URLError):
+        reason = exc.reason
+        if isinstance(reason, ConnectionRefusedError):
+            return True
+        if isinstance(reason, OSError) and reason.errno in _TRANSPORT_ERRNOS:
+            return True
+    return False
 
 
 def rate_window_sec(step: int) -> int:
@@ -201,6 +226,8 @@ def query_range_raw(
                 raise RuntimeError(f"prometheus status={data.get('status')}")
             return data.get("data", {}).get("result", [])
         except Exception as exc:  # noqa: BLE001 - abort with named reason
+            if _is_transport_error(exc):
+                raise RuntimeError(f"PROMETHEUS_UNREACHABLE: {exc}") from exc
             last_error = exc
             if attempt < retries:
                 time.sleep(2 ** attempt)
@@ -249,6 +276,8 @@ def query_instant(
                 raise RuntimeError(f"prometheus status={data.get('status')}")
             return data.get("data", {}).get("result", [])
         except Exception as exc:  # noqa: BLE001
+            if _is_transport_error(exc):
+                raise RuntimeError(f"PROMETHEUS_UNREACHABLE: {exc}") from exc
             last_error = exc
             if attempt < retries:
                 time.sleep(2 ** attempt)

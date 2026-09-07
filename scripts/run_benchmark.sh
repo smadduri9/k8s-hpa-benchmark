@@ -225,10 +225,18 @@ collect_arm_metrics() {
     echo "HPA_NO_SCALE_POLICY=${HPA_NO_SCALE_POLICY} shape=${SHAPE}"
   fi
   args+=(--step 15)
-  ensure_prometheus_port_forward
-  if "${args[@]}"; then
-    return 0
-  fi
+  local attempt
+  for attempt in 1 2; do
+    ensure_prometheus_port_forward
+    if "${args[@]}"; then
+      return 0
+    fi
+    if [[ "${attempt}" -eq 1 ]] && grep -q 'PROMETHEUS_UNREACHABLE' "${rep_dir}/rep.log" 2>/dev/null; then
+      echo "METRICS_COLLECTION_RETRY mode=${mode} reason=PROMETHEUS_UNREACHABLE" >&2
+      continue
+    fi
+    break
+  done
   local err_line
   err_line="$(grep -E '^(RuntimeError|ValueError|ImportError|OSError|KeyError):' "${rep_dir}/rep.log" 2>/dev/null | tail -1 || true)"
   if [[ -n "${err_line}" ]]; then
