@@ -90,6 +90,26 @@ Prometheus remains `ClusterIP`; collect metrics via port-forward (as smoke tests
 
 `scripts/lib/cleanup.sh` → `destructive_gke_teardown` **verifies** `PROJECT_ID` and `CLUSTER_NAME` match `.env` before any destructive action. It logs `DESTRUCTIVE_GKE_TEARDOWN_AUTHORIZED` and **does not delete** the cluster or any GCP resource. **On-failure cluster teardown has never executed** in this repo — only the identity guard is tested (against kind context in smoke tests).
 
+## Runner VM (same zone as GKE)
+
+Provision with `bash scripts/provision_runner_vm.sh --env-file .env` (operator-only; creates billable GCP resources). VM shape: `e2-standard-4`, 50 GB boot disk, zone from `.env` `ZONE` (must match the GKE cluster zone). Image builds and `deploy_gke.sh` stay on the **Mac**; the runner has no Docker (`preflight.sh --skip-docker`).
+
+After the VM exists, bind `roles/container.developer` on the default compute service account (documented in the provision script; not applied automatically).
+
+**tmux session `hpa-bench`:** start benchmarks inside tmux so SSH disconnect does not SIGTERM Locust or collection. Reattach with `tmux attach -t hpa-bench`.
+
+**Results return:** from the Mac, `rsync` pull after `results/runs/<run_id>/STATUS` is written (or mid-run for partial reps). `results/` is gitignored.
+
+```bash
+rsync -avz USER@RUNNER_HOST:~/k8s-hpa-benchmark/results/runs/<run_id>/ results/runs/<run_id>/
+```
+
+On the VM after clone and `.venv`:
+```bash
+tmux new -s hpa-bench
+bash scripts/run_benchmark.sh --env-file .env --repetitions 1
+```
+
 ## Exact commands (in order)
 
 ### 1) Preflight (~1 min)

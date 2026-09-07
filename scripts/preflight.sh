@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# OS/arch assumptions: macOS (darwin) or Linux, bash 4+, kubectl, docker, gcloud.
+# OS/arch assumptions: macOS (darwin) or Linux, bash 4+, kubectl, gcloud; docker unless --skip-docker.
 # Strict preflight checks. Never infers GCP project from gcloud config.
 
 set -euo pipefail
@@ -12,14 +12,16 @@ source "${SCRIPT_DIR}/lib/preflight_gke.sh"
 
 ENV_FILE=""
 REQUIRE_GKE=false
+SKIP_DOCKER=false
 PREFLIGHT_FAILED=false
 
 usage() {
   cat <<'EOF'
-Usage: bash scripts/preflight.sh [--env-file .env] [--require-gke]
+Usage: bash scripts/preflight.sh [--env-file .env] [--require-gke] [--skip-docker]
 
 Auto-detects and hard-fails on missing/incompatible toolchain.
 Requires explicit PROJECT_ID, REGION, CLUSTER_NAME, ARTIFACT_REGISTRY_REPO when --require-gke is set.
+--skip-docker omits docker from required commands (runner VM; image builds stay on the Mac).
 EOF
 }
 
@@ -55,6 +57,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --require-gke)
       REQUIRE_GKE=true
+      shift
+      ;;
+    --skip-docker)
+      SKIP_DOCKER=true
       shift
       ;;
     -h|--help)
@@ -106,7 +112,7 @@ parse_k8s_minor() {
   echo "${version%%.*}"
 }
 
-for cmd in gcloud docker kubectl; do
+for cmd in gcloud kubectl; do
   if ! command -v "${cmd}" >/dev/null 2>&1; then
     preflight_fail "missing required command: ${cmd}"
   else
@@ -118,6 +124,14 @@ for cmd in gcloud docker kubectl; do
     echo "${cmd}=${version}"
   fi
 done
+
+if [[ "${SKIP_DOCKER}" == "true" ]]; then
+  echo "docker=SKIPPED reason=runner_vm_builds_on_mac"
+elif ! command -v docker >/dev/null 2>&1; then
+  preflight_fail "missing required command: docker"
+else
+  echo "docker=$(first_line "$(docker --version 2>&1)")"
+fi
 
 if [[ ! -d "${VENV_DIR}" ]]; then
   preflight_fail "missing venv at ${VENV_DIR}"
