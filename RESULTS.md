@@ -41,6 +41,11 @@ Both arms started at equal capacity (`minReplicas=3`). **Aggregate figures are p
 
 ## What is not being claimed
 
+- **HPA `behavior:` vs stock Kubernetes (`k8s/hpa.yaml`).** This manifest sets `scaleDown.stabilizationWindowSeconds: 60` (Kubernetes default **300**) and `scaleUp` policy `periodSeconds: 30` (Kubernetes default **15**). Direction only: this HPA scales up more slowly and sheds pods sooner than stock Kubernetes. No effect on cost or latency from these settings has been measured.
+- **Prometheus `rps` and `error_rate` coverage.** Both are derived from `app_requests_total` in `analysis/collect_metrics.py`. `GET /` never increments that counter (`app/main.py`), so roughly **20%** of offered Locust traffic is invisible to both series.
+- **`active_requests` in existing runs.** The `active_requests` column is empty in every run that exists; Prometheus was reset before the backfill and the cluster TSDB is ephemeral. The limitation bullets under [`active_requests`](#active_requests-in-flight-saturation-gauge) apply to **future** runs only.
+- **Load shapes.** All existing runs used synthetic phased shapes defined in `locust/locustfile.py`. The measurements are real; the traffic pattern was invented.
+
 ## Superseded — run-20260904T230444Z
 
 This was the published headline. It is not a fair comparison: HPA ran at `minReplicas=1` while the fixed arm was declared at 3, so the HPA arm started at one third the capacity. It is superseded by the calibrated minReplicas=3 runs (hybrid n=6, constant n=3, flash n=2 PARTIAL). The table and narrative below are preserved verbatim.
@@ -124,6 +129,8 @@ Guards enforced for this run (evidence in `rep.log` and collection output):
 
 ## Measurement limitations
 
+- **HPA `behavior:` vs stock Kubernetes (`k8s/hpa.yaml`).** `scaleDown.stabilizationWindowSeconds: 60` vs Kubernetes default **300**; `scaleUp` policy `periodSeconds: 30` vs default **15**. Direction only: this HPA scales up more slowly and sheds pods sooner than stock Kubernetes. No measured effect on cost or latency is claimed.
+- **Synthetic load shapes.** All existing runs used phased shapes defined in `locust/locustfile.py` (`hybrid`, `constant`, `flash`). The measurements are real; the traffic pattern was invented.
 - **Application change after run-20260904T230444Z:** `/cpu` was `async def` (CPU work on the event loop, blocking `/health` under load). It is now sync `def` (Starlette threadpool dispatch). **Future runs are not comparable to run-20260904T230444Z** — the application under test has changed.
 - **Starlette threadpool (40 tokens, unchanged):** At 200m CPU a pod does roughly 2 req/s; running 40 `/cpu` requests concurrently does not add throughput — Python's GIL serialises bytecode execution. The purpose of the `/cpu` handler change is **probe availability**, not throughput. Expect per-request latency to get **worse**, not better, under saturation.
 - **`psutil.cpu_percent(interval=None)`:** Returns CPU since the previous call. It is invoked from `/` and `/fail` on the event loop; `app_cpu_usage_percent` feeds `cpu_utilization_pct` in the metrics CSVs. Higher `/cpu` concurrency may make this gauge noisier (documented only; not fixed).
@@ -217,9 +224,11 @@ Two published **serving** rows at the start of the window (`t0` and `t0+step`) a
 
 ### `active_requests` (in-flight saturation gauge)
 
+The `active_requests` column is **empty in every existing run**. Prometheus was reset before the backfill and the cluster TSDB is ephemeral — no historical values were recovered. The bullets below describe how the column is collected and how it should be read in **future** runs, not values from published CSVs.
+
 Collected as `sum(app_active_requests{experiment="<mode>"})` and written to the `active_requests` CSV column (backfilled on GKE runs from 2026-09-05 onward while the live cluster TSDB was still available).
 
-**Limitations — read before interpreting this column:**
+**Limitations — read before interpreting this column in future runs:**
 
 1. **Partial traffic coverage.** `ACTIVE_REQUESTS` is incremented only in the `/cpu` handler (`app/main.py`). `GET /` and `GET /fail` never touch the gauge, so it reflects roughly **80%** of offered Locust traffic (the `@task(4)` `/cpu` share vs `@task(1)` `/`).
 2. **Hard cap at 40.** `/cpu` is a sync `def` handler; Starlette runs it in AnyIO's default thread limiter (**40** tokens). `ACTIVE_REQUESTS.inc()` is inside the handler body, so requests queued waiting for a token are **not** counted. The series cannot show queueing beyond 40 in-flight `/cpu` calls per pod.
@@ -276,7 +285,7 @@ The bound is wide for the collapsing fixed arm and nearly tight for the healthy 
 
 **Documented limitations (not fixed in this pass):**
 
-- **`GET /` is not instrumented.** `app/main.py` does not observe `REQUEST_LATENCY` or `REQUEST_COUNT` on the health-check route — **20% of offered traffic** is invisible server-side. This affects `rps` and `error_rate` as well as service-time percentiles.
+- **`GET /` is not instrumented.** `app/main.py` does not observe `REQUEST_LATENCY` or `REQUEST_COUNT` on the health-check route — **20% of offered traffic** is invisible server-side. This affects `rps` and `error_rate` (see [`What is not being claimed`](#what-is-not-being-claimed)) as well as service-time percentiles.
 - **Histogram bucket resolution.** Buckets `[..., 0.1, 0.25, 0.5, ...]` (`app/main.py:38`) place the published p95 of ~237 ms inside the single 0.1–0.25 s bucket, making it a linear interpolation within one bucket rather than a resolved measurement.
 
 ## Scale-up lag (HPA arm)
