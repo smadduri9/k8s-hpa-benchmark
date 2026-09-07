@@ -31,6 +31,16 @@ Consumption is the fraction of the 30-day error budget spent on latency-SLO miss
 | **90%** | **Reliability work takes priority** over new measurement features. |
 | **100%** | **Halt new benchmark features** until the SLO is met or the target is **formally revised** in `RESULTS.md` (with the revision recorded there). |
 
+## Current status
+
+**The SLO is not currently met.**
+
+Measured on calibrated runs (hybrid n=6, constant n=3) using approximate Locust brackets at **500 ms** — see [`RESULTS.md`](../RESULTS.md#slo-and-error-budget-calibrated-runs): **neither arm reaches 99%** in any repetition. Fixed arms are **fewer than 50%** faster than 500 ms in all six hybrid reps (and all three constant reps). HPA arms do better on some reps but the best hybrid bracket observed is still only **>50% and <=66%**. At any constant miss rate in those brackets, the **30-day error budget would be exhausted immediately** (for example, miss **>= 50%** consumes **>= 5000%** of the allowance).
+
+**Consequence under this policy:** the system is at the **100% consumption threshold today**. The prescribed response is to **halt new benchmark features** until either (1) the workload meets the SLO, or (2) the target is **formally revised** in `RESULTS.md`.
+
+**Which response applies is deferred.** The maintainer will not choose between meeting the SLO and revising the target until **Phase 5** produces **exact count-based SLIs** from stored histogram bucket counts. The numbers above are **approximate brackets** from the Locust percentile grid; they are sufficient to show the SLO is missed by a wide margin, but not sufficient to lock a formal revision or a precise compliance series.
+
 ## What this policy does not cover
 
 - **Multi-window burn-rate alerting** (e.g. 14.4× tiers for a 99.9% SLO over 30 days). An 18-minute benchmark has no compliance period; those constants do not apply. See [`RESULTS.md`](../RESULTS.md#slo-and-error-budget-calibrated-runs). **No alert rules are committed.**
