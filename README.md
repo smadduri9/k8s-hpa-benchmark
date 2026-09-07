@@ -4,7 +4,7 @@ Personal benchmark project that evaluates Kubernetes Horizontal Pod Autoscaler (
 
 ## Calibrated results (minReplicas=3 both arms)
 
-Both arms started at equal capacity (`minReplicas=3`). **Aggregate figures are pending** — per-rep charts are not published here. Full write-up: [RESULTS.md](RESULTS.md#calibrated-results-minreplicas3-both-arms).
+Both arms started at equal capacity (`minReplicas=3`). **Aggregate figures are pending** — per-rep charts are not published here. Full write-up: [RESULTS.md](RESULTS.md#calibrated-results-minreplicas3-both-arms). SLO and error-budget analysis: [RESULTS.md § SLO](RESULTS.md#slo-and-error-budget-calibrated-runs); incident write-up: [POSTMORTEM.md](POSTMORTEM.md); policy: [docs/error-budget-policy.md](docs/error-budget-policy.md).
 
 ### hybrid — `run-20260905T220046Z-hybrid` (n=6)
 
