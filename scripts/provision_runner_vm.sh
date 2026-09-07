@@ -49,7 +49,7 @@ require_env CLUSTER_NAME
 RUNNER_VM_NAME="${RUNNER_VM_NAME:-hpa-bench-runner}"
 MACHINE_TYPE="e2-standard-4"
 BOOT_DISK_SIZE_GB="50"
-IMAGE_FAMILY="${RUNNER_IMAGE_FAMILY:-ubuntu-2404-lts}"
+IMAGE_FAMILY="${RUNNER_IMAGE_FAMILY:-ubuntu-2404-lts-amd64}"
 IMAGE_PROJECT="${RUNNER_IMAGE_PROJECT:-ubuntu-os-cloud}"
 
 if ! command -v gcloud >/dev/null 2>&1; then
