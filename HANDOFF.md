@@ -130,7 +130,7 @@ tail -f results/runs/<run_id>/rep-1/rep.log
 
 ### 6) Post-run GCP orphan cleanup verification
 
-Run after **every** GKE session. GKE deletes load balancer forwarding rules when the cluster is deleted, but **persistent disks**, **static IPs**, and **firewall rules** are often retained. Leftover forwarding rules and `k8s-*` firewall rules block VPC deletion.
+Run after **every** GKE session and **after every cluster teardown**. GKE deletes load balancer forwarding rules when the cluster is deleted, but **persistent disks**, **static IPs**, and **firewall rules** are often retained. Deleting a GKE cluster does **not** reliably delete PVC-backed PersistentVolumes — orphaned Prometheus PVC disks bill until deleted. The `gcloud compute disks list --filter="-users:*"` check below now covers those disks. This check has never been exercised against a PVC-created disk (none existed until the GKE Prometheus PVC was added). Leftover forwarding rules and `k8s-*` firewall rules block VPC deletion.
 
 Replace project id if yours differs:
 

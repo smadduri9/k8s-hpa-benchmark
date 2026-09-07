@@ -133,7 +133,8 @@ done
 kubectl apply -f "${REPO_ROOT}/k8s/service.yaml"
 kubectl apply -f "${REPO_ROOT}/k8s/hpa.yaml"
 kubectl apply -f "${REPO_ROOT}/k8s/prometheus/configmap.yaml"
-kubectl apply -f "${REPO_ROOT}/k8s/prometheus/deployment.yaml"
+kubectl apply -f "${REPO_ROOT}/k8s/prometheus/pvc.yaml"
+kubectl apply -f "${REPO_ROOT}/k8s/prometheus/deployment-gke.yaml"
 kubectl apply -f "${REPO_ROOT}/k8s/prometheus/service.yaml"
 
 # ---------------------------------------------------------------------------

@@ -1,0 +1,16 @@
+# GKE only — applied from scripts/deploy_gke.sh.
+# Do NOT add this claim to k8s/smoke/kustomization.yaml.
+# reset_prometheus_deployment wipes the TSDB only when storage is ephemeral;
+# mounting this PVC on kind would preserve /fail samples across smoke checks.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: prometheus-data
+  namespace: hpa-eval
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: standard-rwo
+  resources:
+    requests:
+      storage: 1Gi
