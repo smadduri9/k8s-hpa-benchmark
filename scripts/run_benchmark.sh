@@ -225,14 +225,18 @@ collect_arm_metrics() {
     echo "HPA_NO_SCALE_POLICY=${HPA_NO_SCALE_POLICY} shape=${SHAPE}"
   fi
   args+=(--step 15)
-  if ! "${args[@]}"; then
-    local err_line
-    err_line="$(grep -E '^(RuntimeError|ValueError|ImportError|OSError|KeyError):' "${rep_dir}/rep.log" 2>/dev/null | tail -1 || true)"
-    if [[ -n "${err_line}" ]]; then
-      die "METRICS_COLLECTION_FAILED mode=${mode} ${err_line}"
-    fi
-    die "METRICS_COLLECTION_FAILED mode=${mode} rc=$?"
+  ensure_prometheus_port_forward
+  if "${args[@]}"; then
+    return 0
   fi
+  local err_line
+  err_line="$(grep -E '^(RuntimeError|ValueError|ImportError|OSError|KeyError):' "${rep_dir}/rep.log" 2>/dev/null | tail -1 || true)"
+  if [[ -n "${err_line}" ]]; then
+    echo "METRICS_COLLECTION_FAILED mode=${mode} ${err_line}" >&2
+  else
+    echo "METRICS_COLLECTION_FAILED mode=${mode} rc=$?" >&2
+  fi
+  return 1
 }
 
 run_cold_start_only() {
@@ -269,11 +273,6 @@ run_one_repetition() {
     echo "SHAPE_SELECTED shape=${SHAPE} locust_file=${LOCUST_FILE} run_time=${RUN_TIME}"
     echo "HPA_NO_SCALE_POLICY=${HPA_NO_SCALE_POLICY} shape=${SHAPE}"
     echo "LOCUST_FILE=${LOCUST_FILE} RUN_TIME=${RUN_TIME} FIXED_HOST=${FIXED_HOST} HPA_HOST=${HPA_HOST}"
-
-    kubectl port-forward svc/prometheus 9090:9090 -n "${NAMESPACE}" >/dev/null 2>&1 &
-    local pf_pid=$!
-    register_port_forward_pid "${pf_pid}"
-    sleep 3
 
     local expected_fixed
     cold_start_arm "hpa-eval-fixed" "app=hpa-eval,experiment=fixed" "${NAMESPACE}" "${MANIFEST_PATH}" "fixed"

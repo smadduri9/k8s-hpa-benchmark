@@ -227,9 +227,7 @@ check_error_rate_positive() {
   local app_pf=$!
   sleep 2
 
-  kubectl port-forward svc/prometheus 9090:9090 -n "${NAMESPACE}" >/dev/null 2>&1 &
-  local pf=$!
-  sleep 3
+  ensure_prometheus_port_forward
 
   local preroll_start t0 t1 out_csv="/tmp/t1-c-error-rate-positive.csv" replica_series sampler_pid
   preroll_start="$(iso_now)"
@@ -265,8 +263,7 @@ check_error_rate_positive() {
 
   kill "${app_pf}" 2>/dev/null || true
   wait "${app_pf}" 2>/dev/null || true
-  kill "${pf}" 2>/dev/null || true
-  wait "${pf}" 2>/dev/null || true
+  stop_prometheus_port_forward
 
   if ! echo "${output}" | grep -q "ERROR_RATE_COLUMN_POPULATED"; then
     die "error-rate positive test missing ERROR_RATE_COLUMN_POPULATED marker"
@@ -1169,9 +1166,7 @@ smoke_collect_fixed_metrics_anchored() {
   shift
   local -a extra_args=("$@")
 
-  kubectl port-forward svc/prometheus 9090:9090 -n "${NAMESPACE}" >/dev/null 2>&1 &
-  local pf=$!
-  sleep 3
+  ensure_prometheus_port_forward
 
   local preroll_start t0 t1 replica_series sampler_pid
   preroll_start="$(iso_now)"
@@ -1196,7 +1191,7 @@ smoke_collect_fixed_metrics_anchored() {
     --replica-series "${replica_series}" \
     "${extra_args[@]}"
 
-  kill "${pf}" 2>/dev/null || true
+  stop_prometheus_port_forward
 }
 
 check_assertions() {
@@ -1228,9 +1223,7 @@ negative_fixed_replica_assert() {
   kubectl scale deployment hpa-eval-fixed --replicas="${wrong}" -n "${NAMESPACE}"
   kubectl rollout status deployment/hpa-eval-fixed -n "${NAMESPACE}" --timeout=120s || true
 
-  kubectl port-forward svc/prometheus 9090:9090 -n "${NAMESPACE}" >/dev/null 2>&1 &
-  local pf=$!
-  sleep 3
+  ensure_prometheus_port_forward
 
   smoke_warm_fixed_traffic
 
@@ -1251,7 +1244,7 @@ negative_fixed_replica_assert() {
   local rc=$?
   set -e
 
-  kill "${pf}" 2>/dev/null || true
+  stop_prometheus_port_forward
 
   kubectl scale deployment hpa-eval-fixed --replicas="${declared}" -n "${NAMESPACE}"
   kubectl rollout status deployment/hpa-eval-fixed -n "${NAMESPACE}" --timeout=180s
@@ -1430,9 +1423,7 @@ negative_hpa_never_scaled() {
   kubectl scale deployment hpa-eval-hpa --replicas="${min_replicas}" -n "${NAMESPACE}"
   kubectl rollout status deployment/hpa-eval-hpa -n "${NAMESPACE}" --timeout=120s
 
-  kubectl port-forward svc/prometheus 9090:9090 -n "${NAMESPACE}" >/dev/null 2>&1 &
-  local pf=$!
-  sleep 3
+  ensure_prometheus_port_forward
 
   kubectl port-forward svc/hpa-eval-hpa-svc 18081:80 -n "${NAMESPACE}" >/dev/null 2>&1 &
   local app_pf=$!
@@ -1463,7 +1454,7 @@ negative_hpa_never_scaled() {
   set -e
   echo "${output}"
 
-  kill "${pf}" 2>/dev/null || true
+  stop_prometheus_port_forward
 
   if [[ "${rc}" -eq 0 ]]; then
     die "negative hpa-never-scaled test expected failure but passed"
@@ -1479,9 +1470,7 @@ negative_label_isolation() {
   kubectl wait --for=condition=Available deployment/hpa-eval-fixed -n "${NAMESPACE}" --timeout=120s
   kubectl wait --for=condition=Available deployment/hpa-eval-hpa -n "${NAMESPACE}" --timeout=120s
 
-  kubectl port-forward svc/prometheus 9090:9090 -n "${NAMESPACE}" >/dev/null 2>&1 &
-  local pf=$!
-  sleep 3
+  ensure_prometheus_port_forward
   smoke_warm_hpa_traffic
 
   set +e
@@ -1497,7 +1486,7 @@ negative_label_isolation() {
   set -e
   echo "${output}"
 
-  kill "${pf}" 2>/dev/null || true
+  stop_prometheus_port_forward
 
   if [[ "${rc}" -eq 0 ]]; then
     die "negative label-isolation test expected failure but passed"

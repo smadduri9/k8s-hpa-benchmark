@@ -26,6 +26,60 @@ register_locust_pid() {
   CLEANUP_LOCUST_PIDS+=("$1")
 }
 
+PROMETHEUS_PF_PORT="${PROMETHEUS_PF_PORT:-9090}"
+PROMETHEUS_PF_URL="http://127.0.0.1:${PROMETHEUS_PF_PORT}"
+PROMETHEUS_PF_ESTABLISH_ATTEMPTS="${PROMETHEUS_PF_ESTABLISH_ATTEMPTS:-3}"
+PROMETHEUS_PF_READY_TIMEOUT_SEC="${PROMETHEUS_PF_READY_TIMEOUT_SEC:-30}"
+
+prometheus_port_forward_probe() {
+  curl -sf "${PROMETHEUS_PF_URL}/api/v1/status/buildinfo" >/dev/null 2>&1
+}
+
+stop_prometheus_port_forward() {
+  local pid
+  for pid in "${CLEANUP_PF_PIDS[@]:-}"; do
+    kill "${pid}" 2>/dev/null || true
+    wait "${pid}" 2>/dev/null || true
+  done
+  CLEANUP_PF_PIDS=()
+}
+
+ensure_prometheus_port_forward() {
+  if prometheus_port_forward_probe; then
+    return 0
+  fi
+
+  stop_prometheus_port_forward
+
+  local attempt
+  for attempt in $(seq 1 "${PROMETHEUS_PF_ESTABLISH_ATTEMPTS}"); do
+    kubectl port-forward "svc/prometheus" "${PROMETHEUS_PF_PORT}:9090" \
+      -n "${NAMESPACE}" >/dev/null 2>&1 &
+    local pf_pid=$!
+    register_port_forward_pid "${pf_pid}"
+
+    local waited=0
+    while (( waited < PROMETHEUS_PF_READY_TIMEOUT_SEC )); do
+      if prometheus_port_forward_probe; then
+        echo "PROMETHEUS_PORT_FORWARD_READY attempt=${attempt} port=${PROMETHEUS_PF_PORT}"
+        return 0
+      fi
+      if ! kill -0 "${pf_pid}" 2>/dev/null; then
+        break
+      fi
+      sleep 1
+      waited=$((waited + 1))
+    done
+
+    kill "${pf_pid}" 2>/dev/null || true
+    wait "${pf_pid}" 2>/dev/null || true
+    CLEANUP_PF_PIDS=()
+    echo "PROMETHEUS_PORT_FORWARD_RETRY attempt=${attempt} port=${PROMETHEUS_PF_PORT}" >&2
+  done
+
+  die "PROMETHEUS_PORT_FORWARD_FAILED port=${PROMETHEUS_PF_PORT} attempts=${PROMETHEUS_PF_ESTABLISH_ATTEMPTS}"
+}
+
 cleanup_background_jobs() {
   local pid
   for pid in "${CLEANUP_LOCUST_PIDS[@]:-}"; do
@@ -95,23 +149,14 @@ reset_prometheus_deployment() {
 }
 
 wait_prometheus_scrape_ready() {
-  pkill -f "kubectl port-forward svc/prometheus.*${NAMESPACE}" 2>/dev/null || true
-  sleep 1
-  local pf_port=$((29090 + RANDOM % 1000))
-  kubectl port-forward "svc/prometheus" "${pf_port}:9090" -n "${NAMESPACE}" >/dev/null 2>&1 &
-  local pf=$!
-  sleep 3
+  ensure_prometheus_port_forward
   local attempt
   for attempt in $(seq 1 36); do
-    if curl -sf "http://127.0.0.1:${pf_port}/api/v1/query?query=up" 2>/dev/null | grep -q '"status":"success"'; then
-      echo "PROMETHEUS_SCRAPE_READY attempt=${attempt} port=${pf_port}"
-      kill "${pf}" 2>/dev/null || true
-      wait "${pf}" 2>/dev/null || true
+    if curl -sf "${PROMETHEUS_PF_URL}/api/v1/query?query=up" 2>/dev/null | grep -q '"status":"success"'; then
+      echo "PROMETHEUS_SCRAPE_READY attempt=${attempt} port=${PROMETHEUS_PF_PORT}"
       return 0
     fi
     sleep 5
   done
-  kill "${pf}" 2>/dev/null || true
-  wait "${pf}" 2>/dev/null || true
   die "prometheus API not ready within 180s after TSDB reset"
 }
