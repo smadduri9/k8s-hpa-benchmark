@@ -39,12 +39,88 @@ Both arms started at equal capacity (`minReplicas=3`). **Aggregate figures are p
 
 **STATUS: PARTIAL** — 2 of 3 repetitions executed; rep-3 never started. rep-2's Prometheus-derived cells are all `MISSING` because the TSDB was wiped before recovery. Locust data is valid. No aggregates published in this pass.
 
+## SLO and error budget (calibrated runs)
+
+**SLO:** **99%** of valid **`GET /cpu?intensity=low`** requests complete with client-observed response time **faster than 500 ms**. The 18-minute benchmark run is a **measurement sample**; the **30-day compliance window** is defined in [`docs/error-budget-policy.md`](docs/error-budget-policy.md).
+
+**Retroactive SLI (existing runs):** exact count-based SLI is **not computable** — metrics CSVs store `histogram_quantile` results only (`latency_p50_ms` / `p95` / `p99`), not raw `app_request_latency_seconds_bucket` counts. Approximate SLI uses the Locust percentile grid on the **`GET,/cpu?intensity=low`** row (`analysis/sli_locust_grid.py`), labelled **approximate**, **failure-inclusive**, **no interpolation**. Brackets use adjacent grid columns only; the grid has no column below **50%**, so thresholds below the p50 cell can only be bounded as **fewer than 50%**.
+
+**Forward SLI (Phase 5):** raw bucket counts in the collected schema — see [`docs/phase5-bucket-schema.md`](docs/phase5-bucket-schema.md).
+
+**Headline threshold 500 ms** — three independent reasons:
+
+1. **500 ms** is an exact Histogram bucket boundary (`app/main.py`: `0.5` s).
+2. It falls between calibrated hybrid client p50 medians already published (**895 ms** fixed, **370 ms** HPA).
+3. It matches the SLA used by ScalerEval (arXiv:2504.08308), a published autoscaler testbed.
+
+**Scope:** `/cpu` only. `GET /` is not instrumented in `app_request_latency_seconds` and does not increment `app_requests_total`; Locust offers roughly **80%** of traffic to `/cpu` (`@task(4)` vs `@task(1)`).
+
+### Threshold curve — hybrid `run-20260905T220046Z-hybrid` rep-1 (illustrative)
+
+| Threshold (ms) | Fixed — faster than (approx.) | Fixed — miss rate (approx.) | HPA — faster than (approx.) | HPA — miss rate (approx.) |
+|---------------:|------------------------------|----------------------------|----------------------------|--------------------------|
+| 100 | fewer than 50% | >= 50% | fewer than 50% | >= 50% |
+| 250 | fewer than 50% | >= 50% | fewer than 50% | >= 50% |
+| **500** | fewer than 50% | >= 50% | fewer than 50% | >= 50% |
+| 1000 | >50% and <=66% | >=34% and <50% | >50% and <=66% | >=34% and <50% |
+| 2500 | >90% and <=95% | >=5% and <10% | >90% and <=95% | >=5% and <10% |
+| 5000 | >99.9% and <=99.99% | >=0.01% and <0.10% | >99% and <=99.9% | >=0.10% and <1% |
+
+Rep-to-rep variance at **500 ms** (all six reps):
+
+| Rep | Fixed — faster than | HPA — faster than |
+|----:|--------------------|--------------------|
+| 1 | fewer than 50% | fewer than 50% |
+| 2 | fewer than 50% | >50% and <=66% |
+| 3 | fewer than 50% | >50% and <=66% |
+| 4 | fewer than 50% | >50% and <=66% |
+| 5 | fewer than 50% | fewer than 50% |
+| 6 | fewer than 50% | >50% and <=66% |
+
+### Threshold curve — constant `run-20260906T050515Z-constant` rep-1 (illustrative)
+
+| Threshold (ms) | Fixed — faster than | HPA — faster than |
+|---------------:|--------------------|--------------------|
+| 100 | 0% (Min Response Time > threshold) | fewer than 50% |
+| 250 | fewer than 50% | fewer than 50% |
+| **500** | fewer than 50% | >66% and <=75% |
+| 1000 | >80% and <=90% | >90% and <=95% |
+| 2500 | >99% and <=99.9% | >99.9% and <=99.99% |
+| 5000 | 100% (100% column <= threshold) | 100% (100% column <= threshold) |
+
+### Error budget at 500 ms (SLO target 99%, allowed miss 1%)
+
+At **500 ms**, every hybrid rep and every constant rep miss the **99%** target under the approximate brackets above. Fixed arms are **fewer than 50%** faster than 500 ms in every rep (miss **>= 50%**). HPA arms range from **fewer than 50%** to **>75% and <=80%** faster than 500 ms depending on rep and shape. Example hybrid rep-1 (either arm): miss **>= 50%** → budget consumed **>= 5000%** of the 30-day allowance; equivalent constant-miss exhaust **<= 0.60 days**. Example hybrid rep-2 HPA: miss **>= 34% and < 50%** → budget **>= 3400% and < 5000%**; exhaust **0.60–0.88 days**.
+
+**Formula (if miss rate were constant):** `exhaust_days = 30 × (1 − SLO_target) / observed_miss_rate`. Brackets propagate; do not interpolate a point estimate.
+
+**Multi-window burn-rate alerting does not apply.** Constants such as **14.4×** are defined for a **99.9% SLO over a 30-day compliance window** (example: `14.4 = 0.02 / (1h / 720h)`). An 18-minute benchmark has **no compliance period**, so no burn-rate tier is meaningful. **No alert rules are committed.**
+
+### Scaling events (`replica_series_*.csv`, median across reps)
+
+A scaling event is `spec_replicas[i] != spec_replicas[i−1]`. **replica-delta** is the sum of `|Δspec|` over the series.
+
+| Shape | Arm | scale-ups | scale-downs | total events | replica-delta |
+|-------|-----|----------:|------------:|-------------:|--------------:|
+| hybrid (n=6) | fixed | 0 | 0 | 0 | 0 |
+| hybrid (n=6) | HPA | 3 | 2 | 6 | 14 |
+| constant (n=3) | fixed | 0 | 0 | 0 | 0 |
+| constant (n=3) | HPA | 5 | 1 | 6 | 9 |
+
+Source: `analysis/scaling_events.py` on `results/runs/`.
+
+### Saturation signals
+
+- **Indirect (collected):** `cpu_utilization_pct` and client/Prometheus p99 latency are present in the metrics and Locust artifacts. No new saturation score is derived in this pass.
+- **Direct (pending Phase 5):** `active_requests` is empty in every existing run; see [`active_requests`](#active_requests-in-flight-saturation-gauge).
+
 ## What is not being claimed
 
 - **HPA `behavior:` vs stock Kubernetes (`k8s/hpa.yaml`).** This manifest sets `scaleDown.stabilizationWindowSeconds: 60` (Kubernetes default **300**) and `scaleUp` policy `periodSeconds: 30` (Kubernetes default **15**). Direction only: this HPA scales up more slowly and sheds pods sooner than stock Kubernetes. No effect on cost or latency from these settings has been measured.
 - **Prometheus `rps` and `error_rate` coverage.** Both are derived from `app_requests_total` in `analysis/collect_metrics.py`. `GET /` never increments that counter (`app/main.py`), so roughly **20%** of offered Locust traffic is invisible to both series.
 - **`active_requests` in existing runs.** The `active_requests` column is empty in every run that exists; Prometheus was reset before the backfill and the cluster TSDB is ephemeral. The limitation bullets under [`active_requests`](#active_requests-in-flight-saturation-gauge) apply to **future** runs only.
 - **Load shapes.** All existing runs used synthetic phased shapes defined in `locust/locustfile.py`. The measurements are real; the traffic pattern was invented.
+- **Latency SLI on existing runs.** Approximate only (Locust grid brackets on `/cpu`); exact count-based SLI requires Phase 5 bucket columns — not stored today.
 
 ## Superseded — run-20260904T230444Z
 
@@ -142,6 +218,7 @@ Guards enforced for this run (evidence in `rep.log` and collection output):
 - **Load generator location:** Locust runs on the operator's laptop in California; load reaches `us-central1` over the public internet. Client RTT and uplink capacity are included in **client-observed** response time (Locust). Prometheus service time measures in-handler compute only after the request is accepted.
 - **Comparison validity:** Both arms are affected identically (same client, same region path, same LoadBalancer topology), so fixed-vs-HPA comparisons are valid. Absolute latency numbers are **not** datacenter-internal measurements.
 - **Tier 2 deferral:** Running Locust in-cluster (same region as the cluster) is deferred to Tier 2 to remove client-path variance from absolute latency.
+- **Saturation.** Indirect signals (`cpu_utilization_pct`, p99 latency) are collected. Direct in-flight saturation (`active_requests`) is pending Phase 5 — the column is empty in every existing run.
 
 ### Baseline calibration (Tier 2 Phase A, A8)
 
@@ -384,9 +461,9 @@ Medians and p-values below match [Calibrated results](#calibrated-results-minrep
 **Trade stated plainly:** HPA bought reliability — failure rate **12.07% → 0.30%** — at a **~133% compute premium per successful request** (~2.33×). That is a defensible trade, not a cost saving.
 
 ### SLO burn (14.4× tier, 1h/5m)
-- **Value:** not computed (Tier 3 module)
+- **Not applicable.** Multi-window burn-rate tiers (e.g. **14.4×** at 1h/5m for a **99.9%** SLO over **30 days**) assume a compliance window. An 18-minute benchmark has none. See [SLO and error budget (calibrated runs)](#slo-and-error-budget-calibrated-runs). No alert rules are committed.
 
-### Run-scoped error budget consumption (%)
+### Run-scoped error budget consumption (%) — Locust failure rate, not latency SLO
 - **Fixed:** 12.07% of requests failed (Locust) — 1230 / 10193
 - **HPA:** 0.30% of requests failed (Locust) — 63 / 20820
 - **Source:** `locust_*_stats.csv` Aggregated rows
