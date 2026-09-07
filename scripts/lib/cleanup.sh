@@ -79,6 +79,16 @@ verify_cluster_target() {
 }
 
 reset_prometheus_deployment() {
+  # Wipes TSDB only when Prometheus storage is ephemeral (kind smoke).
+  # A PVC mount preserves data across rollout restart — do not add pvc.yaml to
+  # k8s/smoke/kustomization.yaml or this reset silently stops working.
+  local current_context
+  current_context="$(kubectl config current-context 2>/dev/null || true)"
+  if [[ "${current_context}" == gke_* ]]; then
+    if [[ "${ALLOW_PROMETHEUS_RESET_ON_GKE:-}" != "1" ]]; then
+      die "PROMETHEUS_RESET_REFUSED_GKE_CONTEXT context=${current_context} set ALLOW_PROMETHEUS_RESET_ON_GKE=1 to override"
+    fi
+  fi
   kubectl rollout restart deployment/prometheus -n "${NAMESPACE}" >/dev/null
   kubectl rollout status deployment/prometheus -n "${NAMESPACE}" --timeout=120s
   echo "PROMETHEUS_TSDB_RESET namespace=${NAMESPACE}"
