@@ -2,9 +2,45 @@
 
 Personal benchmark project that evaluates Kubernetes Horizontal Pod Autoscaler (HPA) behavior on bursty traffic patterns.
 
-## Results — run-20260904T230444Z (GKE, production)
+## Calibrated results (minReplicas=3 both arms)
 
-**Status: PARTIAL** — fixed arm collapsed under burst; metrics gaps are measured, not hidden. Full write-up: [RESULTS.md](RESULTS.md).
+Both arms started at equal capacity (`minReplicas=3`). **Aggregate figures are pending** — per-rep charts are not published here. Full write-up: [RESULTS.md](RESULTS.md#calibrated-results-minreplicas3-both-arms).
+
+### hybrid — `run-20260905T220046Z-hybrid` (n=6)
+
+| Metric | Fixed (median) | HPA (median) | HPA slower | p (two-sided) |
+|--------|---------------:|-------------:|-----------:|--------------:|
+| client_p50_ms | 895 | 370 | 0/6 | 0.031250 |
+| client_p95_ms | 3250 | 1950 | 0/6 | 0.062500 (n=5, one tie) |
+| client_p99_ms | 4200 | 2800 | 1/6 | 0.062500 |
+| failure_rate | 0.000124 | 0.000163 | — | 0.562500 (not significant) |
+| pod_hours | 0.890417 | 2.493750 | — | 0.031250 |
+| cost_per_1k | 0.000147246 | 0.000339106 | — | 0.031250 |
+
+`P_FLOOR n=6 min_attainable_two_sided_p=0.031250` — p=0.031250 is the floor at n=6, not a finer significance claim.
+
+### constant — `run-20260906T050515Z-constant` (n=3)
+
+| Metric | Fixed (median) | HPA (median) | HPA slower | p (two-sided) |
+|--------|---------------:|-------------:|-----------:|--------------:|
+| client_p50_ms | 450 | 270 | 0/3 | 0.250000 |
+| client_p95_ms | 1500 | 1100 | 0/3 | 0.250000 |
+| client_p99_ms | 2100 | 1600 | 0/3 | 0.250000 |
+| failure_rate | 0 | 0.00010008 | — | 0.250000 |
+| pod_hours | 0.891667 | 2.723060 | — | 0.250000 |
+| cost_per_1k | 0.000125359 | 0.000363458 | — | 0.250000 |
+
+`P_FLOOR n=3 min_attainable_two_sided_p=0.250000` — every p-value in this table is the floor at n=3; no row can reach significance by construction.
+
+### flash — `run-20260906T201803Z-flash` (n=2 of 3)
+
+**STATUS: PARTIAL** — 2 of 3 repetitions executed; rep-3 never started. rep-2's Prometheus-derived cells are all `MISSING` because the TSDB was wiped before recovery. Locust data is valid. No aggregates published in this pass.
+
+## Superseded — run-20260904T230444Z
+
+This was the published headline. It is not a fair comparison: HPA ran at `minReplicas=1` while the fixed arm was declared at 3. Superseded by the calibrated minReplicas=3 runs above. Table and figures preserved verbatim.
+
+**Status: PARTIAL** — fixed arm collapsed under burst; metrics gaps are measured, not hidden.
 
 | Arm | Requests | Failures | Failure rate | Client p50 / p95 / p99 (ms) | Replicas | Source |
 |-----|---------:|---------:|-------------:|----------------------------|----------|--------|
@@ -66,7 +102,7 @@ Prior committed artifacts were superseded to `superseded/sample_data-2026-03/` (
 This project compares two deployment strategies for the same FastAPI workload:
 
 - **Fixed baseline**: static 3 replicas
-- **HPA policy**: dynamic 1-10 replicas, CPU target 60%
+- **HPA policy**: dynamic 3–10 replicas, CPU target 60%
 
 The benchmark measures reliability, latency, throughput, scaling behavior, and cost efficiency.
 
