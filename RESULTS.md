@@ -55,6 +55,10 @@ Both arms started at equal capacity (`minReplicas=3`). **Aggregate figures are p
 
 **Scope:** `/cpu` only. `GET /` is not instrumented in `app_request_latency_seconds` and does not increment `app_requests_total`; Locust offers roughly **80%** of traffic to `/cpu` (`@task(4)` vs `@task(1)`).
 
+**Headline finding (99% at 500 ms):** **Neither arm meets the SLO in any calibrated repetition** (hybrid n=6, constant n=3). Fixed arms are **fewer than 50%** faster than 500 ms in every rep — all six hybrid reps and all three constant reps. HPA arms do better on some reps but still miss by a wide margin: in hybrid, the best bracket observed is **>50% and <=66%** (reps 2, 3, 4, 6); in constant, the best is **>66% and <=75%** (rep-1). The error budget is exhausted many times over in every run (for example hybrid rep-1: **>= 5000%** consumed; hybrid rep-2 HPA: **>= 3400% and < 5000%**). This qualifies the [calibrated latency table](#calibrated-results-minreplicas3-both-arms) above: HPA's lower `client_p50_ms` medians do not imply a 500 ms tail-SLO win.
+
+**Why the SLI brackets can look inconsistent with `client_p50_ms`:** the calibrated table uses Locust's **Aggregated** row, which mixes **`GET /`** (trivial, ~20% of traffic) with **`GET /cpu?intensity=low`** (the expensive ~80%). The SLI below is scoped to the **`GET,/cpu?intensity=low`** row only. That is why HPA can show **`client_p50_ms` 370** in the hybrid calibrated table while the SLI reports **fewer than 50% faster than 500 ms** for some reps. Both numbers are correct over different populations; neither contradicts the other.
+
 ### Threshold curve — hybrid `run-20260905T220046Z-hybrid` rep-1 (illustrative)
 
 | Threshold (ms) | Fixed — faster than (approx.) | Fixed — miss rate (approx.) | HPA — faster than (approx.) | HPA — miss rate (approx.) |
@@ -90,7 +94,7 @@ Rep-to-rep variance at **500 ms** (all six reps):
 
 ### Error budget at 500 ms (SLO target 99%, allowed miss 1%)
 
-At **500 ms**, every hybrid rep and every constant rep miss the **99%** target under the approximate brackets above. Fixed arms are **fewer than 50%** faster than 500 ms in every rep (miss **>= 50%**). HPA arms range from **fewer than 50%** to **>75% and <=80%** faster than 500 ms depending on rep and shape. Example hybrid rep-1 (either arm): miss **>= 50%** → budget consumed **>= 5000%** of the 30-day allowance; equivalent constant-miss exhaust **<= 0.60 days**. Example hybrid rep-2 HPA: miss **>= 34% and < 50%** → budget **>= 3400% and < 5000%**; exhaust **0.60–0.88 days**.
+See [headline finding](#slo-and-error-budget-calibrated-runs) above: every rep misses the target; brackets below are the supporting detail. Example hybrid rep-1 (either arm): miss **>= 50%** → budget consumed **>= 5000%** of the 30-day allowance; equivalent constant-miss exhaust **<= 0.60 days**. Example hybrid rep-2 HPA: miss **>= 34% and < 50%** → budget **>= 3400% and < 5000%**; exhaust **0.60–0.88 days**.
 
 **Formula (if miss rate were constant):** `exhaust_days = 30 × (1 − SLO_target) / observed_miss_rate`. Brackets propagate; do not interpolate a point estimate.
 
