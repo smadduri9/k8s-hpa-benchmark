@@ -122,7 +122,7 @@ Source: `analysis/scaling_events.py` on `results/runs/`.
 
 - **HPA `behavior:` vs stock Kubernetes (`k8s/hpa.yaml`).** This manifest sets `scaleDown.stabilizationWindowSeconds: 60` (Kubernetes default **300**) and `scaleUp` policy `periodSeconds: 30` (Kubernetes default **15**). Direction only: this HPA scales up more slowly and sheds pods sooner than stock Kubernetes. No effect on cost or latency from these settings has been measured.
 - **Prometheus `rps` and `error_rate` coverage.** Both are derived from `app_requests_total` in `analysis/collect_metrics.py`. `GET /` never increments that counter (`app/main.py`), so roughly **20%** of offered Locust traffic is invisible to both series.
-- **`active_requests` in existing runs.** The `active_requests` column is empty in every run that exists; Prometheus was reset before the backfill and the cluster TSDB is ephemeral. The limitation bullets under [`active_requests`](#active_requests-in-flight-saturation-gauge) apply to **future** runs only.
+- **`active_requests` in existing runs.** The `active_requests` column is empty in every run that exists. **Two causes:** Prometheus `--storage.tsdb.retention.time=2h` expired hybrid and constant samples before the backfill (~21:52 on 2026-09-06; only data after ~19:52 remained); `reset_prometheus_deployment` destroyed the flash remainder. Retention was never revisited. The limitation bullets under [`active_requests`](#active_requests-in-flight-saturation-gauge) apply to **future** runs only.
 - **Load shapes.** All existing runs used synthetic phased shapes defined in `locust/locustfile.py`. The measurements are real; the traffic pattern was invented.
 - **Latency SLI on existing runs.** Approximate only (Locust grid brackets on `/cpu`); exact count-based SLI requires Phase 5 bucket columns — not stored today.
 
@@ -309,7 +309,7 @@ Two published **serving** rows at the start of the window (`t0` and `t0+step`) a
 
 ### `active_requests` (in-flight saturation gauge)
 
-The `active_requests` column is **empty in every existing run**. Prometheus was reset before the backfill and the cluster TSDB is ephemeral — no historical values were recovered. The bullets below describe how the column is collected and how it should be read in **future** runs, not values from published CSVs.
+The `active_requests` column is **empty in every existing run**. **Two causes:** `--storage.tsdb.retention.time=2h` expired hybrid and constant samples before the backfill (~21:52 on 2026-09-06); `reset_prometheus_deployment` destroyed the flash remainder. Retention was never revisited. The bullets below describe how the column is collected and how it should be read in **future** runs, not values from published CSVs.
 
 Collected as `sum(app_active_requests{experiment="<mode>"})` and written to the `active_requests` CSV column (backfilled on GKE runs from 2026-09-05 onward while the live cluster TSDB was still available).
 

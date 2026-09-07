@@ -74,7 +74,7 @@ Calibrated comparison shows HPA with lower client p50 medians but **neither arm 
 | Publish calibrated results with superseded section preserved | Sriram Madduri | done (Phase 1) |
 | Document approximate `/cpu` SLI and error budget | Sriram Madduri | done (`RESULTS.md`) |
 | Phase 5: store raw histogram bucket counts for exact SLI | Sriram Madduri | planned (`docs/phase5-bucket-schema.md`) |
-| Add a Prometheus PersistentVolumeClaim before Phase 5 | Sriram Madduri | open |
+| Add a Prometheus PersistentVolumeClaim before Phase 5 (GKE only; does not extend 2h retention) | Sriram Madduri | open |
 
 ## Lessons learned
 
@@ -94,7 +94,7 @@ Calibrated comparison shows HPA with lower client p50 medians but **neither arm 
 ### Where we got lucky
 
 - Locust percentile columns (`50%` … `100%`) were on disk the entire time, enabling retroactive approximate SLI brackets without a new benchmark run.
-- Prometheus runs on **emptyDir** with **no PersistentVolumeClaim**, and its TSDB was wiped on **2026-09-06** before the `active_requests` backfill could run — losing the saturation metric for every completed run. Other Prometheus-derived columns survived only because collection runs **immediately after each arm** rather than retroactively. Had the pipeline depended on querying Prometheus later, every metric from every run would have been lost the same way, not just `active_requests`. That is luck, not design.
+- Prometheus `--storage.tsdb.retention.time=2h` (`k8s/prometheus/deployment.yaml`) expired most historical samples before the `active_requests` backfill ran at approximately **21:52** on **2026-09-06** — at 2h retention only data after ~**19:52** that day still existed. Hybrid (`run-20260905T220046Z-hybrid`, 2026-09-05 22:00 to ~01:40) and constant (`run-20260906T050515Z-constant`, 2026-09-06 05:05 to 07:00) had already aged out **hours before** any reset. **`reset_prometheus_deployment`** destroyed the remainder (flash window only). Retention was never revisited. A PVC would not have saved samples already expired by retention. Other Prometheus-derived columns survived only because collection runs **immediately after each arm** rather than retroactively. Had the pipeline depended on querying Prometheus later, every metric from every run would have been lost the same way, not just `active_requests`. That is luck, not design.
 
 ## Timeline
 
