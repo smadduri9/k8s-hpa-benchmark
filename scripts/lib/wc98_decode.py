@@ -134,7 +134,7 @@ def format_record_human(record: WC98Record) -> str:
     )
 
 
-def validate_file(path: Path, show_first: int = 3) -> int:
+def validate_file(path: Path, show_first: int = 3, summary_only: bool = False) -> int:
     data = read_log_bytes(path)
     file_size = len(data)
     expected_count = file_size // RECORD_SIZE
@@ -145,6 +145,9 @@ def validate_file(path: Path, show_first: int = 3) -> int:
         f"RECORD_SIZE={RECORD_SIZE} file_size={file_size} "
         f"expected_count={expected_count} decoded_count={len(records)}"
     )
+    if summary_only:
+        print("WC98_DECODE_SELF_CHECK=PASS")
+        return 0
     print("WC98_DECODE_SELF_CHECK=PASS")
     for index in range(min(show_first, len(records))):
         print(f"RECORD[{index}] {format_record_human(records[index])}")
@@ -160,12 +163,21 @@ def main() -> int:
         default=3,
         help="Print first N decoded records with human-readable timestamps",
     )
+    parser.add_argument(
+        "--summary-only",
+        action="store_true",
+        help="Print RECORD_SIZE summary and PASS only (no sample records)",
+    )
     args = parser.parse_args()
     if not args.path.is_file():
         print(f"ERROR: file not found: {args.path}", file=sys.stderr)
         return 1
     try:
-        return validate_file(args.path, show_first=args.show_first)
+        return validate_file(
+            args.path,
+            show_first=args.show_first,
+            summary_only=args.summary_only,
+        )
     except RuntimeError as exc:
         print(str(exc), file=sys.stderr)
         return 1
