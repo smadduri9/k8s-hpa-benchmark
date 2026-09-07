@@ -133,6 +133,10 @@ echo "RUNNER_VM_BOOTSTRAP_COMPLETE packages=git,kubectl,rsync,tmux,python3.14,gc
 BOOT
 )"
 
+startup_file="$(mktemp)"
+trap 'rm -f "${startup_file}"' EXIT
+printf '%s\n' "${startup_script}" > "${startup_file}"
+
 echo "Creating VM ${RUNNER_VM_NAME} in ${ZONE} (project ${PROJECT_ID})..."
 gcloud compute instances create "${RUNNER_VM_NAME}" \
   --project="${PROJECT_ID}" \
@@ -143,7 +147,7 @@ gcloud compute instances create "${RUNNER_VM_NAME}" \
   --image-family="${IMAGE_FAMILY}" \
   --image-project="${IMAGE_PROJECT}" \
   --scopes=cloud-platform \
-  --metadata=startup-script="${startup_script}"
+  --metadata-from-file=startup-script="${startup_file}"
 
 gcloud compute instances describe "${RUNNER_VM_NAME}" \
   --project="${PROJECT_ID}" \
