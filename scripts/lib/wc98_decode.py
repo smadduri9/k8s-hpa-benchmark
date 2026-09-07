@@ -27,7 +27,7 @@ import sys
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import BinaryIO, Iterable, Iterator
+from typing import BinaryIO, Iterator
 
 RECORD_SIZE = 20
 RECORD_STRUCT = struct.Struct(">IIIIBBBB")
@@ -121,6 +121,70 @@ def validate_records(records: list[WC98Record], file_size: int) -> None:
         if record.timestamp < TS_MIN or record.timestamp > TS_MAX:
             raise RuntimeError(f"WC98_TIMESTAMP_OUT_OF_RANGE ts={record.timestamp}")
         previous_ts = record.timestamp
+
+
+@dataclass(frozen=True)
+class FileValidationStats:
+    path: Path
+    file_size: int
+    decoded_count: int
+
+
+def _open_log_stream(path: Path) -> BinaryIO:
+    if path.suffix == ".gz" or path.name.endswith(".gz"):
+        return gzip.open(path, "rb")
+    return path.open("rb")
+
+
+def iter_validated_records(path: Path) -> Iterator[WC98Record]:
+    """Stream records while applying Step 3 decode asserts (size, monotonic, range)."""
+    previous_ts: int | None = None
+    decoded = 0
+    bytes_read = 0
+    with _open_log_stream(path) as stream:
+        while True:
+            chunk = stream.read(RECORD_SIZE)
+            if not chunk:
+                break
+            bytes_read += len(chunk)
+            if len(chunk) != RECORD_SIZE:
+                raise RuntimeError(
+                    f"WC98_RECORD_SIZE_MISMATCH file_size_partial remainder={len(chunk)} "
+                    f"record_size={RECORD_SIZE} path={path}"
+                )
+            record = decode_record(chunk)
+            if previous_ts is not None and record.timestamp < previous_ts:
+                raise RuntimeError(
+                    f"WC98_TIMESTAMP_NOT_MONOTONIC at_index={decoded} "
+                    f"prev={previous_ts} curr={record.timestamp} path={path}"
+                )
+            if record.timestamp < TS_MIN or record.timestamp > TS_MAX:
+                raise RuntimeError(
+                    f"WC98_TIMESTAMP_OUT_OF_RANGE ts={record.timestamp} path={path}"
+                )
+            previous_ts = record.timestamp
+            decoded += 1
+            yield record
+    if bytes_read % RECORD_SIZE != 0:
+        raise RuntimeError(
+            f"WC98_RECORD_SIZE_MISMATCH file_size={bytes_read} record_size={RECORD_SIZE} "
+            f"remainder={bytes_read % RECORD_SIZE} path={path}"
+        )
+    expected_count = bytes_read // RECORD_SIZE
+    if decoded != expected_count:
+        raise RuntimeError(
+            f"WC98_RECORD_COUNT_MISMATCH decoded={decoded} expected={expected_count} path={path}"
+        )
+
+
+def validate_file_streaming(path: Path) -> FileValidationStats:
+    """Run all Step 3 asserts in one streaming pass; return summary stats."""
+    decoded = 0
+    bytes_read = 0
+    for _record in iter_validated_records(path):
+        decoded += 1
+        bytes_read += RECORD_SIZE
+    return FileValidationStats(path=path, file_size=bytes_read, decoded_count=decoded)
 
 
 def format_record_human(record: WC98Record) -> str:
