@@ -16,7 +16,7 @@ Both arms started at equal capacity (`minReplicas=3`). **Aggregate figures are p
 | client_p50_ms | 895 | 370 | 0/6 | 0.031250 |
 | client_p95_ms | 3250 | 1950 | 0/6 | 0.062500 (n=5, one tie) |
 | client_p99_ms | 4200 | 2800 | 1/6 | 0.062500 |
-| failure_rate | 0.000124 | 0.000163 | — | 0.562500 |
+| failure_rate | 0.000124 | 0.000163 | — | 0.562500 (not significant) |
 | pod_hours | 0.890417 | 2.493750 | — | 0.031250 |
 | cost_per_1k | 0.000147246 | 0.000339106 | — | 0.031250 |
 
@@ -29,7 +29,11 @@ Both arms started at equal capacity (`minReplicas=3`). **Aggregate figures are p
 | client_p50_ms | 450 | 270 | 0/3 | 0.250000 |
 | client_p95_ms | 1500 | 1100 | 0/3 | 0.250000 |
 | client_p99_ms | 2100 | 1600 | 0/3 | 0.250000 |
-| cost_per_1k | 0.000125359 | 0.000363458 | — | — |
+| failure_rate | 0 | 0.00010008 | — | 0.250000 |
+| pod_hours | 0.891667 | 2.723060 | — | 0.250000 |
+| cost_per_1k | 0.000125359 | 0.000363458 | — | 0.250000 |
+
+`P_FLOOR n=3 min_attainable_two_sided_p=0.250000` — every p-value in this table is the floor at n=3; no row can reach significance by construction.
 
 ### flash — `run-20260906T201803Z-flash` (n=2 of 3)
 
