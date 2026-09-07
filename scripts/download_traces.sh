@@ -179,7 +179,7 @@ download_wc98_all() {
   while IFS= read -r name; do
     [[ -n "${name}" ]] || continue
     files+=("${name}")
-  done < <(printf '%s\n' "${listing}" | grep -E '^wc_day[0-9]+_[0-9]+\.gz$' | sort)
+  done < <(printf '%s\n' "${listing}" | awk '{print $NF}' | grep -E '^wc_day[0-9]+_[0-9]+\.gz$' | sort)
 
   file_count="${#files[@]}"
   if [[ "${file_count}" -eq 0 ]]; then
