@@ -67,6 +67,8 @@ Prior run `run-20260904T220808Z` replica time series is unrecoverable (no in-run
 
 ## Data completeness
 
+Coverage numbers in this section belong to superseded `run-20260904T230444Z`, not the calibrated results.
+
 This run is **PARTIAL**, not failed unexplained. Metrics collection completed and was recovered post-classification; the publication gate stopped on the **first** column below threshold.
 
 ### Why PARTIAL
@@ -142,6 +144,8 @@ Guards enforced for this run (evidence in `rep.log` and collection output):
 - **Tier 2 deferral:** Running Locust in-cluster (same region as the cluster) is deferred to Tier 2 to remove client-path variance from absolute latency.
 
 ### Baseline calibration (Tier 2 Phase A, A8)
+
+Calibrated outcomes are published in [Calibrated results](#calibrated-results-minreplicas3-both-arms) (hybrid n=6, constant n=3, flash n=2 PARTIAL).
 
 - **`run-20260905T160157Z` is non-comparable to all future runs.** Its HPA arm ran `minReplicas: 1` against a fixed arm declared at 3, so the HPA arm began at one third the capacity and paid scale-up queueing the fixed arm never incurred. Evidence: `results/runs/run-20260905T160157Z/rep-1/replica_series_hpa.csv` reaches a minimum `spec_replicas` of **1** across its 70 samples. `k8s/hpa.yaml` now sets `minReplicas: 3`, so both arms start at equal capacity and the only remaining difference is HPA's ability to scale **up**. This removes the minimum-size confound; it does not make the earlier run wrong, it makes it a different experiment.
 - **Why this matters (uncalibrated baseline).** RLScale-Bench (arXiv:2605.26418) names this as a gap that makes comparisons unreliable: "When RL studies compare against an uncalibrated baseline, apparent improvements may reflect baseline weakness rather than algorithmic gains." The A7 result — fixed beating HPA on p95, p99 and cost — was measured against exactly such a baseline.
@@ -240,17 +244,21 @@ Collected as `sum(app_active_requests{experiment="<mode>"})` and written to the 
 - **Exit code vs measurement:** Locust exits non-zero when any sample fails unless `--exit-code-on-error 0` is set. Request failures are the measurement under burst load; the harness treats a completed load shape with valid stats as success.
 - **Prometheus `error_rate` vs Locust failure rate:** Prometheus `error_rate` measures **server-observed** non-200 responses (`app_requests_total{status_code!="200"}`). Locust measures **client-observed** outcomes including connection failures and timeouts. When the app is unreachable or overloaded, the client sees failures the server never records. **Locust is authoritative for the published failure rate.**
 
-**Worked example (run-20260904T230444Z):**
+**Worked example (superseded run `run-20260904T230444Z`):**
 - HPA arm: Locust **63 / 20,820 (0.30%)**; Prometheus `error_rate` **non_zero=0** for the run — consistent (connection-level failures).
 - Fixed arm: Locust **1,230 / 10,193 (12.07%)**; Prometheus `error_rate` **~0.0** — same mechanism during baseline collapse.
 
 ## Latency — two metrics, never merged
+
+**Superseded run (`run-20260904T230444Z`).** The percentile tables below are not the calibrated results. See [Calibrated results](#calibrated-results-minreplicas3-both-arms) for hybrid and constant medians.
 
 Published latency is **two separate metrics**. Do not compare or average them.
 
 ### Response time (client-observed, Locust)
 
 **Authority:** Locust `locust_*_stats.csv` Aggregated row. Includes queueing, connection setup, TLS, and failures — the full wall-clock time from the load generator's perspective.
+
+**Superseded run only** — table values are from `run-20260904T230444Z` rep-1.
 
 | Arm | p50 (ms) | p95 (ms) | p99 (ms) | Failure share | Source |
 |-----|---------:|---------:|---------:|--------------:|--------|
@@ -278,6 +286,8 @@ The bound is wide for the collapsing fixed arm and nearly tight for the healthy 
 
 **Authority:** `histogram_quantile` over `app_request_latency_seconds_bucket` in `fixed_metrics.csv` / `hpa_metrics.csv`. Times only `compute_primes()` inside the `/cpu` handler — after the request is accepted and dequeued. Never records a request that timed out or hit a dead pod.
 
+**Superseded run only** — table values are from `run-20260904T230444Z` rep-1.
+
 | Arm | Mean p50 (ms) | Mean p95 (ms) | Mean p99 (ms) | Populated rows | Source |
 |-----|-------------:|--------------:|--------------:|---------------:|--------|
 | **Fixed** | 133 | 239 | 253 | 33/57 assessable serving rows | `fixed_metrics.csv` |
@@ -289,6 +299,8 @@ The bound is wide for the collapsing fixed arm and nearly tight for the healthy 
 - **Histogram bucket resolution.** Buckets `[..., 0.1, 0.25, 0.5, ...]` (`app/main.py:38`) place the published p95 of ~237 ms inside the single 0.1–0.25 s bucket, making it a linear interpolation within one bucket rather than a resolved measurement.
 
 ## Scale-up lag (HPA arm)
+
+**Superseded run (`run-20260904T230444Z`).** The analysis below is specific to that run's HPA arm, not the calibrated results.
 
 During scale-up, `spec_replicas` (HPA desired) leads `ready_replicas` (pods passing readiness). `HPA_SCALE_FLOOR_CHECK` uses peak **`spec_replicas`** to match Kubernetes event rescale lines. The gap between spec and ready is scale-up latency — a real measurement, not missing data.
 
@@ -315,7 +327,29 @@ On graceful shutdown, Kubernetes marks the pod **terminating**, removes it from 
 
 **Tier 2 backlog.** Scale-**in** disruption is a measurable and rarely studied cost of autoscaling; this run produced **one** client-observed instance (63rd failure, 57,511 ms). Tier 2 Phase B should instrument **both** scale-out and scale-in (EndpointSlice transitions, pod deletion timestamps, in-flight request correlation) — not scale-out alone.
 
+## Derived metrics — calibrated runs
+
+Medians and p-values below match [Calibrated results](#calibrated-results-minreplicas3-both-arms). No throughput ratio — request counts for these runs were not published in this pass. No flash derived metrics.
+
+### hybrid — `run-20260905T220046Z-hybrid` (n=6)
+
+| Metric | Fixed (median) | HPA (median) | p (two-sided) |
+|--------|---------------:|-------------:|--------------:|
+| failure_rate | 0.000124 | 0.000163 | 0.562500 (not significant) |
+| pod_hours | 0.890417 | 2.493750 | 0.031250 |
+| cost_per_1k | 0.000147246 | 0.000339106 | 0.031250 |
+
+### constant — `run-20260906T050515Z-constant` (n=3)
+
+| Metric | Fixed (median) | HPA (median) | p (two-sided) |
+|--------|---------------:|-------------:|--------------:|
+| failure_rate | 0 | 0.00010008 | 0.250000 |
+| pod_hours | 0.891667 | 2.723060 | 0.250000 |
+| cost_per_1k | 0.000125359 | 0.000363458 | 0.250000 |
+
 ## Derived metrics — run-20260904T230444Z
+
+**Superseded run.** The derived metrics below are for `run-20260904T230444Z` only; they are not the calibrated results.
 
 ### Failure rate (fixed arm)
 - **Value:** **12.07%** — 1230 failures ÷ 10193 requests
@@ -357,11 +391,13 @@ On graceful shutdown, Kubernetes marks the pod **terminating**, removes it from 
 - **HPA:** 0.30% of requests failed (Locust) — 63 / 20820
 - **Source:** `locust_*_stats.csv` Aggregated rows
 
-## Figures
+## Figures — run-20260904T230444Z (superseded)
+
+The six PNGs below are from rep-1 of `run-20260904T230444Z`. **Aggregate figures for the calibrated runs are pending** — per-rep charts are not published under cross-repetition medians.
 
 Generated with `--allow-partial-coverage` for the Prometheus service-time figure only (see [Data completeness](#figure-generation-partial-coverage-disclosure)). Fixed arm PARTIAL on Prometheus metrics; HPA arm complete. Client-observed figures are Locust-sourced.
 
-- `docs/figures/run-20260904T230444Z/latency_client_run_level.png` — client-observed p50/p95/p99 (headline)
+- `docs/figures/run-20260904T230444Z/latency_client_run_level.png` — client-observed p50/p95/p99 (superseded run)
 - `docs/figures/run-20260904T230444Z/latency_client_window.png` — client-observed, 10-second sliding window
 - `docs/figures/run-20260904T230444Z/latency_comparison.png` — service time (in-handler, Prometheus)
 - `docs/figures/run-20260904T230444Z/throughput_comparison.png`
