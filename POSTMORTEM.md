@@ -74,6 +74,7 @@ Calibrated comparison shows HPA with lower client p50 medians but **neither arm 
 | Publish calibrated results with superseded section preserved | Sriram Madduri | done (Phase 1) |
 | Document approximate `/cpu` SLI and error budget | Sriram Madduri | done (`RESULTS.md`) |
 | Phase 5: store raw histogram bucket counts for exact SLI | Sriram Madduri | planned (`docs/phase5-bucket-schema.md`) |
+| Add a Prometheus PersistentVolumeClaim before Phase 5 | Sriram Madduri | open |
 
 ## Lessons learned
 
@@ -93,6 +94,7 @@ Calibrated comparison shows HPA with lower client p50 medians but **neither arm 
 ### Where we got lucky
 
 - Locust percentile columns (`50%` … `100%`) were on disk the entire time, enabling retroactive approximate SLI brackets without a new benchmark run.
+- Prometheus runs on **emptyDir** with **no PersistentVolumeClaim**, and its TSDB was wiped on **2026-09-06** before the `active_requests` backfill could run — losing the saturation metric for every completed run. Other Prometheus-derived columns survived only because collection runs **immediately after each arm** rather than retroactively. Had the pipeline depended on querying Prometheus later, every metric from every run would have been lost the same way, not just `active_requests`. That is luck, not design.
 
 ## Timeline
 
