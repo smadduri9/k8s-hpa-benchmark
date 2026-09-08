@@ -12,7 +12,7 @@ spec:
     kind: Deployment
     name: hpa-eval-hpa
   minReplicas: 4
-  maxReplicas: 20
+  maxReplicas: 12
   metrics:
     - type: Resource
       resource:

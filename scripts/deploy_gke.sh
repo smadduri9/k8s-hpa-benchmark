@@ -142,6 +142,12 @@ kubectl apply -f "${REPO_ROOT}/k8s/prometheus/deployment-gke.yaml"
 kubectl apply -f "${REPO_ROOT}/k8s/prometheus/service.yaml"
 
 # ---------------------------------------------------------------------------
+# Step 4b: Allocatable gate (HPA maxReplicas must fit schedulable CPU)
+# ---------------------------------------------------------------------------
+echo "[4b/7] Allocatable gate (HPA maxReplicas schedulability)..."
+bash "${SCRIPT_DIR}/check_allocatable_gate.sh"
+
+# ---------------------------------------------------------------------------
 # Step 5: Wait for deployments
 # ---------------------------------------------------------------------------
 echo "[5/7] Waiting for all pods to be ready..."
