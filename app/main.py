@@ -4,12 +4,14 @@ Exposes Prometheus metrics for monitoring and auto-scaling decisions.
 """
 
 import os
+import sys
 import time
 import socket
 import math
+import threading
 from typing import Literal
 
-from fastapi import FastAPI, Query
+from fastapi import FastAPI, Query, Request
 from fastapi.responses import PlainTextResponse
 import psutil
 from prometheus_client import (
@@ -21,6 +23,29 @@ from prometheus_client import (
 )
 
 app = FastAPI(title="HPA Evaluation App", version="1.0.0")
+
+# One stderr line per process for cold-start harvest. Not on /cpu or compute_primes.
+_first_request_logged = False
+_first_request_lock = threading.Lock()
+_FIRST_REQUEST_SKIP_PATHS = frozenset({"/health", "/metrics"})
+
+
+@app.middleware("http")
+async def first_request_served_middleware(request: Request, call_next):
+    global _first_request_logged
+    if _first_request_logged:
+        return await call_next(request)
+    path = request.url.path
+    if path in _FIRST_REQUEST_SKIP_PATHS:
+        return await call_next(request)
+    with _first_request_lock:
+        if not _first_request_logged:
+            ts = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+            pod = os.environ.get("POD_NAME", socket.gethostname())
+            print(f"FIRST_REQUEST_SERVED ts={ts} pod={pod}", file=sys.stderr, flush=True)
+            _first_request_logged = True
+    return await call_next(request)
+
 
 # ---------------------------------------------------------------------------
 # Prometheus metrics

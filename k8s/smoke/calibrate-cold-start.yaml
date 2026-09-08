@@ -1,0 +1,65 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: hpa-eval-calibrate
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cold-start-calibrate
+  namespace: hpa-eval-calibrate
+  labels:
+    app: cold-start-calibrate
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cold-start-calibrate
+  template:
+    metadata:
+      labels:
+        app: cold-start-calibrate
+    spec:
+      initContainers:
+        - name: delay
+          image: busybox:1.36
+          imagePullPolicy: IfNotPresent
+          command: ["sleep", "8"]
+      containers:
+        - name: hpa-eval-app
+          image: hpa-eval-app:smoke
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8000
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            periodSeconds: 1
+            timeoutSeconds: 1
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            periodSeconds: 10
+            timeoutSeconds: 2
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: cold-start-uncached
+  namespace: hpa-eval-calibrate
+  labels:
+    app: cold-start-uncached
+spec:
+  restartPolicy: Never
+  containers:
+    - name: pulled
+      image: nginx:1.27-alpine
+      imagePullPolicy: Always
