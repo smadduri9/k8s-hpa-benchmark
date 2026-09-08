@@ -18,6 +18,8 @@ source "${LIBS_DIR}/locust_run.sh"
 source "${LIBS_DIR}/replica_sampler.sh"
 # shellcheck source=lib/loadbalancer.sh
 source "${LIBS_DIR}/loadbalancer.sh"
+# shellcheck source=lib/phase5_arm.sh
+source "${LIBS_DIR}/phase5_arm.sh"
 
 ENV_FILE=""
 SMOKE=false
@@ -34,6 +36,10 @@ HPA_HOST=""
 SHAPE="hybrid"
 SHAPE_EXPLICIT=false
 HPA_NO_SCALE_POLICY="abort"
+PHASE5=false
+ONLY_ARM=""
+ONLY_REP=""
+WARMUP_RUN_TIME="${WARMUP_RUN_TIME:-5m}"
 
 usage() {
   cat <<'EOF'
@@ -71,6 +77,9 @@ while [[ $# -gt 0 ]]; do
     --cold-start-only) COLD_START_ONLY=true; shift ;;
     --arm) ARM="$2"; shift 2 ;;
     --shape) SHAPE="$2"; SHAPE_EXPLICIT=true; shift 2 ;;
+    --phase5) PHASE5=true; shift ;;
+    --only-arm) ONLY_ARM="$2"; shift 2 ;;
+    --only-rep) ONLY_REP="$2"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     *) die "unknown argument: $1" ;;
   esac
@@ -351,9 +360,179 @@ run_one_repetition() {
   return 1
 }
 
+run_phase5_arm() {
+  local rep="$1"
+  local arm="$2"
+  local rep_dir="${RUN_ROOT}/rep-${rep}"
+  local dir
+  dir="$(arm_dir "${rep_dir}" "${arm}")"
+  mkdir -p "${dir}"
+
+  if arm_is_complete "${dir}" "${arm}"; then
+    echo "PHASE5_ARM_SKIP arm=${arm} rep=${rep} reason=PASS"
+    return 0
+  fi
+  rm -rf "${dir}"
+  mkdir -p "${dir}"
+
+  local deployment selector host mode
+  deployment="$(arm_deployment "${arm}")"
+  selector="$(arm_selector "${arm}")"
+  host="$(arm_host "${arm}")"
+  mode="$(collect_mode "${arm}")"
+
+  apply_hpa_for_arm "${arm}"
+  cold_start_arm "${deployment}" "${selector}" "${NAMESPACE}" "${MANIFEST_PATH}" "${mode}"
+
+  local warmup_users
+  warmup_users="$(shape_min_users "${LOCUST_FILE}")"
+  echo "WARMUP_USERS=${warmup_users} shape=${SHAPE} SHAPE_MEAN_USERS=${SHAPE_MEAN_USERS}"
+
+  local pods_ready
+  pods_ready="$(iso_now)"
+  echo "${pods_ready}" > "${dir}/pods_ready.txt"
+  ensure_metrics_preroll "${pods_ready}"
+
+  locust_start_bounded_users \
+    "${REPO_ROOT}/locust/locustfile_warmup.py" \
+    "${host}" \
+    "${WARMUP_RUN_TIME}" \
+    "${dir}/locust_${arm}_warmup" \
+    "${dir}/locust_${arm}_warmup.log" \
+    "${dir}/arm.log" \
+    "${warmup_users}" \
+    "${warmup_users}"
+  locust_wait_bounded \
+    "${REPO_ROOT}/locust/locustfile_warmup.py" \
+    "${host}" \
+    "${WARMUP_RUN_TIME}" \
+    "${dir}/locust_${arm}_warmup" \
+    "${dir}/locust_${arm}_warmup.log" \
+    "${dir}/arm.log"
+
+  if ! assert_replicas_at_floor "${arm}"; then
+    write_arm_status "${dir}" "FAIL" "WARMUP_TRIGGERED_SCALE"
+    return 1
+  fi
+  local warmup_cpu
+  warmup_cpu="$(warmup_cpu_or_missing "${selector}")"
+  echo "WARMUP_CPU_OBSERVED arm=${arm} value=${warmup_cpu}"
+  "${VENV_PYTHON}" - "${MANIFEST_PATH}" "${arm}" "${warmup_cpu}" <<'PY'
+import json
+import sys
+path, arm, cpu = sys.argv[1:4]
+with open(path, encoding="utf-8") as handle:
+    data = json.load(handle)
+arms = data.setdefault("arms", {})
+entry = arms.setdefault(arm, {})
+entry["warmup_cpu_utilization_pct"] = cpu
+with open(path, "w", encoding="utf-8") as handle:
+    json.dump(data, handle, indent=2)
+    handle.write("\n")
+PY
+
+  local events_jsonl="${dir}/cold_start_events.jsonl"
+  "${VENV_PYTHON}" "${REPO_ROOT}/scripts/lib/cold_start_events.py" \
+    --namespace "${NAMESPACE}" \
+    --selector "${selector}" \
+    --output "${events_jsonl}" \
+    --timeout-sec "$(run_time_to_seconds "${RUN_TIME}")" \
+    --expect-pods 1 \
+    --first-request-timeout-sec 60 \
+    >"${dir}/collector.log" 2>&1 &
+  local collector_pid=$!
+  local waited=0
+  while (( waited < 30 )); do
+    if grep -q "COLD_START_WATCH_READY" "${dir}/collector.log" 2>/dev/null; then
+      break
+    fi
+    if ! kill -0 "${collector_pid}" 2>/dev/null; then
+      echo "ERROR: COLD_START_COLLECTOR_EXITED" >&2
+      return 1
+    fi
+    sleep 1
+    waited=$((waited + 1))
+  done
+
+  local t0
+  t0="$(iso_now)"
+  echo "LOAD_START t0=${t0} arm=${arm} (after warmup)"
+  echo "${t0}" > "${dir}/t0.txt"
+  echo "${t0}" > "${rep_dir}/t0_${arm}.txt"
+  manifest_set_load_start_t0 "${MANIFEST_PATH}" "${arm}" "${t0}"
+
+  local replica_series
+  replica_series="$(replica_series_path "${dir}" "${mode}")"
+  replica_sampler_start "${NAMESPACE}" "${deployment}" "${replica_series}" 15
+  local sampler_pid=$!
+  locust_start_bounded \
+    "${REPO_ROOT}/${LOCUST_FILE}" \
+    "${host}" \
+    "${RUN_TIME}" \
+    "${dir}/locust_${arm}" \
+    "${dir}/locust_${arm}.log" \
+    "${dir}/arm.log"
+  locust_wait_bounded \
+    "${REPO_ROOT}/${LOCUST_FILE}" \
+    "${host}" \
+    "${RUN_TIME}" \
+    "${dir}/locust_${arm}" \
+    "${dir}/locust_${arm}.log" \
+    "${dir}/arm.log"
+  replica_sampler_stop "${sampler_pid}" "${replica_series}"
+  wait "${collector_pid}" || true
+
+  local t1
+  t1="$(iso_add_run_time "${t0}" "${RUN_TIME}")"
+  collect_arm_metrics "${mode}" "${t0}" "${t1}" "${dir}/${arm}_metrics.csv" \
+    "$(deployment_declared_replicas hpa-eval-fixed "${NAMESPACE}")"
+  write_arm_status "${dir}" "PASS" "ok"
+  echo "PHASE5_ARM_PASS arm=${arm} rep=${rep}"
+  return 0
+}
+
 main() {
   if [[ "${COLD_START_ONLY}" != "true" ]]; then
     ensure_loadbalancer_hosts_ready
+  fi
+
+  if [[ "${PHASE5}" == "true" ]]; then
+    local attempted=0 passed=0
+    local rep_start=1
+    local rep_end="${REPETITIONS}"
+    if [[ -n "${ONLY_REP}" ]]; then
+      rep_start="${ONLY_REP}"
+      rep_end="${ONLY_REP}"
+    fi
+    local arms=("${PHASE5_ARMS[@]}")
+    if [[ -n "${ONLY_ARM}" ]]; then
+      arms=("${ONLY_ARM}")
+    fi
+    local rep arm
+    for ((rep=rep_start; rep<=rep_end; rep++)); do
+      mkdir -p "${RUN_ROOT}/rep-${rep}"
+      for arm in "${arms[@]}"; do
+        attempted=$((attempted + 1))
+        if run_phase5_arm "${rep}" "${arm}"; then
+          passed=$((passed + 1))
+        fi
+      done
+    done
+    local final_state="COMPLETE"
+    local final_reason="all arms passed"
+    if [[ "${passed}" -eq 0 ]]; then
+      final_state="FAILED"
+      final_reason="0/${attempted} arms passed"
+    elif [[ "${passed}" -lt "${attempted}" ]]; then
+      final_state="PARTIAL"
+      final_reason="${passed}/${attempted} arms passed"
+    fi
+    write_status_file "${RUN_ROOT}" "${final_state}" "${final_reason}"
+    echo "SUMMARY attempted=${attempted} passed=${passed}"
+    if [[ "${passed}" -eq "${attempted}" && "${attempted}" -gt 0 ]]; then
+      exit 0
+    fi
+    exit 1
   fi
 
   local attempted=0 passed=0
