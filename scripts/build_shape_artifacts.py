@@ -37,6 +37,16 @@ from select_shape_windows import (  # noqa: E402
 RULE_VERSION = "shape_selection_rule_v2"
 DEFAULT_SHAPE_MEAN_USERS = 45
 PERIODIC_DILATION = PERIODIC_SOURCE_SEC // RUN_TIME_SEC
+
+HURST_NOTE = (
+    "hurst_native is reported for the source 1-second series. No post-plateau "
+    "Hurst value is published. The 36-plateau representation has too few points "
+    "for an R/S estimate (minimum 64), and a hold-resampled version measures "
+    "the resampling rather than the traffic. The plateau representation destroys "
+    "all sub-30s structure by construction, so the shapes we run are not "
+    "self-similar at fine timescales regardless of the source. This is a "
+    "property of the representation, not of the traces."
+)
 WC98_SERIES_DIR = DERIVED / "wc98" / "series"
 RR_SERIES = DERIVED / "retailrocket" / "events_1s.csv"
 
@@ -171,8 +181,11 @@ def unit_mean_plateaus(plateaus: np.ndarray) -> np.ndarray:
     return plateaus / mean
 
 
-def expand_plateaus_to_1s(values: np.ndarray, plateau_sec: int = PLATEAU_SEC) -> np.ndarray:
-    return np.repeat(values, plateau_sec)
+def compute_hurst_native(native_window: np.ndarray) -> dict[str, str | float]:
+    return {
+        "hurst_native": hurst_or_missing(native_window),
+        "hurst_note": HURST_NOTE,
+    }
 
 
 def scaled_user_plateaus(unit_plateaus: np.ndarray, shape_mean_users: int) -> np.ndarray:
@@ -210,25 +223,6 @@ def fastest_feature_duration_sec(
         feature_sec = float(PLATEAU_SEC)
 
     return round(feature_sec + spawn_sec, 3)
-
-
-def compute_hurst_triple(
-    native_window: np.ndarray,
-    raw_plateaus: np.ndarray,
-    unit_plateaus: np.ndarray,
-    shape_mean_users: int,
-) -> dict[str, str | float]:
-    native_h = hurst_or_missing(native_window)
-    plateau_h = hurst_or_missing(raw_plateaus)
-    scaled_users = scaled_user_plateaus(unit_plateaus, shape_mean_users)
-    scaled_1s = expand_plateaus_to_1s(scaled_users)
-    scaled_h = hurst_or_missing(scaled_1s)
-    return {
-        "hurst_native": native_h,
-        "hurst_plateau": plateau_h,
-        "hurst_scaled": scaled_h,
-        "hurst_scaled_method": "36 plateau user counts hold-resampled to 1s (30s per plateau)",
-    }
 
 
 def format_plateau_list(values: np.ndarray) -> str:
@@ -360,7 +354,7 @@ def main() -> int:
         winner = read_winner(CANDIDATES_DIR / spec["candidate_csv"])
         native_window, raw_plateaus = extract_window_counts(spec, winner, rr_dense, rr_min_ts)
         unit_plateaus = unit_mean_plateaus(raw_plateaus)
-        hurst = compute_hurst_triple(native_window, raw_plateaus, unit_plateaus, args.shape_mean_users)
+        hurst = compute_hurst_native(native_window)
         fastest = fastest_feature_duration_sec(
             unit_plateaus, spec, native_window, args.shape_mean_users
         )
@@ -403,8 +397,6 @@ def main() -> int:
             f"server_or_series_id={winner.server_or_series_id} "
             f"local_date={winner.local_date} offset={winner.window_offset_sec} "
             f"hurst_native={hurst['hurst_native']} "
-            f"hurst_plateau={hurst['hurst_plateau']} "
-            f"hurst_scaled={hurst['hurst_scaled']} "
             f"fastest_feature_duration_sec={fastest} "
             f"provenance={prov_path} locust={locust_path}"
         )

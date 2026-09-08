@@ -58,7 +58,5 @@
   "hpa_no_scale_policy": "warn",
   "fastest_feature_duration_sec": 30.3,
   "hurst_native": 0.570425,
-  "hurst_plateau": "MISSING reason=series_too_short",
-  "hurst_scaled": 0.863155,
-  "hurst_scaled_method": "36 plateau user counts hold-resampled to 1s (30s per plateau)"
+  "hurst_note": "hurst_native is reported for the source 1-second series. No post-plateau Hurst value is published. The 36-plateau representation has too few points for an R/S estimate (minimum 64), and a hold-resampled version measures the resampling rather than the traffic. The plateau representation destroys all sub-30s structure by construction, so the shapes we run are not self-similar at fine timescales regardless of the source. This is a property of the representation, not of the traces."
 }

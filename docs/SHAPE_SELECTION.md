@@ -155,15 +155,21 @@ If any archetype has **fewer than 5** eligible rankable candidates, **stop and r
 
 ## Hurst reporting (selection phase metadata)
 
-Three values per winning window (numpy R/S only; `len < 64` → `MISSING reason=series_too_short`):
+Only **`hurst_native`** is published — the R/S exponent of the source 1-second request-count series for the winning window (numpy R/S; series length must be ≥ 64).
 
-| Field | Definition |
-|-------|------------|
-| `hurst_native` | 1 s count series, unmodified |
-| `hurst_plateau` | After 30 s aggregation, **before** `SHAPE_MEAN_USERS` |
-| `hurst_scaled` | After `SHAPE_MEAN_USERS` and integer rounding |
+`hurst_native` is reported for the source 1-second series. No post-plateau Hurst value is published. The 36-plateau representation has too few points for an R/S estimate (minimum 64), and a hold-resampled version measures the resampling rather than the traffic. The plateau representation destroys all sub-30s structure by construction, so the shapes we run are not self-similar at fine timescales regardless of the source. This is a property of the representation, not of the traces.
 
-Native-to-plateau is the **dominant** burstiness loss (30 s plateaus destroy sub-30 s structure). Do **not** present a single before/after pair implying amplitude thinning caused Hurst change. `hurst_scaled` vs `hurst_plateau` differences are from integer rounding, not thinning.
+**v2 winning-window values (sanity check):**
+
+| Shape | `hurst_native` | Note |
+|-------|----------------|------|
+| `wc98_flash` | 0.885 | |
+| `wc98_ramp` | 0.955 | |
+| `wc98_constant` | 0.570 | Lower than flash/ramp — consistent with flatter, less bursty source (expected direction) |
+| `wc98_periodic` | 0.884 | Native series is 86400 s (full local day) |
+| `rr_periodic` | 0.780 | |
+
+A previously computed `hurst_scaled` (hold-resampling 36 plateau user counts to 1 s) was **withdrawn**: consecutive identical samples inflate R/S persistence (e.g. `wc98_constant` native 0.570 → scaled 0.863). That measured the hold, not the traffic. Do not publish or replace it with another estimator.
 
 ## Runtime amplitude (not a trace property)
 
