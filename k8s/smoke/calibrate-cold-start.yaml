@@ -20,6 +20,10 @@ spec:
       labels:
         app: cold-start-calibrate
     spec:
+      tolerations:
+        - key: node-role.kubernetes.io/control-plane
+          operator: Exists
+          effect: NoSchedule
       initContainers:
         - name: delay
           image: busybox:1.36
@@ -27,10 +31,17 @@ spec:
           command: ["sleep", "8"]
       containers:
         - name: hpa-eval-app
-          image: hpa-eval-app:smoke
+          image: cal-registry:5000/hpa-eval-app:calibrate
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8000
+          resources:
+            requests:
+              cpu: "200m"
+              memory: "64Mi"
+            limits:
+              cpu: "500m"
+              memory: "128Mi"
           env:
             - name: POD_NAME
               valueFrom:
@@ -51,15 +62,48 @@ spec:
             timeoutSeconds: 2
 ---
 apiVersion: v1
-kind: Pod
+kind: Service
 metadata:
-  name: cold-start-uncached
+  name: cold-start-calibrate
   namespace: hpa-eval-calibrate
-  labels:
-    app: cold-start-uncached
 spec:
-  restartPolicy: Never
-  containers:
-    - name: pulled
-      image: nginx:1.27-alpine
-      imagePullPolicy: Always
+  selector:
+    app: cold-start-calibrate
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8000
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: cold-start-calibrate
+  namespace: hpa-eval-calibrate
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: cold-start-calibrate
+  minReplicas: 1
+  maxReplicas: 3
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 10
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 0
+      policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 15
+    scaleUp:
+      stabilizationWindowSeconds: 0
+      policies:
+        - type: Pods
+          value: 1
+          periodSeconds: 15
+      selectPolicy: Max

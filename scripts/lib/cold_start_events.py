@@ -22,6 +22,14 @@ from typing import Any
 MISSING = "MISSING"
 LT_1S = "<1s"
 
+HPA_DECISION_COVERAGE_THRESHOLD = 0.90
+HPA_DECISION_COVERAGE_RATIONALE = (
+    "rows missing SuccessfulRescale are not a random sample. Kubernetes aggregates "
+    "Events under load, so the missing rows are disproportionately from the busiest "
+    "scale-out bursts — exactly the events with the longest expected decision lag. "
+    "Publishing a distribution over the surviving subset would understate the tail."
+)
+
 STAGE_FIELDS = (
     "hpa_decision",
     "pod_created",
@@ -67,6 +75,58 @@ def format_rfc3339(value: datetime | None) -> str:
     if value is None:
         return MISSING
     return value.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def row_has_hpa_decision(row: dict[str, Any]) -> bool:
+    decision = row.get("hpa_decision")
+    if decision in (None, "", MISSING):
+        return False
+    return row.get("hpa_decision_source") == "SuccessfulRescale"
+
+
+def hpa_decision_coverage_report(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    rows_total = len(rows)
+    rows_with = sum(1 for row in rows if row_has_hpa_decision(row))
+    coverage = (rows_with / rows_total) if rows_total else 0.0
+    publish_decision = coverage >= HPA_DECISION_COVERAGE_THRESHOLD
+    return {
+        "rows_total": rows_total,
+        "rows_with_hpa_decision": rows_with,
+        "coverage": coverage,
+        "threshold": HPA_DECISION_COVERAGE_THRESHOLD,
+        "publish_decision_to_serving": publish_decision,
+        "publish_pod_creation_to_serving": True,
+        "withheld": "decision-to-serving" if not publish_decision else None,
+        "rationale": HPA_DECISION_COVERAGE_RATIONALE if not publish_decision else None,
+    }
+
+
+def format_hpa_decision_coverage_line(report: dict[str, Any]) -> str:
+    coverage = report["coverage"]
+    coverage_text = f"{coverage:.2f}" if report["rows_total"] else "MISSING"
+    publish = (
+        "decision-to-serving"
+        if report["publish_decision_to_serving"]
+        else "pod-creation-to-serving"
+    )
+    parts = [
+        "HPA_DECISION_COVERAGE",
+        f"rows_total={report['rows_total']}",
+        f"rows_with_hpa_decision={report['rows_with_hpa_decision']}",
+        f"coverage={coverage_text}",
+        f"threshold={report['threshold']:.2f}",
+        f"publish={publish}",
+    ]
+    if report["withheld"]:
+        parts.append(f"withheld={report['withheld']}")
+    return " ".join(parts)
+
+
+def emit_hpa_decision_coverage(rows: list[dict[str, Any]]) -> None:
+    report = hpa_decision_coverage_report(rows)
+    print(format_hpa_decision_coverage_line(report), flush=True)
+    if report["withheld"]:
+        print(f"HPA_DECISION_COVERAGE_RATIONALE {report['rationale']}", flush=True)
 
 
 def duration_label(start: datetime | None, end: datetime | None) -> str:
@@ -183,6 +243,7 @@ class ColdStartCollector:
         self._baseline_pods: set[str] = set()
         self._events: list[dict[str, Any]] = []
         self._hpa_decision: str = MISSING
+        self._hpa_decision_source: str = MISSING
         self._procs: list[subprocess.Popen[str]] = []
         self._log_threads: dict[str, threading.Thread] = {}
         self._first_request: dict[str, str] = {}
@@ -276,29 +337,23 @@ class ColdStartCollector:
             time.sleep(1)
 
     def _ingest_hpa(self, hpa: dict[str, Any]) -> None:
-        last_scale = hpa.get("status", {}).get("lastScaleTime")
-        ts = parse_rfc3339(last_scale)
-        if ts is None:
-            return
-        with self._lock:
-            if self._hpa_decision == MISSING:
-                self._hpa_decision = format_rfc3339(ts)
-            else:
-                prev = parse_rfc3339(self._hpa_decision)
-                if prev is None or ts > prev:
-                    self._hpa_decision = format_rfc3339(ts)
+        # lastScaleTime is not the SuccessfulRescale event. Do not use it for hpa_decision.
+        _ = hpa
 
     def _ingest_event(self, event: dict[str, Any]) -> None:
         reason = event.get("reason") or ""
-        if reason == "SuccessfulRescale":
-            ts = parse_rfc3339(
-                event.get("eventTime")
-                or event.get("lastTimestamp")
-                or event.get("firstTimestamp")
-            )
-            if ts is not None:
-                with self._lock:
-                    self._hpa_decision = format_rfc3339(ts)
+        if reason != "SuccessfulRescale":
+            return
+        ts = parse_rfc3339(
+            event.get("eventTime")
+            or event.get("lastTimestamp")
+            or event.get("firstTimestamp")
+        )
+        if ts is None:
+            return
+        with self._lock:
+            self._hpa_decision = format_rfc3339(ts)
+            self._hpa_decision_source = "SuccessfulRescale"
 
     def _event_for_pod(self, pod_name: str, reason: str) -> dict[str, Any] | None:
         matches = []
@@ -366,6 +421,7 @@ class ColdStartCollector:
             "first_request_served": self._first_request.get(pod_name, MISSING),
             "image_cached": image_cached,
             "init_sleep_observed_sec": MISSING if init_sec is None else str(init_sec),
+            "hpa_decision_source": self._hpa_decision_source,
         }
         return row
 
@@ -483,6 +539,8 @@ def main() -> int:
     print("COLD_START_WATCH_READY", flush=True)
     rows = collector.collect()
     print(f"COLD_START_EVENTS_WRITTEN path={args.output} rows={len(rows)}")
+    if rows:
+        emit_hpa_decision_coverage(rows)
     return 0 if rows else 1
 
 

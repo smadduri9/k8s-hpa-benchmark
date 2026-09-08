@@ -1,0 +1,35 @@
+{
+  "gate": "A",
+  "passed": true,
+  "environment": "kind",
+  "cluster": "hpa-eval-smoke",
+  "expected_init_sleep_sec": 8,
+  "init_sleep_floor_sec": 1,
+  "hpa": {
+    "min_replicas": 1,
+    "max_replicas": 3,
+    "cpu_target_utilization_pct": 10,
+    "scale_trigger": "SuccessfulRescale"
+  },
+  "cached": {
+    "artifact": "cached.jsonl",
+    "image_cached": "true",
+    "hpa_decision_source": "SuccessfulRescale",
+    "hpa_sync_lag": "<1s",
+    "init_sleep_observed_sec": "8",
+    "first_request_served": "populated"
+  },
+  "uncached": {
+    "artifact": "uncached.jsonl",
+    "image": "cal-registry:5000/hpa-eval-app:calibrate",
+    "image_cached": "false",
+    "image_pull_duration_ms": "15",
+    "hpa_decision_source": "SuccessfulRescale",
+    "hpa_sync_lag": "<1s",
+    "init_sleep_observed_sec": "8",
+    "first_request_served": "populated"
+  },
+  "image_pull_duration_ms_note": "Uncached image_pull_duration_ms=15 came from kind's local registry (cal-registry:5000). The parser is proven; the realistic pull-duration range is untested. GKE pulls from Artifact Registry will take seconds. Do not cite 15ms as evidence about the metric's behaviour under real conditions.",
+  "hpa_decision_coverage_threshold": 0.9,
+  "successful_rescale_on_kind": "captured in both calibration rows; Events remain lossy on GKE harvest — see docs/COLD_START.md HPA_DECISION_COVERAGE"
+}

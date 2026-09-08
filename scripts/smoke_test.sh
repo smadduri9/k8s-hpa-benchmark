@@ -1765,8 +1765,8 @@ check_hpa_stock() {
 }
 
 check_coldstart_collector() {
-  local jsonl="${REPO_ROOT}/results/cold-start-calibration/cached.jsonl"
-  local uncached="${REPO_ROOT}/results/cold-start-calibration/uncached.jsonl"
+  local jsonl="${REPO_ROOT}/docs/cold-start-calibration/cached.jsonl"
+  local uncached="${REPO_ROOT}/docs/cold-start-calibration/uncached.jsonl"
   if [[ ! -s "${jsonl}" || ! -s "${uncached}" ]]; then
     bash "${SCRIPT_DIR}/calibrate_cold_start_collector.sh"
   fi
@@ -1778,10 +1778,20 @@ uncached = json.loads(open(sys.argv[2], encoding="utf-8").readline())
 obs = int(cached["init_sleep_observed_sec"])
 if abs(obs - 8) > 1:
     raise SystemExit(f"CALIBRATION_STALE observed_sec={obs}")
+if cached.get("hpa_decision") in (None, "MISSING", ""):
+    raise SystemExit("cached hpa_decision=MISSING")
+if cached.get("hpa_decision_source") != "SuccessfulRescale":
+    raise SystemExit(f"cached source={cached.get('hpa_decision_source')}")
 if cached.get("image_cached") != "true":
     raise SystemExit(f"cached image_cached={cached.get('image_cached')}")
+if cached.get("first_request_served") in (None, "MISSING", ""):
+    raise SystemExit("cached first_request_served=MISSING")
 if uncached.get("image_cached") != "false":
     raise SystemExit(f"uncached image_cached={uncached.get('image_cached')}")
+if uncached.get("first_request_served") in (None, "MISSING", ""):
+    raise SystemExit("uncached first_request_served=MISSING")
+if uncached.get("hpa_decision") in (None, "MISSING", ""):
+    raise SystemExit("uncached hpa_decision=MISSING")
 print("COLDSTART_COLLECTOR_SMOKE_OK")
 PY
 }
