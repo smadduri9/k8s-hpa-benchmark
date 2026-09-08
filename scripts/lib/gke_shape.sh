@@ -6,13 +6,16 @@
 GKE_NUM_NODES="${GKE_NUM_NODES:-3}"
 
 # Balanced PD boot disks (GKE 1.24+ default) count against SSD_TOTAL_GB, not DISKS_TOTAL_GB.
-# hpa-benchmark-2026 us-central1 SSD_TOTAL_GB limit must cover 3×50 cluster plus runner disk.
-# 3×50=150 cluster-only; project CPUS quota 32 caps node count (quota increase declined).
+# 3×50=150 cluster SSD (regional). Global CPUS_ALL_REGIONS limit 12 caps shape at 3×e2-standard-4.
 NODE_DISK_SIZE_GB="${NODE_DISK_SIZE_GB:-50}"
 
-GKE_MACHINE_TYPE="${GKE_MACHINE_TYPE:-e2-standard-8}"
-# e2-standard-8 vCPU count (used for CPUS quota: NUM_NODES * GKE_CPUS_PER_NODE).
-GKE_CPUS_PER_NODE=8
+GKE_MACHINE_TYPE="${GKE_MACHINE_TYPE:-e2-standard-4}"
+# e2-standard-4 vCPU count (used for CPUS quota: NUM_NODES * GKE_CPUS_PER_NODE).
+GKE_CPUS_PER_NODE=4
+
+# Phase 3 runner VM (provision_runner_vm.sh). Must be STOPPED before cluster create.
+RUNNER_VM_NAME="${RUNNER_VM_NAME:-hpa-bench-runner}"
+RUNNER_CPUS_PER_NODE=4
 
 # Deployment image placeholders substituted by deploy_gke.sh / deploy_local.sh.
 IMAGE_PLACEHOLDER_REGISTRY="PLACEHOLDER_REGISTRY"

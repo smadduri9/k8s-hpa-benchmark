@@ -24,9 +24,10 @@ Cluster shape from `scripts/deploy_gke.sh` (no cluster autoscaler — fixed node
 | Item | Value |
 |------|--------|
 | Topology | **Zonal** (`ZONE=us-central1-a`), not regional |
-| Machine type | `e2-standard-8` (8 vCPU, 32 GB RAM per node) — Phase 5 default in `scripts/lib/gke_shape.sh` |
-| Node count | **5** fixed (`GKE_NUM_NODES=5`; no `--enable-autoscaling`) |
-| Boot disk | **50 GB** balanced PD per node (`NODE_DISK_SIZE_GB=50`; 5×50 = **250 GB** cluster SSD). Preflight checks cluster-only 250 GB / 40 CPUS. The runner VM already holds 50 GB and 4 vCPU; operator quota (Phase 5 Step 9) must raise regional limits before create. |
+| Machine type | `e2-standard-4` (4 vCPU, 16 GB RAM per node) — Phase 5 default in `scripts/lib/gke_shape.sh` |
+| Node count | **3** fixed (`GKE_NUM_NODES=3`; no `--enable-autoscaling`) |
+| Boot disk | **50 GB** balanced PD per node (`NODE_DISK_SIZE_GB=50`; 3×50 = **150 GB** cluster SSD) |
+| Global CPU quota | **`CPUS_ALL_REGIONS=12`** (project-wide). Cluster needs **12 vCPU** (3×4). No headroom — see quota section below. |
 | Control-plane fee | **Waived** for the first zonal cluster per GCP project |
 
 ### App resources (`k8s/deployment-hpa.yaml`)
@@ -72,7 +73,24 @@ Cluster autoscaler was removed so node provisioning latency is not folded into H
 | 2× `LoadBalancer` Services (see below, ~$0.025/hr each) | ~$0.15 |
 | **Total ballpark** | **~$0.75–$1.00** |
 
-Default GKE boot disks are 100 GB balanced PD (300 GB total for 3 nodes), which exceeds this project's **250 GB `SSD_TOTAL_GB`** regional quota. `deploy_gke.sh` sets `--disk-size=50` explicitly; `preflight.sh --require-gke` queries live quotas and fails with `QUOTA_INSUFFICIENT_SSD` before cluster create if headroom is insufficient.
+Default GKE boot disks are 100 GB balanced PD (300 GB total for 3 nodes), which exceeds this project's regional **`SSD_TOTAL_GB`** quota. `deploy_gke.sh` sets `--disk-size=50` explicitly.
+
+### Quota preflight (`bash scripts/preflight.sh --env-file .env --require-gke`)
+
+Preflight queries live quotas before cluster create. Expected Phase 5 rows:
+
+| Metric | Scope | Required | Typical limit |
+|--------|-------|----------|---------------|
+| `CPUS` | Regional (`us-central1`) | 12 (3×4) | 32 |
+| `SSD_TOTAL_GB` | Regional | 150 (3×50) | 250 |
+| `INSTANCES` | Regional | 3 | 8 |
+| **`CPUS_ALL_REGIONS`** | **Global (project)** | **12** | **12** |
+
+**`CPUS_ALL_REGIONS` is the binding constraint.** Google declined a quota increase on usage-history grounds (billed spend $0 despite credits). Preflight fails with `QUOTA_INSUFFICIENT_CPUS_ALL_REGIONS` if cluster CPUs plus any **running** VM exceed 12.
+
+When required equals the limit (`GKE_QUOTA_CPUS_ALL_REGIONS_NO_HEADROOM`), preflight still **PASS**es but emits a **WARN**: any transient usage or starting another instance will break cluster create.
+
+Regional checks fail with `QUOTA_INSUFFICIENT_SSD`, `QUOTA_INSUFFICIENT_CPUS`, or `QUOTA_INSUFFICIENT_INSTANCES` when headroom is insufficient.
 
 Autoscale above 3 nodes is disabled (fixed pool). Leaving load balancers/disks after teardown increases cost. Regional topology would have been ~3× node cost plus a non-waived management fee — the deploy script uses zonal explicitly to avoid that.
 
@@ -92,7 +110,15 @@ Prometheus remains `ClusterIP`; collect metrics via port-forward (as smoke tests
 
 ## Runner VM (same zone as GKE)
 
-Provision with `bash scripts/provision_runner_vm.sh --env-file .env` (operator-only; creates billable GCP resources). VM shape: `e2-standard-4`, 50 GB boot disk, zone from `.env` `ZONE` (must match the GKE cluster zone). Image builds and `deploy_gke.sh` stay on the **Mac**; the runner has no Docker (`preflight.sh --skip-docker`).
+Provision with `bash scripts/provision_runner_vm.sh --env-file .env` (operator-only; creates billable GCP resources). VM name: **`hpa-bench-runner`**. Shape: `e2-standard-4` (4 vCPU), 50 GB boot disk, zone from `.env` `ZONE` (must match the GKE cluster zone). Image builds and `deploy_gke.sh` stay on the **Mac**; the runner has no Docker (`preflight.sh --skip-docker`).
+
+**Runner VM must be STOPPED before cluster create.** Global `CPUS_ALL_REGIONS=12` cannot fit the cluster (12 vCPU) and the runner (4 vCPU) concurrently. Preflight fails with `RUNNER_VM_MUST_BE_STOPPED` if `hpa-bench-runner` is RUNNING. Stop it:
+
+```bash
+gcloud compute instances stop hpa-bench-runner --zone="${ZONE}" --project="${PROJECT_ID}"
+```
+
+Phase 5 load runs from the **Mac**, not the runner VM. Do not start the runner during the measurement matrix.
 
 After the VM exists, bind `roles/container.developer` on the default compute service account (documented in the provision script; not applied automatically).
 

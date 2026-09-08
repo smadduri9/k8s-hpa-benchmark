@@ -35,7 +35,7 @@ preflight_check_gke_quotas() {
 
   set +e
   local quota_rc=0
-  "${audit_python}" "${quota_py}" \
+  "${audit_python}" "${quota_py}" regional \
     "${region_json}" \
     "${GKE_NUM_NODES}" \
     "${NODE_DISK_SIZE_GB}" \
@@ -45,6 +45,51 @@ preflight_check_gke_quotas() {
   rm -f "${region_json}"
 
   if [[ "${quota_rc}" -ne 0 ]]; then
+    PREFLIGHT_FAILED=true
+  fi
+
+  preflight_check_global_cpus "${audit_python}" "${quota_py}"
+}
+
+preflight_check_global_cpus() {
+  local audit_python="$1"
+  local quota_py="$2"
+  local project_json=""
+  local instances_json=""
+  local cluster_cpus=""
+  project_json="$(mktemp "${TMPDIR:-/tmp}/gke-project-quota.XXXXXX")"
+  instances_json="$(mktemp "${TMPDIR:-/tmp}/gke-running-vms.XXXXXX")"
+
+  if ! gcloud compute project-info describe \
+      --project="${PROJECT_ID}" \
+      --format=json >"${project_json}" 2>/dev/null; then
+    rm -f "${project_json}" "${instances_json}"
+    preflight_fail "failed to query project quotas for project=${PROJECT_ID}"
+    return
+  fi
+
+  if ! gcloud compute instances list --project="${PROJECT_ID}" \
+      --format=json >"${instances_json}" 2>/dev/null; then
+    rm -f "${project_json}" "${instances_json}"
+    preflight_fail "failed to list compute instances for project=${PROJECT_ID}"
+    return
+  fi
+
+  cluster_cpus=$((GKE_NUM_NODES * GKE_CPUS_PER_NODE))
+  printf '%s\n' "GKE_CLUSTER_CPUS=${cluster_cpus}"
+
+  set +e
+  local global_rc=0
+  "${audit_python}" "${quota_py}" global \
+    "${project_json}" \
+    "${instances_json}" \
+    "${cluster_cpus}" \
+    "${RUNNER_VM_NAME}"
+  global_rc=$?
+  set -e
+  rm -f "${project_json}" "${instances_json}"
+
+  if [[ "${global_rc}" -ne 0 ]]; then
     PREFLIGHT_FAILED=true
   fi
 }

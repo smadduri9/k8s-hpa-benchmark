@@ -228,14 +228,17 @@ Guards enforced for this run (evidence in `rep.log` and collection output):
 
 ### Cluster sizing constraint
 
-- The cluster is 3 x e2-standard-8 (24 vCPU), not the 5 nodes originally planned.
+- The cluster is **3 × e2-standard-4** (12 vCPU global), not the 5 × e2-standard-8 nodes originally planned.
 - The 5-node figure was taken from SLO-Scaler (arXiv:2608.18390), which evaluated DeathStarBench, a twelve-microservice application. This project runs a single FastAPI service, so the node count was borrowed rather than derived.
-- The binding constraint is a project CPUS quota of 32 in us-central1. Google declined an increase on service-usage-history grounds.
-- 3 nodes still satisfy the experiment: 20 replicas at 500m request is 10 cores scheduled, and at 1000m limit is 20 cores against roughly 21 usable after GKE reservations and system pods.
-- The consequence is throughput, not design. At roughly 0.1 core-seconds per request, sustained load caps near 210 RPS at full saturation, so the realistic target is 130-150 RPS rather than 200-300. That remains inside the 120-280 RPS range used by SLO-Scaler.
-- Do not describe 3 nodes as the ideal configuration. State the constraint and its effect.
-- **Estimated Phase 5 spend (not invoiced):** ~25 h cluster at 3× `e2-standard-8` (~$0.80/hr on-demand list) plus runner `e2-standard-4` and two LoadBalancers → ballpark **~$25–27** (down from ~$35–40 at 5 nodes); see Phase 5 plan cost section.
-- **P1 capacity probe stop rule:** unchanged by node count. The probe stops at the first step where median pod CPU is ≥ 80% of the 1000m limit or RPS per user falls versus the previous step (`CAPACITY_PROBE_TIMEOUT` if neither occurs within 12 minutes). That rule is pod-local on the fixed arm (4 replicas); it does not assume a target user count from the 5-node design. Saturation may arrive at a lower Locust user count than a larger cluster would have needed to reach the same per-pod CPU, and the stop rule still fires on that step.
+- The binding constraint is a project **CPUS_ALL_REGIONS** quota of **12**. Google declined an increase on usage-history grounds despite a paid billing account ($109 cost fully offset by $109 in credits; billed spend $0.00). The eligibility check reads billed spend, not credit consumption, so the gate cannot be cleared by asking again.
+- **~10.5 usable cores** after GKE reservations and system pods. **20 replicas × 500m request = 10 cores** scheduled — fits, with little headroom.
+- Nodes are **e2-standard-4**, not e2-standard-8, because of the global quota above. Regional CPUS (us-central1) is not the binding limit.
+- The Phase 3 runner VM (`hpa-bench-runner`, e2-standard-4, 4 vCPU) **cannot run concurrently** with the cluster: 3 × 4 + 4 = 16 vCPU exceeds the global limit of 12. The runner VM must be **stopped** before cluster creation; preflight fails with `RUNNER_VM_MUST_BE_STOPPED` if it is running.
+- **Load runs from the Mac**, not the runner VM. Locust reaches `us-central1` over the public internet, so roughly **50 ms of internet RTT** is included in every client-observed latency figure. The offset applies identically to all three arms, so comparisons remain valid; absolute latencies are not datacenter-internal.
+- The consequence is throughput, not design. At roughly **0.1 core-seconds per request**, sustained load caps near **105 RPS** at full saturation on ~10.5 usable cores, so a realistic target is **60–80 RPS**. That is **below** SLO-Scaler's 120–280 RPS range — state that plainly; do not claim parity.
+- Do not describe this as the intended configuration. State the constraint and its effect.
+- **Estimated Phase 5 spend (not invoiced):** ~25 h cluster at 3× `e2-standard-4` (~$0.40/hr on-demand list) plus two LoadBalancers → ballpark **~$11–13**; runner VM stopped during the run. See Phase 5 plan cost section.
+- **P1 capacity probe stop rule:** unchanged by node count. The probe stops at the first step where median pod CPU is ≥ 80% of the 1000m limit or RPS per user falls versus the previous step (`CAPACITY_PROBE_TIMEOUT` if neither occurs within 12 minutes). That rule is pod-local on the fixed arm (4 replicas). Saturation arrives at a lower Locust user count than larger clusters would have needed; the stop rule still fires on that step.
 
 ## Trace-derived load shapes (Phase 4)
 
