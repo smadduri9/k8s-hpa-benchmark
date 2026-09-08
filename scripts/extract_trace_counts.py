@@ -18,6 +18,10 @@ import csv
 import json
 import sys
 import time
+
+# Piped through tee when run from automation; line-buffer stdout for live progress.
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(line_buffering=True)
 from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
@@ -27,6 +31,8 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 WC98_DIR = REPO_ROOT / "traces" / "wc98"
 RR_EVENTS = REPO_ROOT / "traces" / "retailrocket" / "events.csv"
 DERIVED = REPO_ROOT / "traces" / "derived"
+RR_KEPT_EVENT_TYPES = frozenset({"view", "addtocart", "transaction"})
+WC98_INTRA_FILE_PROGRESS_INTERVAL = 2_000_000
 
 # ITA: GMT epoch + 2 h = France local during collection (fixed +0200).
 FRANCE_WC98_OFFSET = timedelta(hours=2)
@@ -60,7 +66,8 @@ def print_timezone_worked_example() -> None:
         f"gmt={dt_gmt.strftime('%Y-%m-%d %H:%M:%S UTC')} "
         f"france_local_fixed_plus0200={dt_fr.strftime('%Y-%m-%d %H:%M:%S')} "
         f"local_date={dt_fr.strftime('%Y-%m-%d')} "
-        f"second_of_day={dt_fr.hour * 3600 + dt_fr.minute * 60 + dt_fr.second}"
+        f"second_of_day={dt_fr.hour * 3600 + dt_fr.minute * 60 + dt_fr.second}",
+        flush=True,
     )
 
 
@@ -99,7 +106,8 @@ def extract_wc98(wc98_dir: Path, out_dir: Path) -> WC98ExtractionSummary:
     print(
         "WC98_EXTRACT_START "
         f"files={len(files)} "
-        "expected_runtime_note=approximately_45_to_120_minutes_for_1.3B_records_depends_on_cpu_and_disk"
+        "expected_runtime_note=approximately_45_to_120_minutes_for_1.3B_records_depends_on_cpu_and_disk",
+        flush=True,
     )
     print_timezone_worked_example()
 
@@ -123,6 +131,14 @@ def extract_wc98(wc98_dir: Path, out_dir: Path) -> WC98ExtractionSummary:
             summary.records_processed += 1
             decoded_count += 1
             file_size += RECORD_SIZE
+            if decoded_count % WC98_INTRA_FILE_PROGRESS_INTERVAL == 0:
+                print(
+                    f"WC98_INTRA_FILE_PROGRESS index={file_index}/{len(files)} "
+                    f"name={path.name} decoded_count={decoded_count} "
+                    f"file_elapsed_sec={time.monotonic() - file_started:.1f} "
+                    f"total_elapsed_sec={time.monotonic() - started:.1f}",
+                    flush=True,
+                )
 
         summary.files_processed += 1
         elapsed = time.monotonic() - file_started
@@ -131,13 +147,15 @@ def extract_wc98(wc98_dir: Path, out_dir: Path) -> WC98ExtractionSummary:
             f"WC98_FILE_PROGRESS index={file_index}/{len(files)} "
             f"name={path.name} decoded_count={decoded_count} "
             f"file_size={file_size} records_binned={file_records} "
-            f"file_elapsed_sec={elapsed:.1f} total_elapsed_sec={total_elapsed:.1f}"
+            f"file_elapsed_sec={elapsed:.1f} total_elapsed_sec={total_elapsed:.1f}",
+            flush=True,
         )
         print(
             f"RECORD_SIZE={RECORD_SIZE} file_size={file_size} "
-            f"expected_count={decoded_count} decoded_count={decoded_count}"
+            f"expected_count={decoded_count} decoded_count={decoded_count}",
+            flush=True,
         )
-        print("WC98_DECODE_SELF_CHECK=PASS")
+        print("WC98_DECODE_SELF_CHECK=PASS", flush=True)
 
     series_dir = out_dir / "wc98" / "series"
     series_dir.mkdir(parents=True, exist_ok=True)
@@ -194,10 +212,11 @@ def extract_wc98(wc98_dir: Path, out_dir: Path) -> WC98ExtractionSummary:
         f"dates_with_site_traffic={len(summary.dates_with_site_traffic)} "
         f"series_produced={summary.series_produced} "
         f"ineligible_server_absent={summary.ineligible_server_absent} "
-        f"elapsed_sec={total_elapsed:.1f}"
+        f"elapsed_sec={total_elapsed:.1f}",
+        flush=True,
     )
-    print(f"WC98_REQUEST_COUNT_DISTRIBUTION {json.dumps(dict(sorted(dist.items())))}")
-    print(f"WC98_SUMMARY_PATH {summary_path}")
+    print(f"WC98_REQUEST_COUNT_DISTRIBUTION {json.dumps(dict(sorted(dist.items())))}", flush=True)
+    print(f"WC98_SUMMARY_PATH {summary_path}", flush=True)
     return summary
 
 
@@ -224,6 +243,7 @@ def extract_retailrocket(events_path: Path, out_dir: Path) -> RetailRocketExtrac
     visitor_min_ts: dict[str, int] = {}
     visitor_max_ts: dict[str, int] = {}
     visitor_second_counts: dict[str, dict[int, int]] = defaultdict(lambda: defaultdict(int))
+    events_excluded_by_type = 0
 
     started = time.monotonic()
     rows_read = 0
@@ -237,8 +257,12 @@ def extract_retailrocket(events_path: Path, out_dir: Path) -> RetailRocketExtrac
             if rows_read % 500_000 == 0:
                 print(
                     f"RETAILROCKET_PASS1_PROGRESS rows_read={rows_read} "
-                    f"elapsed_sec={time.monotonic() - started:.1f}"
+                    f"elapsed_sec={time.monotonic() - started:.1f}",
+                    flush=True,
                 )
+            if row["event"] not in RR_KEPT_EVENT_TYPES:
+                events_excluded_by_type += 1
+                continue
             visitor = row["visitorid"]
             ts_ms = int(row["timestamp"])
             ts_sec = ts_ms // 1000
@@ -270,8 +294,11 @@ def extract_retailrocket(events_path: Path, out_dir: Path) -> RetailRocketExtrac
             if rows_read % 500_000 == 0:
                 print(
                     f"RETAILROCKET_PASS2_PROGRESS rows_read={rows_read} "
-                    f"elapsed_sec={time.monotonic() - started:.1f}"
+                    f"elapsed_sec={time.monotonic() - started:.1f}",
+                    flush=True,
                 )
+            if row["event"] not in RR_KEPT_EVENT_TYPES:
+                continue
             visitor = row["visitorid"]
             if visitor in dropped_visitors:
                 summary.events_dropped += 1
@@ -297,9 +324,11 @@ def extract_retailrocket(events_path: Path, out_dir: Path) -> RetailRocketExtrac
         "visitors_dropped": summary.visitors_dropped,
         "events_dropped": summary.events_dropped,
         "events_kept": summary.events_kept,
+        "events_excluded_by_type": events_excluded_by_type,
         "seconds_with_traffic": summary.seconds_with_traffic,
         "timezone": "UTC",
         "bot_filter": "shape_selection_rule_v1",
+        "kept_event_types": sorted(RR_KEPT_EVENT_TYPES),
     }
     summary_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
 
