@@ -123,7 +123,7 @@ Source: `analysis/scaling_events.py` on `results/runs/`.
 - **HPA `behavior:` vs stock Kubernetes (`k8s/hpa.yaml`).** This manifest sets `scaleDown.stabilizationWindowSeconds: 60` (Kubernetes default **300**) and `scaleUp` policy `periodSeconds: 30` (Kubernetes default **15**). Direction only: this HPA scales up more slowly and sheds pods sooner than stock Kubernetes. No effect on cost or latency from these settings has been measured.
 - **Prometheus `rps` and `error_rate` coverage.** Both are derived from `app_requests_total` in `analysis/collect_metrics.py`. `GET /` never increments that counter (`app/main.py`), so roughly **20%** of offered Locust traffic is invisible to both series.
 - **`active_requests` in existing runs.** The `active_requests` column is empty in every run that exists. **Two causes:** Prometheus `--storage.tsdb.retention.time=2h` expired hybrid and constant samples before the backfill (~21:52 on 2026-09-06; only data after ~19:52 remained); `reset_prometheus_deployment` destroyed the flash remainder. Retention was never revisited. The limitation bullets under [`active_requests`](#active_requests-in-flight-saturation-gauge) apply to **future** runs only.
-- **Load shapes.** All existing runs used synthetic phased shapes defined in `locust/locustfile.py`. The measurements are real; the traffic pattern was invented.
+- **Load shapes.** All existing benchmark runs used synthetic phased shapes in `locust/locustfile.py` (`hybrid`, `constant`, `flash`). The measurements are real; those traffic patterns were invented. **New runs** should use trace-derived shapes (`wc98_*`, `rr_periodic`); synthetic locustfiles remain byte-identical for published-run replay only.
 - **Latency SLI on existing runs.** Approximate only (Locust grid brackets on `/cpu`); exact count-based SLI requires Phase 5 bucket columns — not stored today.
 
 ## Superseded — run-20260904T230444Z
@@ -212,7 +212,7 @@ Guards enforced for this run (evidence in `rep.log` and collection output):
 ## Measurement limitations
 
 - **HPA `behavior:` vs stock Kubernetes (`k8s/hpa.yaml`).** `scaleDown.stabilizationWindowSeconds: 60` vs Kubernetes default **300**; `scaleUp` policy `periodSeconds: 30` vs default **15**. Direction only: this HPA scales up more slowly and sheds pods sooner than stock Kubernetes. No measured effect on cost or latency is claimed.
-- **Synthetic load shapes.** Published runs through Phase A used phased shapes in `locust/locustfile.py` (`hybrid`, `constant`, `flash`). The measurements are real; those traffic patterns were invented. **Trace-derived shapes** (`wc98_*`, `rr_periodic`) reuse the **load envelope** (user-count curve over 30 s plateaus) from production traces; see [`docs/SHAPE_SELECTION.md`](docs/SHAPE_SELECTION.md) and `docs/shape_provenance/`.
+- **Synthetic load shapes.** Published runs through Phase A used phased shapes in `locust/locustfile.py` (`hybrid`, `constant`, `flash`). The measurements are real; those traffic patterns were invented. **`locust/locustfile.py` and `locustfile_{constant,flash}.py` are frozen** for published-run replay; do not change them. **New runs** use trace-derived shapes (`wc98_*`, `rr_periodic`); see [Trace-derived load shapes (Phase 4)](#trace-derived-load-shapes-phase-4).
 - **Sub-plateau arrival burstiness is not reproduced.** Locust uses a closed-loop user model (`wait_time = between(1, 3)` per user). The superposition of N independent renewal processes is approximately Poisson (Palm-Khintchine), so traffic delivered to pods within each plateau is near-Poisson regardless of the source trace's fine-grained statistics. Conclusions about autoscaler behaviour under **bursty arrivals** apply to the **30 s envelope timescale and above**, not to fine-grained arrival burstiness in the original traces. Reproducing source arrival statistics would require an open-loop request scheduler (deferred — different load generator, not a Locust parameter change).
 - **Application change after run-20260904T230444Z:** `/cpu` was `async def` (CPU work on the event loop, blocking `/health` under load). It is now sync `def` (Starlette threadpool dispatch). **Future runs are not comparable to run-20260904T230444Z** — the application under test has changed.
 - **Starlette threadpool (40 tokens, unchanged):** At 200m CPU a pod does roughly 2 req/s; running 40 `/cpu` requests concurrently does not add throughput — Python's GIL serialises bytecode execution. The purpose of the `/cpu` handler change is **probe availability**, not throughput. Expect per-request latency to get **worse**, not better, under saturation.
@@ -224,6 +224,30 @@ Guards enforced for this run (evidence in `rep.log` and collection output):
 - **Comparison validity:** Both arms are affected identically (same client, same region path, same LoadBalancer topology), so fixed-vs-HPA comparisons are valid. Absolute latency numbers are **not** datacenter-internal measurements.
 - **Tier 2 deferral:** Running Locust in-cluster (same region as the cluster) is deferred to Tier 2 to remove client-path variance from absolute latency.
 - **Saturation.** Indirect signals (`cpu_utilization_pct`, p99 latency) are collected. Direct in-flight saturation (`active_requests`) is pending Phase 5 — the column is empty in every existing run.
+
+## Trace-derived load shapes (Phase 4)
+
+Five trace-derived shapes replace synthetic `hybrid` / `constant` / `flash` for **new** benchmark runs. Selection rule: [`docs/SHAPE_SELECTION.md`](docs/SHAPE_SELECTION.md) (`shape_selection_rule_v2`). Per-shape provenance JSON: `docs/shape_provenance/`. Locustfiles: `locust/locustfile_wc98_*.py`, `locust/locustfile_rr_periodic.py`.
+
+**Amplitude is a deployment parameter.** Each locustfile stores **unit-mean plateaus** only (`UNIT_MEAN_PLATEAUS`, time-weighted mean = 1.0). Absolute user counts come from `SHAPE_MEAN_USERS` (default **45**). Phase 5 may raise this for larger clusters; integer rounding of `round(unit_mean × SHAPE_MEAN_USERS)` is the only amplitude distortion.
+
+**Spawn rate scales with amplitude.** `_spawn_rate()` preserves the steepest plateau-to-plateau transition duration measured at `SHAPE_MEAN_USERS=45` (see `scripts/lib/shape_spawn.py`). Without this, flash onset would stretch linearly with the multiplier (observed **5 s** at ×400 before the fix vs **3 s** at ×45 and ×400 after).
+
+**Hurst:** only **`hurst_native`** is published — R/S on the **source trace window** at selection time. It describes selection context, **not** the Locust-delivered load. No `hurst_plateau` or `hurst_scaled` (plateau thinning destroys sub-30 s structure; scaled replay is not what Locust generates). See `hurst_note` in each provenance file.
+
+**RetailRocket scope:** `rr_periodic` only. RR constant had zero eligible windows under v2; see `retailrocket_limitation` in `docs/shape_provenance/rr_periodic.json`.
+
+**Local shape-curve validation** (`scripts/smoke_test.sh --check shape-curve`): all five shapes passed `SHAPE_ACHIEVES_TARGET` at `SHAPE_MEAN_USERS=45` (`max_abs_err_users=0`). `wc98_flash` was additionally validated at **400** after spawn-rate scaling. Observed steepest transition seconds are recorded per multiplier in each provenance JSON (`shape_curve_steepest_transition_observed_sec`); **multiplier-independence is not claimed beyond `shape_mean_users_validated`.** Checker assertion `SHAPE_SUDDENNESS_PRESERVED` requires observed transition within **3 s** of `steepest_spawn_transition_sec` (reference at ×45).
+
+| Shape | Dataset | Timezone | `peak_to_mean` | `dilation_factor` | `hurst_native` | `fastest_feature_duration_sec` | `steepest_spawn_transition_sec` | HPA no-scale | Validated `SHAPE_MEAN_USERS` |
+|-------|---------|----------|---------------:|------------------:|---------------:|---------------------------------:|----------------------------------:|:--------------:|-----------------------------:|
+| `wc98_flash` | WorldCup98 | France +0200 | 2.015 | 1 | 0.885 | 32.1 | 2.1 | abort | 45, 400 |
+| `wc98_ramp` | WorldCup98 | France +0200 | 1.521 | 1 | 0.955 | 30.7 | 0.7 | abort | 45 |
+| `wc98_constant` | WorldCup98 | France +0200 | 1.051 | 1 | 0.570 | 30.3 | 0.3 | **warn** | 45 |
+| `wc98_periodic` | WorldCup98 | France +0200 | 1.588 | **80** | 0.884 | 1.675 | 1.3 | abort | 45 |
+| `rr_periodic` | RetailRocket | UTC | 1.509 | **80** | 0.780 | 2.175 | 1.8 | abort | 45 |
+
+Periodic shapes dilate a **24 h** source window (`source_window_sec=86400`) into **18 min** playback (`playback_sec=1080`, factor **80**). WorldCup98 windows are aligned to **France fixed +0200** local midnight (`timezone=france_fixed_plus0200`).
 
 ### Baseline calibration (Tier 2 Phase A, A8)
 
