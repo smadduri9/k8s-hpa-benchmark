@@ -24,6 +24,10 @@ PROVENANCE_DIR = REPO_ROOT / "docs" / "shape_provenance"
 
 sys.path.insert(0, str(REPO_ROOT / "scripts" / "lib"))
 from hurst_rs import hurst_or_missing  # noqa: E402
+from shape_spawn import (  # noqa: E402
+    reference_steepest_spawn_sec,
+    spawn_rate_for_mean_users,
+)
 from select_shape_windows import (  # noqa: E402
     PERIODIC_SOURCE_SEC,
     PLATEAU_SEC,
@@ -215,10 +219,11 @@ def fastest_feature_duration_sec(
     spec: dict,
     native_window: np.ndarray,
     shape_mean_users: int,
-) -> float:
-    scaled = scaled_user_plateaus(unit_plateaus, shape_mean_users)
+) -> tuple[float, float]:
+    unit_list = [float(v) for v in unit_plateaus]
+    scaled = [max(1, round(float(u) * shape_mean_users)) for u in unit_plateaus]
     max_jump = max(abs(scaled[i + 1] - scaled[i]) for i in range(len(scaled) - 1))
-    spawn_rate = 60 if max_jump >= 30 else 10
+    spawn_rate = spawn_rate_for_mean_users(unit_list, shape_mean_users)
     spawn_sec = max_jump / spawn_rate if spawn_rate else 0.0
 
     if spec["periodic"]:
@@ -240,7 +245,7 @@ def fastest_feature_duration_sec(
     else:
         feature_sec = float(PLATEAU_SEC)
 
-    return round(feature_sec + spawn_sec, 3)
+    return round(feature_sec + spawn_sec, 3), round(spawn_sec, 3)
 
 
 def format_plateau_list(values: np.ndarray) -> str:
@@ -274,6 +279,7 @@ from locust import HttpUser, task, between, LoadTestShape
 
 RUN_TIME_SEC = {RUN_TIME_SEC}
 PLATEAU_SEC = {PLATEAU_SEC}
+REFERENCE_SHAPE_MEAN_USERS = {DEFAULT_SHAPE_MEAN_USERS}
 {periodic_note}UNIT_MEAN_PLATEAUS = [
     {plateau_literal},
 ]
@@ -289,13 +295,21 @@ def _scaled_plateau_users() -> list[int]:
 
 
 def _spawn_rate() -> int:
-    mean_users = _shape_mean_users()
+    scaled = _scaled_plateau_users()
     max_jump = max(
-        abs(UNIT_MEAN_PLATEAUS[i + 1] - UNIT_MEAN_PLATEAUS[i]) for i in range(len(UNIT_MEAN_PLATEAUS) - 1)
+        abs(scaled[i + 1] - scaled[i]) for i in range(len(scaled) - 1)
     )
-    if max_jump * mean_users >= 30:
-        return 60
-    return 10
+    ref_scaled = [
+        max(1, round(unit * REFERENCE_SHAPE_MEAN_USERS)) for unit in UNIT_MEAN_PLATEAUS
+    ]
+    ref_jump = max(
+        abs(ref_scaled[i + 1] - ref_scaled[i]) for i in range(len(ref_scaled) - 1)
+    )
+    if ref_jump <= 0:
+        return 10
+    ref_rate = 60 if ref_jump >= 30 else 10
+    ref_duration = ref_jump / ref_rate
+    return max(1, round(max_jump / ref_duration))
 
 
 def target_users_at(elapsed_sec: float) -> int | None:
@@ -378,7 +392,7 @@ def main() -> int:
         native_window, raw_plateaus = extract_window_counts(spec, winner, rr_dense, rr_min_ts)
         unit_plateaus = unit_mean_plateaus(raw_plateaus)
         hurst = compute_hurst_native(native_window)
-        fastest = fastest_feature_duration_sec(
+        fastest, steepest_spawn = fastest_feature_duration_sec(
             unit_plateaus, spec, native_window, args.shape_mean_users
         )
 
@@ -404,6 +418,9 @@ def main() -> int:
             "SHAPE_MEAN_USERS_default": DEFAULT_SHAPE_MEAN_USERS,
             "hpa_no_scale_policy": spec["hpa_no_scale_policy"],
             "fastest_feature_duration_sec": fastest,
+            "steepest_spawn_transition_sec": steepest_spawn,
+            "shape_mean_users_validated": [DEFAULT_SHAPE_MEAN_USERS],
+            "shape_curve_steepest_transition_observed_sec": {},
             "envelope_claim": ENVELOPE_CLAIM,
             "arrival_process_reproduction": ARRIVAL_PROCESS_DEFERRED,
             **hurst,
@@ -412,6 +429,17 @@ def main() -> int:
             provenance["retailrocket_limitation"] = spec["retailrocket_limitation"]
 
         prov_path = PROVENANCE_DIR / f"{spec['shape_name']}.json"
+        if prov_path.is_file():
+            existing = json.loads(prov_path.read_text(encoding="utf-8"))
+            provenance["shape_mean_users_validated"] = existing.get(
+                "shape_mean_users_validated", [DEFAULT_SHAPE_MEAN_USERS]
+            )
+            provenance["shape_curve_steepest_transition_observed_sec"] = existing.get(
+                "shape_curve_steepest_transition_observed_sec", {}
+            )
+            if "shape_curve_validation_note" in existing:
+                provenance["shape_curve_validation_note"] = existing["shape_curve_validation_note"]
+
         prov_path.write_text(json.dumps(provenance, indent=2) + "\n", encoding="utf-8")
 
         if not args.provenance_only:

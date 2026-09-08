@@ -24,10 +24,13 @@ from __future__ import annotations
 import argparse
 import csv
 import importlib.util
+import json
+import os
 import sys
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+PROVENANCE_DIR = REPO_ROOT / "docs" / "shape_provenance"
 
 SHAPE_FILES = {
     "hybrid": "locust/locustfile.py",
@@ -46,6 +49,19 @@ DEFAULT_TRANSITION_WINDOW_SEC = 12
 # Allowance on settled samples. A spawn_rate of 10/s or 60/s settles well inside the
 # window, so a settled sample off by more than this is a real curve failure.
 DEFAULT_TOLERANCE_USERS = 2
+# Observed steepest spawn transition must stay within this many seconds of the
+# reference declaration (steepest_spawn_transition_sec at SHAPE_MEAN_USERS=45).
+SHAPE_SUDDENNESS_TOLERANCE_SEC = 3
+
+TRACE_SHAPES = frozenset(
+    {
+        "wc98_flash",
+        "wc98_ramp",
+        "wc98_constant",
+        "wc98_periodic",
+        "rr_periodic",
+    }
+)
 
 
 def load_shape_module(shape: str):
@@ -234,14 +250,21 @@ def main() -> int:
             steepest = (before, after, change)
     if steepest is None:
         print(f"SHAPE_TRANSITION_SECONDS shape={args.shape} observed_sec=MISSING reason=no_increase")
+        observed_sec: int | str = "MISSING"
     else:
         before, after, change = steepest
-        observed = observed_transition_seconds(elapsed_pairs, change, after)
+        observed_sec = observed_transition_seconds(elapsed_pairs, change, after)
         print(
             f"SHAPE_TRANSITION_SECONDS shape={args.shape} from={before} to={after} "
             f"delta={after - before} at_sec={change} spawn_rate={spawn_rate_at(change)} "
-            f"observed_sec={observed}"
+            f"observed_sec={observed_sec}"
         )
+
+    suddenness_rc = check_shape_suddenness_preserved(
+        args.shape, observed_sec, int(os.environ.get("SHAPE_MEAN_USERS", "45"))
+    )
+    if suddenness_rc != 0:
+        return suddenness_rc
 
     if max_abs_err > args.tolerance_users and worst is not None:
         elapsed, target, achieved = worst
@@ -259,6 +282,66 @@ def main() -> int:
         f"transitions_excluded={len(excluded_from)} "
         f"transition_window_sec={args.transition_window_sec} "
         f"run_time_sec={run_time_sec}"
+    )
+    return 0
+
+
+def load_provenance(shape: str) -> dict | None:
+    path = PROVENANCE_DIR / f"{shape}.json"
+    if not path.is_file():
+        return None
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def check_shape_suddenness_preserved(
+    shape: str,
+    observed_sec: int | str,
+    shape_mean_users: int,
+) -> int:
+    if shape not in TRACE_SHAPES:
+        return 0
+    provenance = load_provenance(shape)
+    if provenance is None:
+        print(
+            f"SHAPE_SUDDENNESS_PRESERVED_SKIP shape={shape} reason=missing_provenance",
+            file=sys.stderr,
+        )
+        return 0
+    declared_spawn = provenance.get("steepest_spawn_transition_sec")
+    fastest_feature = provenance.get("fastest_feature_duration_sec")
+    if declared_spawn is None:
+        print(
+            f"SHAPE_SUDDENNESS_PRESERVED_SKIP shape={shape} reason=missing_steepest_spawn_transition_sec",
+            file=sys.stderr,
+        )
+        return 0
+    if observed_sec == "MISSING":
+        print(
+            f"SHAPE_SUDDENNESS_PRESERVED_FAIL shape={shape} "
+            f"observed_sec=MISSING declared_spawn_sec={declared_spawn} "
+            f"fastest_feature_duration_sec={fastest_feature} "
+            f"shape_mean_users={shape_mean_users} tolerance_sec={SHAPE_SUDDENNESS_TOLERANCE_SEC}",
+            file=sys.stderr,
+        )
+        return 1
+    observed = int(observed_sec)
+    delta = abs(observed - float(declared_spawn))
+    if delta > SHAPE_SUDDENNESS_TOLERANCE_SEC:
+        print(
+            f"SHAPE_SUDDENNESS_PRESERVED_FAIL shape={shape} "
+            f"observed_sec={observed} declared_spawn_sec={declared_spawn} "
+            f"fastest_feature_duration_sec={fastest_feature} "
+            f"abs_err_sec={delta} tolerance_sec={SHAPE_SUDDENNESS_TOLERANCE_SEC} "
+            f"shape_mean_users={shape_mean_users}",
+            file=sys.stderr,
+        )
+        return 1
+    print(
+        f"SHAPE_SUDDENNESS_PRESERVED shape={shape} "
+        f"observed_sec={observed} declared_spawn_sec={declared_spawn} "
+        f"fastest_feature_duration_sec={fastest_feature} "
+        f"abs_err_sec={delta} tolerance_sec={SHAPE_SUDDENNESS_TOLERANCE_SEC} "
+        f"shape_mean_users={shape_mean_users}"
     )
     return 0
 

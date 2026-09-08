@@ -57,6 +57,14 @@
   "SHAPE_MEAN_USERS_default": 45,
   "hpa_no_scale_policy": "abort",
   "fastest_feature_duration_sec": 1.675,
+  "steepest_spawn_transition_sec": 1.3,
+  "shape_mean_users_validated": [
+    45
+  ],
+  "shape_curve_steepest_transition_observed_sec": {
+    "45": 2
+  },
+  "shape_curve_validation_note": "Step 9 shape-curve at SHAPE_MEAN_USERS=45 only, predates spawn-rate scaling fix. Not re-run post-fix: at ×45 scaled _spawn_rate() is algebraically identical to pre-fix (reference and current plateau jumps coincide). Multiplier-independence is not claimed beyond shape_mean_users_validated.",
   "envelope_claim": "These shapes derive the load ENVELOPE from a production trace. They do not replay its arrival process. Locust generates requests from N concurrent users with wait_time uniform(1,3)s; the superposition of independent renewal processes is approximately Poisson (Palm-Khintchine), so delivered traffic is near-Poisson within each plateau irrespective of the source. hurst_native is reported as a property of the SOURCE TRACE and is not a property of the generated load.",
   "arrival_process_reproduction": "Reproducing a self-similar or bursty arrival process from the source traces would require an open-loop generator issuing requests on a schedule rather than a closed-loop user model. That is a different load generator, not a parameter change. Deferred.",
   "hurst_native": 0.883509,

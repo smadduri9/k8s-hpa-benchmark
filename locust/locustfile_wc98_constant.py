@@ -17,6 +17,7 @@ from locust import HttpUser, task, between, LoadTestShape
 
 RUN_TIME_SEC = 1080
 PLATEAU_SEC = 30
+REFERENCE_SHAPE_MEAN_USERS = 45
 UNIT_MEAN_PLATEAUS = [
     0.99536306,
     1.01756117,
@@ -67,13 +68,21 @@ def _scaled_plateau_users() -> list[int]:
 
 
 def _spawn_rate() -> int:
-    mean_users = _shape_mean_users()
+    scaled = _scaled_plateau_users()
     max_jump = max(
-        abs(UNIT_MEAN_PLATEAUS[i + 1] - UNIT_MEAN_PLATEAUS[i]) for i in range(len(UNIT_MEAN_PLATEAUS) - 1)
+        abs(scaled[i + 1] - scaled[i]) for i in range(len(scaled) - 1)
     )
-    if max_jump * mean_users >= 30:
-        return 60
-    return 10
+    ref_scaled = [
+        max(1, round(unit * REFERENCE_SHAPE_MEAN_USERS)) for unit in UNIT_MEAN_PLATEAUS
+    ]
+    ref_jump = max(
+        abs(ref_scaled[i + 1] - ref_scaled[i]) for i in range(len(ref_scaled) - 1)
+    )
+    if ref_jump <= 0:
+        return 10
+    ref_rate = 60 if ref_jump >= 30 else 10
+    ref_duration = ref_jump / ref_rate
+    return max(1, round(max_jump / ref_duration))
 
 
 def target_users_at(elapsed_sec: float) -> int | None:
