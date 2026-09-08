@@ -22,6 +22,7 @@ patches:
   - path: patch-fixed-replicas.yaml
   - path: patch-hpa-max.yaml
   - path: patch-image-pull.yaml
+  - path: patch-kind-resources.yaml
   - target:
       kind: Service
       name: hpa-eval-fixed-svc

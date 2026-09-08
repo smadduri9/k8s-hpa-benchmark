@@ -8,7 +8,7 @@ metadata:
     experiment: hpa
 spec:
   # Starts at 1 replica — HPA will scale up/down based on CPU utilization
-  replicas: 1
+  replicas: 4
   selector:
     matchLabels:
       app: hpa-eval
@@ -32,10 +32,10 @@ spec:
               name: http
           resources:
             requests:
-              cpu: "100m"
+              cpu: "500m"
               memory: "128Mi"
             limits:
-              cpu: "200m"
+              cpu: "1000m"
               memory: "256Mi"
           startupProbe:
             httpGet:
