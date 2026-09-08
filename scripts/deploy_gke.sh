@@ -133,6 +133,10 @@ done
 kubectl apply -f "${REPO_ROOT}/k8s/service.yaml"
 kubectl apply -f "${REPO_ROOT}/k8s/hpa.yaml"
 kubectl apply -f "${REPO_ROOT}/k8s/prometheus/configmap.yaml"
+"${VENV_PYTHON}" "${REPO_ROOT}/scripts/lib/check_prometheus_deployment_variant.py" \
+    "${REPO_ROOT}/k8s/prometheus/deployment.yaml" \
+    "${REPO_ROOT}/k8s/prometheus/deployment-gke.yaml"
+kubectl apply -f "${REPO_ROOT}/k8s/prometheus/rbac.yaml"
 kubectl apply -f "${REPO_ROOT}/k8s/prometheus/pvc.yaml"
 kubectl apply -f "${REPO_ROOT}/k8s/prometheus/deployment-gke.yaml"
 kubectl apply -f "${REPO_ROOT}/k8s/prometheus/service.yaml"

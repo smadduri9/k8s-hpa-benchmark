@@ -4,6 +4,9 @@
 
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+
 NAMESPACE="hpa-eval"
 IMAGE_NAME="hpa-eval-app"
 IMAGE_TAG="latest"
@@ -57,6 +60,10 @@ kubectl apply -f <(sed 's|LoadBalancer|NodePort|g' k8s/service.yaml)
 kubectl apply -f k8s/hpa.yaml
 
 # Apply Prometheus
+"${REPO_ROOT}/.venv/bin/python" "${REPO_ROOT}/scripts/lib/check_prometheus_deployment_variant.py" \
+    "${REPO_ROOT}/k8s/prometheus/deployment.yaml" \
+    "${REPO_ROOT}/k8s/prometheus/deployment-gke.yaml"
+kubectl apply -f k8s/prometheus/rbac.yaml
 kubectl apply -f k8s/prometheus/configmap.yaml
 kubectl apply -f k8s/prometheus/deployment.yaml
 kubectl apply -f k8s/prometheus/service.yaml

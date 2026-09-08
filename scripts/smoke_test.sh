@@ -1764,6 +1764,12 @@ check_hpa_stock() {
   echo "HPA_TUNED_BEHAVIOR_RESTORED"
 }
 
+check_prometheus_deployment_variant() {
+  venv_python "${REPO_ROOT}/scripts/lib/check_prometheus_deployment_variant.py" \
+    "${REPO_ROOT}/k8s/prometheus/deployment.yaml" \
+    "${REPO_ROOT}/k8s/prometheus/deployment-gke.yaml"
+}
+
 check_coldstart_collector() {
   local jsonl="${REPO_ROOT}/docs/cold-start-calibration/cached.jsonl"
   local uncached="${REPO_ROOT}/docs/cold-start-calibration/uncached.jsonl"
@@ -1831,6 +1837,7 @@ elif [[ -n "${CHECK}" ]]; then
     bucket-fieldnames) check_bucket_fieldnames ;;
     phase5-resume) check_phase5_resume ;;
     hpa-stock) check_hpa_stock ;;
+    prometheus-deployment-variant) check_prometheus_deployment_variant ;;
     coldstart-collector) check_coldstart_collector ;;
     *) die "unknown check: ${CHECK}" ;;
   esac

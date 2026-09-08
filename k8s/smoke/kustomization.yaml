@@ -10,6 +10,7 @@ resources:
   - ../hpa.yaml
   - ../service.yaml
   - ../prometheus/configmap.yaml
+  - ../prometheus/rbac.yaml
   - ../prometheus/deployment.yaml
   - ../prometheus/service.yaml
 
