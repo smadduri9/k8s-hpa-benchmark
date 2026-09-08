@@ -32,6 +32,9 @@ WC98_FTP_BASE="ftp://ita.ee.lbl.gov/traces/WorldCup"
 WC98_DIR="${REPO_ROOT}/traces/wc98"
 RR_DIR="${REPO_ROOT}/traces/retailrocket"
 DECODE_PY="${SCRIPT_DIR}/lib/wc98_decode.py"
+VENV_KAGGLE="${VENV_DIR}/bin/kaggle"
+KAGGLE_ACCESS_TOKEN="${HOME}/.kaggle/access_token"
+KAGGLE_JSON="${HOME}/.kaggle/kaggle.json"
 CURL_CONNECT_TIMEOUT_SEC=30
 CURL_MAX_TIME_SEC=3600
 FTP_LIST_TIMEOUT_SEC=120
@@ -44,8 +47,22 @@ Downloads WorldCup98 wc_day*.gz into traces/wc98/ and RetailRocket events.csv in
 traces/retailrocket/. Each wc_day file is verified immediately after download with
 scripts/lib/wc98_decode.py (Step 3 self-check).
 
-Requires: curl, repo .venv, kaggle CLI for RetailRocket (unless --wc98-only).
+Requires: curl, repo .venv, venv kaggle CLI for RetailRocket (unless --wc98-only).
+Kaggle auth: ~/.kaggle/access_token (bearer token) or ~/.kaggle/kaggle.json.
 EOF
+}
+
+require_kaggle_credentials() {
+  if [[ -f "${KAGGLE_ACCESS_TOKEN}" ]] || [[ -f "${KAGGLE_JSON}" ]]; then
+    return 0
+  fi
+  die "KAGGLE_CREDENTIALS_MISSING configure either ${KAGGLE_ACCESS_TOKEN} (bearer token) or ${KAGGLE_JSON} (username and key)"
+}
+
+require_kaggle_cli() {
+  if [[ ! -x "${VENV_KAGGLE}" ]]; then
+    die "KAGGLE_CLI_MISSING install kaggle in repo venv: \"${VENV_PYTHON}\" -m pip install kaggle"
+  fi
 }
 
 while [[ $# -gt 0 ]]; do
@@ -228,15 +245,14 @@ download_retailrocket() {
     return 0
   fi
 
-  if ! command -v kaggle >/dev/null 2>&1; then
-    die "KAGGLE_CLI_MISSING install kaggle and configure ~/.kaggle/kaggle.json for RetailRocket download"
-  fi
+  require_kaggle_credentials
+  require_kaggle_cli
 
   printf '%s\n' "RETAILROCKET_DOWNLOAD_START dataset=retailrocket/ecommerce-dataset"
   rm -f "${events_path}" 2>/dev/null || true
   find "${RR_DIR}" -maxdepth 1 \( -name '*.csv' -o -name '*.zip' \) -delete 2>/dev/null || true
 
-  if ! kaggle datasets download -d retailrocket/ecommerce-dataset -p "${RR_DIR}" --unzip; then
+  if ! "${VENV_KAGGLE}" datasets download -d retailrocket/ecommerce-dataset -p "${RR_DIR}" --unzip; then
     die "RETAILROCKET_DOWNLOAD_FAILED dataset=retailrocket/ecommerce-dataset"
   fi
 

@@ -41,6 +41,7 @@ FRANCE_WC98_OFFSET = timedelta(hours=2)
 TIMEZONE_WORKED_EXAMPLE_TS = 893971817
 
 sys.path.insert(0, str(REPO_ROOT / "scripts" / "lib"))
+from kaggle_auth import kaggle_credentials_error, kaggle_credentials_present  # noqa: E402
 from wc98_decode import (  # noqa: E402
     RECORD_SIZE,
     iter_validated_records,
@@ -231,7 +232,14 @@ class RetailRocketExtractionSummary:
 
 def extract_retailrocket(events_path: Path, out_dir: Path) -> RetailRocketExtractionSummary:
     if not events_path.is_file():
-        raise SystemExit(f"RETAILROCKET_INPUT_MISSING path={events_path}")
+        if not kaggle_credentials_present():
+            raise SystemExit(
+                f"RETAILROCKET_INPUT_MISSING path={events_path}; {kaggle_credentials_error()}"
+            )
+        raise SystemExit(
+            f"RETAILROCKET_INPUT_MISSING path={events_path}; "
+            "run: bash scripts/download_traces.sh --retailrocket-only"
+        )
 
     print(
         "RETAILROCKET_EXTRACT_START "
