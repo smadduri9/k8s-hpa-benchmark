@@ -33,6 +33,11 @@ SHAPE_FILES = {
     "hybrid": "locust/locustfile.py",
     "constant": "locust/locustfile_constant.py",
     "flash": "locust/locustfile_flash.py",
+    "wc98_flash": "locust/locustfile_wc98_flash.py",
+    "wc98_ramp": "locust/locustfile_wc98_ramp.py",
+    "wc98_constant": "locust/locustfile_wc98_constant.py",
+    "wc98_periodic": "locust/locustfile_wc98_periodic.py",
+    "rr_periodic": "locust/locustfile_rr_periodic.py",
 }
 
 # Locust needs time to spawn or despawn after a target change; those samples measure
@@ -67,10 +72,14 @@ def target_curve(shape: str, module):
     Time-weighted means must therefore use step levels, not segment midpoints.
     """
     if hasattr(module, "target_users_at"):
-        spawn_rate = int(module.SPAWN_RATE)
+        if hasattr(module, "_spawn_rate"):
+            spawn_rate_at = lambda _elapsed: int(module._spawn_rate())
+        else:
+            fixed_rate = int(module.SPAWN_RATE)
+            spawn_rate_at = lambda _elapsed: fixed_rate
         return (
             module.target_users_at,
-            lambda _elapsed: spawn_rate,
+            spawn_rate_at,
             int(module.RUN_TIME_SEC),
         )
 

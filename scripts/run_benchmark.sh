@@ -37,21 +37,26 @@ HPA_NO_SCALE_POLICY="abort"
 
 usage() {
   cat <<'EOF'
-Usage: bash scripts/run_benchmark.sh [--env-file .env] [--shape hybrid|constant|flash] [--smoke] [--repetitions N]
+Usage: bash scripts/run_benchmark.sh [--env-file .env] [--shape NAME] [--smoke] [--repetitions N]
        bash scripts/run_benchmark.sh --cold-start-only --arm fixed|hpa [--smoke]
 
 Runs fixed then HPA arms with cold-start enforcement and anchored metric collection.
 Declared replica counts are read from each deployment's spec at cold-start time.
 
---shape selects the load profile; all three are exactly 18 minutes, because unequal
-durations make pod-hours incommensurable and break the cost-per-1k comparison.
-  hybrid   locust/locustfile.py           ramp/spike/hold/recover (default, unchanged)
-  constant locust/locustfile_constant.py  flat 45 users +/-10% noise
-  flash    locust/locustfile_flash.py     30 -> 90 -> 30 users, 3x spike at 7-10 min
+--shape selects the load profile; all shapes are exactly 18 minutes.
+  hybrid        locust/locustfile.py              ramp/spike/hold/recover (default, unchanged)
+  constant      locust/locustfile_constant.py     flat 45 users +/-10% noise (synthetic, replay)
+  flash         locust/locustfile_flash.py        30 -> 90 -> 30 users (synthetic, replay)
+  wc98_flash    locust/locustfile_wc98_flash.py   trace-derived flash
+  wc98_ramp     locust/locustfile_wc98_ramp.py    trace-derived ramp
+  wc98_constant locust/locustfile_wc98_constant.py trace-derived constant
+  wc98_periodic locust/locustfile_wc98_periodic.py trace-derived periodic (86400s source, 80x dilation)
+  rr_periodic   locust/locustfile_rr_periodic.py  RetailRocket periodic only
 
+Trace shapes read SHAPE_MEAN_USERS from the environment (default 45).
 The results directory is keyed by shape so runs of different shapes cannot collide.
-On the constant shape an HPA arm that holds minReplicas is a result, not a failure,
-so collection runs with --hpa-no-scale-policy warn; hybrid and flash keep abort.
+On constant and wc98_constant an HPA arm that holds minReplicas is a result, not a failure,
+so collection runs with --hpa-no-scale-policy warn; other shapes keep abort.
 EOF
 }
 
@@ -75,14 +80,22 @@ load_env_file "${ENV_FILE}"
 require_venv
 
 case "${SHAPE}" in
-  hybrid)   LOCUST_FILE="locust/locustfile.py" ;;
-  constant) LOCUST_FILE="locust/locustfile_constant.py" ;;
-  flash)    LOCUST_FILE="locust/locustfile_flash.py" ;;
-  *) die "unsupported --shape: ${SHAPE} (expected hybrid, constant or flash)" ;;
+  hybrid)        LOCUST_FILE="locust/locustfile.py" ;;
+  constant)      LOCUST_FILE="locust/locustfile_constant.py" ;;
+  flash)         LOCUST_FILE="locust/locustfile_flash.py" ;;
+  wc98_flash)    LOCUST_FILE="locust/locustfile_wc98_flash.py" ;;
+  wc98_ramp)     LOCUST_FILE="locust/locustfile_wc98_ramp.py" ;;
+  wc98_constant) LOCUST_FILE="locust/locustfile_wc98_constant.py" ;;
+  wc98_periodic) LOCUST_FILE="locust/locustfile_wc98_periodic.py" ;;
+  rr_periodic)   LOCUST_FILE="locust/locustfile_rr_periodic.py" ;;
+  *)
+    die "unsupported --shape: ${SHAPE} (expected hybrid, constant, flash, wc98_flash, wc98_ramp, wc98_constant, wc98_periodic, rr_periodic)"
+    ;;
 esac
+export SHAPE_MEAN_USERS="${SHAPE_MEAN_USERS:-45}"
 # Steady-state load is the one shape where a calibrated HPA is expected to hold the
 # floor; aborting on that would discard the finding. Burst shapes must scale.
-if [[ "${SHAPE}" == "constant" ]]; then
+if [[ "${SHAPE}" == "constant" || "${SHAPE}" == "wc98_constant" ]]; then
   HPA_NO_SCALE_POLICY="warn"
 fi
 
@@ -99,6 +112,7 @@ if [[ ! -f "${REPO_ROOT}/${LOCUST_FILE}" ]]; then
   die "missing locustfile for shape ${SHAPE}: ${REPO_ROOT}/${LOCUST_FILE}"
 fi
 printf '%s\n' "SHAPE_SELECTED shape=${SHAPE} locust_file=${LOCUST_FILE} run_time=${RUN_TIME}"
+printf '%s\n' "SHAPE_MEAN_USERS=${SHAPE_MEAN_USERS}"
 printf '%s\n' "HPA_NO_SCALE_POLICY=${HPA_NO_SCALE_POLICY} shape=${SHAPE}"
 
 if [[ -z "${RUN_ID}" ]]; then
@@ -118,6 +132,7 @@ cat > "${MANIFEST_PATH}" <<EOF
   "hpa_max_replicas": ${manifest_hpa_max},
   "shape": "${SHAPE}",
   "locust_file": "${LOCUST_FILE}",
+  "shape_mean_users": ${SHAPE_MEAN_USERS},
   "hpa_no_scale_policy": "${HPA_NO_SCALE_POLICY}",
   "arms": {}
 }
@@ -279,6 +294,7 @@ run_one_repetition() {
   {
     echo "RUN_ID=${RUN_ID} REP=${rep} SMOKE=${SMOKE}"
     echo "SHAPE_SELECTED shape=${SHAPE} locust_file=${LOCUST_FILE} run_time=${RUN_TIME}"
+    echo "SHAPE_MEAN_USERS=${SHAPE_MEAN_USERS}"
     echo "HPA_NO_SCALE_POLICY=${HPA_NO_SCALE_POLICY} shape=${SHAPE}"
     echo "LOCUST_FILE=${LOCUST_FILE} RUN_TIME=${RUN_TIME} FIXED_HOST=${FIXED_HOST} HPA_HOST=${HPA_HOST}"
 

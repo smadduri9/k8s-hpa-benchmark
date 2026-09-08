@@ -34,7 +34,7 @@ usage() {
 Usage:
   bash scripts/smoke_test.sh --check harness
   bash scripts/smoke_test.sh --check coldstart|assertions|fixed-metrics|label-isolation|locust-authority|preflight-traps|handoff-docs|error-rate-positive|event-loop-not-blocked|endpoints-never-empty|readiness-sweep|shape-curve|shape-wiring
-  bash scripts/smoke_test.sh --check shape-curve --shape hybrid|constant|flash
+  bash scripts/smoke_test.sh --check shape-curve --shape NAME
   bash scripts/smoke_test.sh --negative-test fixed-replica-assert|empty-metrics-column|low-metrics-coverage|missing-locust-hpa|missing-locust-fixed|hpa-never-scaled|label-isolation|coldstart-readiness|liveness-restarts-hung
   bash scripts/smoke_test.sh --full --env-file .env [--reuse-artifacts]
   bash scripts/smoke_test.sh --check locust-authority [--reuse-artifacts]
@@ -1533,7 +1533,14 @@ shape_locust_rel() {
     hybrid) echo "locust/locustfile.py" ;;
     constant) echo "locust/locustfile_constant.py" ;;
     flash) echo "locust/locustfile_flash.py" ;;
-    *) die "unsupported --shape: $1 (expected hybrid, constant or flash)" ;;
+    wc98_flash) echo "locust/locustfile_wc98_flash.py" ;;
+    wc98_ramp) echo "locust/locustfile_wc98_ramp.py" ;;
+    wc98_constant) echo "locust/locustfile_wc98_constant.py" ;;
+    wc98_periodic) echo "locust/locustfile_wc98_periodic.py" ;;
+    rr_periodic) echo "locust/locustfile_rr_periodic.py" ;;
+    *)
+      die "unsupported --shape: $1 (expected hybrid, constant, flash, wc98_flash, wc98_ramp, wc98_constant, wc98_periodic, rr_periodic)"
+      ;;
   esac
 }
 
@@ -1542,6 +1549,11 @@ shape_curve_port() {
     hybrid) echo 18091 ;;
     constant) echo 18092 ;;
     flash) echo 18093 ;;
+    wc98_flash) echo 18094 ;;
+    wc98_ramp) echo 18095 ;;
+    wc98_constant) echo 18096 ;;
+    wc98_periodic) echo 18097 ;;
+    rr_periodic) echo 18098 ;;
     *) die "no curve-target port for shape $1" ;;
   esac
 }
@@ -1553,7 +1565,7 @@ check_shape_curve() {
   # spawn targets, which distorts the achieved-vs-target count this check measures.
   local shape="${SHAPE}"
   if [[ -z "${shape}" ]]; then
-    die "shape-curve requires --shape hybrid|constant|flash"
+    die "shape-curve requires --shape (hybrid|constant|flash|wc98_flash|wc98_ramp|wc98_constant|wc98_periodic|rr_periodic)"
   fi
   local locust_rel
   locust_rel="$(shape_locust_rel "${shape}")"
@@ -1567,7 +1579,8 @@ check_shape_curve() {
   : > "${harness_log}"
 
   echo "SHAPE_CURVE_NOTE response_times_from_this_target_are_not_comparable=true"
-  echo "SHAPE_CURVE_START shape=${shape} locust_file=${locust_rel} port=${port} run_time=18m"
+  export SHAPE_MEAN_USERS="${SHAPE_MEAN_USERS:-45}"
+  echo "SHAPE_CURVE_START shape=${shape} locust_file=${locust_rel} port=${port} run_time=18m shape_mean_users=${SHAPE_MEAN_USERS}"
 
   "${VENV_PYTHON}" "${SCRIPT_DIR}/lib/shape_curve_target.py" --port "${port}" >> "${harness_log}" 2>&1 &
   local target_pid=$!
@@ -1639,12 +1652,12 @@ check_shape_wiring() {
     die "shape-wiring missing hpa_no_scale_policy=warn in manifest.json"
   fi
 
-  kubectl port-forward -n "${NAMESPACE}" svc/hpa-eval-fixed-svc 18094:80 >/dev/null 2>&1 &
+  kubectl port-forward -n "${NAMESPACE}" svc/hpa-eval-fixed-svc 18100:80 >/dev/null 2>&1 &
   local pf_pid=$!
   register_port_forward_pid "${pf_pid}"
   sleep 2
-  if ! curl -sf --max-time 5 "http://127.0.0.1:18094/health" >/dev/null; then
-    die "SHAPE_WIRING_TARGET_UNREACHABLE url=http://127.0.0.1:18094/health"
+  if ! curl -sf --max-time 5 "http://127.0.0.1:18100/health" >/dev/null; then
+    die "SHAPE_WIRING_TARGET_UNREACHABLE url=http://127.0.0.1:18100/health"
   fi
 
   local work_dir="${run_root}/rep-1"
@@ -1661,7 +1674,7 @@ check_shape_wiring() {
   # which treats LOCUST_TIMEOUT as a failure.
   "${VENV_LOCUST}" \
     -f "${REPO_ROOT}/locust/locustfile_constant.py" \
-    --host "http://127.0.0.1:18094" \
+    --host "http://127.0.0.1:18100" \
     --headless \
     --run-time 90s \
     --csv "${csv_base}" \

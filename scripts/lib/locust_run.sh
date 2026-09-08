@@ -119,6 +119,7 @@ locust_start_bounded() {
   LOCUST_WALL_CLOCK_SEC=""
 
   require_venv
+  export SHAPE_MEAN_USERS="${SHAPE_MEAN_USERS:-45}"
   verify_load_target_reachable "${host}" "${harness_log}"
 
   local run_secs wall_secs
@@ -130,6 +131,7 @@ locust_start_bounded() {
     "${locust_file}" "${host}" "${run_time}" "${csv_base}" "${log_file}"
   harness_echo "${harness_log}" \
     "LOCUST_WALL_CLOCK_SEC=${wall_secs} run_time_sec=${run_secs} margin_sec=${LOCUST_WALL_MARGIN_SEC}"
+  harness_echo "${harness_log}" "SHAPE_MEAN_USERS=${SHAPE_MEAN_USERS}"
 
   "${VENV_LOCUST}" \
     -f "${locust_file}" \
