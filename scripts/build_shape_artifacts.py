@@ -39,13 +39,28 @@ DEFAULT_SHAPE_MEAN_USERS = 45
 PERIODIC_DILATION = PERIODIC_SOURCE_SEC // RUN_TIME_SEC
 
 HURST_NOTE = (
-    "hurst_native is reported for the source 1-second series. No post-plateau "
-    "Hurst value is published. The 36-plateau representation has too few points "
-    "for an R/S estimate (minimum 64), and a hold-resampled version measures "
-    "the resampling rather than the traffic. The plateau representation destroys "
-    "all sub-30s structure by construction, so the shapes we run are not "
-    "self-similar at fine timescales regardless of the source. This is a "
-    "property of the representation, not of the traces."
+    "hurst_native describes the source trace window we selected from, not the "
+    "arrival process delivered to pods under Locust. No post-plateau Hurst value "
+    "is published. The 36-plateau representation has too few points for an R/S "
+    "estimate (minimum 64). The plateau representation destroys all sub-30s "
+    "structure by construction."
+)
+
+ENVELOPE_CLAIM = (
+    "These shapes derive the load ENVELOPE from a production trace. They do not "
+    "replay its arrival process. Locust generates requests from N concurrent users "
+    "with wait_time uniform(1,3)s; the superposition of independent renewal "
+    "processes is approximately Poisson (Palm-Khintchine), so delivered traffic is "
+    "near-Poisson within each plateau irrespective of the source. hurst_native is "
+    "reported as a property of the SOURCE TRACE and is not a property of the "
+    "generated load."
+)
+
+ARRIVAL_PROCESS_DEFERRED = (
+    "Reproducing a self-similar or bursty arrival process from the source traces "
+    "would require an open-loop generator issuing requests on a schedule rather "
+    "than a closed-loop user model. That is a different load generator, not a "
+    "parameter change. Deferred."
 )
 WC98_SERIES_DIR = DERIVED / "wc98" / "series"
 RR_SERIES = DERIVED / "retailrocket" / "events_1s.csv"
@@ -184,6 +199,9 @@ def unit_mean_plateaus(plateaus: np.ndarray) -> np.ndarray:
 def compute_hurst_native(native_window: np.ndarray) -> dict[str, str | float]:
     return {
         "hurst_native": hurst_or_missing(native_window),
+        "hurst_native_scope": (
+            "source trace selection context only; not a property of the generated Locust load"
+        ),
         "hurst_note": HURST_NOTE,
     }
 
@@ -338,6 +356,11 @@ class TraceDerivedLoadShape(LoadTestShape):
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--shape-mean-users", type=int, default=DEFAULT_SHAPE_MEAN_USERS)
+    parser.add_argument(
+        "--provenance-only",
+        action="store_true",
+        help="Write provenance JSON only; do not regenerate locustfiles",
+    )
     args = parser.parse_args()
 
     rr_dense: np.ndarray | None = None
@@ -381,6 +404,8 @@ def main() -> int:
             "SHAPE_MEAN_USERS_default": DEFAULT_SHAPE_MEAN_USERS,
             "hpa_no_scale_policy": spec["hpa_no_scale_policy"],
             "fastest_feature_duration_sec": fastest,
+            "envelope_claim": ENVELOPE_CLAIM,
+            "arrival_process_reproduction": ARRIVAL_PROCESS_DEFERRED,
             **hurst,
         }
         if "retailrocket_limitation" in spec:
@@ -389,8 +414,11 @@ def main() -> int:
         prov_path = PROVENANCE_DIR / f"{spec['shape_name']}.json"
         prov_path.write_text(json.dumps(provenance, indent=2) + "\n", encoding="utf-8")
 
-        locust_path = LOCUST_DIR / spec["locust_file"]
-        locust_path.write_text(render_locust(spec, unit_plateaus), encoding="utf-8")
+        if not args.provenance_only:
+            locust_path = LOCUST_DIR / spec["locust_file"]
+            locust_path.write_text(render_locust(spec, unit_plateaus), encoding="utf-8")
+        else:
+            locust_path = LOCUST_DIR / spec["locust_file"]
 
         print(
             f"BUILD_SHAPE_OK name={spec['shape_name']} "

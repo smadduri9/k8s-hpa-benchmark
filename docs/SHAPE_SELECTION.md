@@ -153,23 +153,31 @@ Publish **top 5** rankable candidates (excluding `FIT_BELOW_NOISE_FLOOR`), never
 
 If any archetype has **fewer than 5** eligible rankable candidates, **stop and report** rather than scoring a thin pool.
 
-## Hurst reporting (selection phase metadata)
+## Load envelope vs arrival process
 
-Only **`hurst_native`** is published — the R/S exponent of the source 1-second request-count series for the winning window (numpy R/S; series length must be ≥ 64).
+These shapes derive the load **envelope** from a production trace — the user-count curve over time — not the trace's arrival statistics within any plateau.
 
-`hurst_native` is reported for the source 1-second series. No post-plateau Hurst value is published. The 36-plateau representation has too few points for an R/S estimate (minimum 64), and a hold-resampled version measures the resampling rather than the traffic. The plateau representation destroys all sub-30s structure by construction, so the shapes we run are not self-similar at fine timescales regardless of the source. This is a property of the representation, not of the traces.
+Locust (`locust/locustfile.py` and all trace-derived shape files) sets `wait_time = between(1, 3)`. Each simulated user loops: request, wait uniform(1,3) seconds, request. The arrival process at the server is a superposition of N independent renewal processes. By the Palm-Khintchine theorem that superposition converges to Poisson; at default `SHAPE_MEAN_USERS=45` we are already in that regime. **Delivered traffic is approximately Poisson within each plateau regardless of the source trace.**
 
-**v2 winning-window values (sanity check):**
+**Deferred (not a parameter change):** reproducing the source self-similar or bursty arrival process would require an **open-loop** generator issuing requests on a schedule, not a closed-loop user model. That is a different load generator.
 
-| Shape | `hurst_native` | Note |
-|-------|----------------|------|
+## Hurst reporting (source-trace context only)
+
+`hurst_native` is the R/S exponent of the **source** 1-second request-count window used to select the shape (numpy R/S; length ≥ 64). It describes **which trace window we picked**, not what the pods receive under Locust. Do not present it as a characteristic of benchmark runs.
+
+No post-plateau Hurst is published (36 plateaus < 64 minimum; hold-resampling measures the hold, not traffic — see withdrawn `hurst_scaled` note below).
+
+**v2 winning-window source values (selection context, not delivered load):**
+
+| Shape | `hurst_native` (source) | Note |
+|-------|-------------------------|------|
 | `wc98_flash` | 0.885 | |
 | `wc98_ramp` | 0.955 | |
-| `wc98_constant` | 0.570 | Lower than flash/ramp — consistent with flatter, less bursty source (expected direction) |
-| `wc98_periodic` | 0.884 | Native series is 86400 s (full local day) |
+| `wc98_constant` | 0.570 | Lower than flash/ramp — flatter, less bursty **source** (expected direction) |
+| `wc98_periodic` | 0.884 | 86400 s source window |
 | `rr_periodic` | 0.780 | |
 
-A previously computed `hurst_scaled` (hold-resampling 36 plateau user counts to 1 s) was **withdrawn**: consecutive identical samples inflate R/S persistence (e.g. `wc98_constant` native 0.570 → scaled 0.863). That measured the hold, not the traffic. Do not publish or replace it with another estimator.
+A previously computed `hurst_scaled` was **withdrawn** (e.g. `wc98_constant` source 0.570 → invalid scaled 0.863): it measured 30 s hold-resampling, not traffic.
 
 ## Runtime amplitude (not a trace property)
 
