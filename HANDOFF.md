@@ -24,9 +24,9 @@ Cluster shape from `scripts/deploy_gke.sh` (no cluster autoscaler — fixed node
 | Item | Value |
 |------|--------|
 | Topology | **Zonal** (`ZONE=us-central1-a`), not regional |
-| Machine type | `e2-standard-2` (2 vCPU, 8 GB RAM per node) |
-| Node count | **3** fixed (`--num-nodes=3`; no `--enable-autoscaling`) |
-| Boot disk | **50 GB** balanced PD per node (`--disk-size=50`; 3×50 = **150 GB** against `SSD_TOTAL_GB` limit 250) |
+| Machine type | `e2-standard-8` (8 vCPU, 32 GB RAM per node) — Phase 5 default in `scripts/lib/gke_shape.sh` |
+| Node count | **5** fixed (`GKE_NUM_NODES=5`; no `--enable-autoscaling`) |
+| Boot disk | **50 GB** balanced PD per node (`NODE_DISK_SIZE_GB=50`; 5×50 = **250 GB** cluster SSD). Preflight checks cluster-only 250 GB / 40 CPUS. The runner VM already holds 50 GB and 4 vCPU; operator quota (Phase 5 Step 9) must raise regional limits before create. |
 | Control-plane fee | **Waived** for the first zonal cluster per GCP project |
 
 ### App resources (`k8s/deployment-hpa.yaml`)
