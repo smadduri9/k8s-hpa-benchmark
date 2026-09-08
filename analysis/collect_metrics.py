@@ -75,6 +75,13 @@ FIELDNAMES = [
     "latency_p50_ms",
     "latency_p95_ms",
     "latency_p99_ms",
+    "latency_le_100ms_count",
+    "latency_le_250ms_count",
+    "latency_le_500ms_count",
+    "latency_le_1000ms_count",
+    "latency_le_2500ms_count",
+    "latency_le_5000ms_count",
+    "latency_le_inf_count",
     "rps",
     "active_requests",
     "error_rate",
@@ -135,6 +142,27 @@ def build_queries(mode: str, step: int) -> dict[str, str]:
         ),
         "latency_p99_ms": (
             f"histogram_quantile(0.99, sum(rate(app_request_latency_seconds_bucket{{{label}}}[{rate_window}])) by (le)) * 1000"
+        ),
+        "latency_le_100ms_count": (
+            f'sum(increase(app_request_latency_seconds_bucket{{{label},le="0.1"}}[{rate_window}]))'
+        ),
+        "latency_le_250ms_count": (
+            f'sum(increase(app_request_latency_seconds_bucket{{{label},le="0.25"}}[{rate_window}]))'
+        ),
+        "latency_le_500ms_count": (
+            f'sum(increase(app_request_latency_seconds_bucket{{{label},le="0.5"}}[{rate_window}]))'
+        ),
+        "latency_le_1000ms_count": (
+            f'sum(increase(app_request_latency_seconds_bucket{{{label},le="1.0"}}[{rate_window}]))'
+        ),
+        "latency_le_2500ms_count": (
+            f'sum(increase(app_request_latency_seconds_bucket{{{label},le="2.5"}}[{rate_window}]))'
+        ),
+        "latency_le_5000ms_count": (
+            f'sum(increase(app_request_latency_seconds_bucket{{{label},le="5.0"}}[{rate_window}]))'
+        ),
+        "latency_le_inf_count": (
+            f'sum(increase(app_request_latency_seconds_bucket{{{label},le="+Inf"}}[{rate_window}]))'
         ),
         "rps": f'sum(rate(app_requests_total{{{label},status_code="200"}}[{rate_window}]))',
         "active_requests": f"sum(app_active_requests{{{label}}})",
