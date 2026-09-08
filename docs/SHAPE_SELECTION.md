@@ -176,9 +176,59 @@ users(t) = max(1, round(UNIT_MEAN_PLATEAUS[i] * SHAPE_MEAN_USERS))
 
 Default **45** matches the current 3×`e2-standard-2` cluster. Phase 5 sets this from measured capacity. **Absolute amplitude is a deployment parameter, not a trace property.**
 
-## Archetypes per dataset
+## Scoring interpretation (v2 results)
 
-| Dataset | Archetypes |
-|---------|------------|
-| WorldCup98 | `flash`, `ramp`, `constant`, `periodic` |
-| RetailRocket | `constant`, `periodic` |
+Smooth archetypes match real traffic well; sharp ones are idealisations that real traffic only approximates.
+
+| Archetype | Best RMSE | Noise floor | Interpretation |
+|-----------|-----------|-------------|----------------|
+| `constant` | 0.025 | 0.017 | Close fit — flat traffic exists in WC98 |
+| `ramp` | 0.048 | 0.029 | Close fit — gradual ramps exist |
+| `flash` | 0.326 | 0.093 | Above noise floor, but mediocre fit — template is idealised |
+| `periodic` (WC98) | 0.229 | 0.008 | Above noise floor, moderate fit — diurnal structure is real but not sinusoidal |
+
+A reader comparing RMSE across archetypes must not treat high flash/periodic RMSE as a bad fit to data; the templates are sharp or sinusoidal idealisations. Trace-derived flash is **approximate**, not a tight reconstruction.
+
+## Committed shapes (five, not six)
+
+| Shape | Dataset | Archetype |
+|-------|---------|-----------|
+| `wc98_flash` | WorldCup98 | `flash` |
+| `wc98_ramp` | WorldCup98 | `ramp` |
+| `wc98_constant` | WorldCup98 | `constant` |
+| `wc98_periodic` | WorldCup98 | `periodic` |
+| `rr_periodic` | RetailRocket | `periodic` |
+
+## RetailRocket scope — `constant` archetype dropped (rule unchanged)
+
+v2 scoring found **zero** eligible RetailRocket `constant` windows (`N_windows_eligible=0` out of 198,702). The v2 threshold was **not** lowered after observing this outcome.
+
+**Why no eligible constant windows**
+
+- RetailRocket: 2,756,101 events over ~4.5 months ≈ **0.24 events/s**.
+- A native **1080 s** window holds ≈ **247 events** ≈ **7 counts/plateau** (36 plateaus × 30 s).
+- v2 requires **≥ 100 counts/plateau** (≈ 3,600 events/window). No threshold that admits RR constant would leave the shape distinguishable from counting noise.
+
+**Why periodic survives**
+
+- Periodic uses a **86400 s** source window: ≈ **20,400 events** across 36 plateaus of **2400 s** ≈ **567 counts/plateau** (well above 100).
+
+**Why dilating constant is not a fix**
+
+- A 24-hour e-commerce window **is** periodic — the diurnal cycle is its dominant feature. No flat 24-hour stretch exists to find.
+
+**Per-dataset thresholds rejected**
+
+- Would destroy cross-dataset comparability.
+- Lowering a frozen rule after observing exclusion is exactly what the freeze prevents.
+
+**Outcome**
+
+RetailRocket serves as the **modern-provenance control on the periodic archetype only**. State this limitation wherever RetailRocket is cited. See `docs/shape_provenance/rr_periodic.json`.
+
+## Archetypes per dataset (selection pass)
+
+| Dataset | Archetypes scored | Committed shape |
+|---------|-------------------|-----------------|
+| WorldCup98 | `flash`, `ramp`, `constant`, `periodic` | all four |
+| RetailRocket | `constant`, `periodic` | **`periodic` only** (`constant` dropped — see above) |
