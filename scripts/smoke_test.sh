@@ -33,7 +33,7 @@ usage() {
   cat <<'EOF'
 Usage:
   bash scripts/smoke_test.sh --check harness
-  bash scripts/smoke_test.sh --check coldstart|assertions|fixed-metrics|label-isolation|locust-authority|preflight-traps|handoff-docs|error-rate-positive|event-loop-not-blocked|endpoints-never-empty|readiness-sweep|shape-curve|shape-wiring
+  bash scripts/smoke_test.sh --check coldstart|assertions|fixed-metrics|label-isolation|locust-authority|preflight-traps|handoff-docs|error-rate-positive|event-loop-not-blocked|endpoints-never-empty|readiness-sweep|shape-curve|shape-wiring|bucket-fieldnames|phase5-resume|hpa-stock|coldstart-collector
   bash scripts/smoke_test.sh --check shape-curve --shape NAME
   bash scripts/smoke_test.sh --negative-test fixed-replica-assert|empty-metrics-column|low-metrics-coverage|missing-locust-hpa|missing-locust-fixed|hpa-never-scaled|label-isolation|coldstart-readiness|liveness-restarts-hung
   bash scripts/smoke_test.sh --full --env-file .env [--reuse-artifacts]
@@ -1515,6 +1515,8 @@ run_full_suite() {
   check_label_isolation
   BOTH_DEPLOYMENTS_UP=false
   check_locust_authority
+  check_phase5_resume
+  check_bucket_fieldnames
   check_preflight_traps
   negative_fixed_replica_assert
   negative_empty_metrics_column
@@ -1707,6 +1709,83 @@ check_shape_wiring() {
   echo "SHAPE_WIRING_PASS run_id=${wiring_id}"
 }
 
+check_bucket_fieldnames() {
+  venv_python - <<'PY'
+from analysis.collect_metrics import FIELDNAMES
+expected = [
+    "latency_le_100ms_count",
+    "latency_le_250ms_count",
+    "latency_le_500ms_count",
+    "latency_le_1000ms_count",
+    "latency_le_2500ms_count",
+    "latency_le_5000ms_count",
+    "latency_le_inf_count",
+]
+p99 = FIELDNAMES.index("latency_p99_ms")
+rps = FIELDNAMES.index("rps")
+got = FIELDNAMES[p99 + 1 : rps]
+if got != expected:
+    raise SystemExit(f"FIELDNAMES bucket mismatch got={got} expected={expected}")
+print("FIELDNAMES=" + ",".join(FIELDNAMES))
+print("BUCKET_FIELDNAMES_OK")
+PY
+}
+
+check_phase5_resume() {
+  source "${SCRIPT_DIR}/lib/phase5_arm.sh"
+  local tmp dir
+  tmp="$(mktemp -d)"
+  dir="${tmp}/hpa_tuned"
+  mkdir -p "${dir}"
+  printf 'PASS\nok\n' > "${dir}/STATUS"
+  echo t0 > "${dir}/t0.txt"
+  : > "${dir}/locust_hpa_tuned_stats.csv"
+  : > "${dir}/hpa_tuned_metrics.csv"
+  if ! arm_is_complete "${dir}" hpa_tuned; then
+    rm -rf "${tmp}"
+    die "phase5-resume planted PASS arm not skipped"
+  fi
+  echo "PHASE5_RESUME_SKIP_OK"
+  rm -rf "${tmp}"
+}
+
+check_hpa_stock() {
+  kubectl config use-context "kind-${CLUSTER_NAME}" >/dev/null 2>&1 || true
+  kubectl apply -f "${REPO_ROOT}/k8s/namespace.yaml"
+  kubectl apply -f "${REPO_ROOT}/k8s/hpa-stock.yaml"
+  if kubectl get hpa hpa-eval-hpa -n "${NAMESPACE}" -o yaml | grep -q '^  behavior:'; then
+    die "hpa-stock applied but behavior key still present"
+  fi
+  echo "HPA_STOCK_NO_BEHAVIOR"
+  kubectl apply -f "${REPO_ROOT}/k8s/hpa.yaml"
+  if ! kubectl get hpa hpa-eval-hpa -n "${NAMESPACE}" -o yaml | grep -q '^  behavior:'; then
+    die "hpa.yaml apply did not restore behavior"
+  fi
+  echo "HPA_TUNED_BEHAVIOR_RESTORED"
+}
+
+check_coldstart_collector() {
+  local jsonl="${REPO_ROOT}/results/cold-start-calibration/cached.jsonl"
+  local uncached="${REPO_ROOT}/results/cold-start-calibration/uncached.jsonl"
+  if [[ ! -s "${jsonl}" || ! -s "${uncached}" ]]; then
+    bash "${SCRIPT_DIR}/calibrate_cold_start_collector.sh"
+  fi
+  venv_python - "${jsonl}" "${uncached}" <<'PY'
+import json
+import sys
+cached = json.loads(open(sys.argv[1], encoding="utf-8").readline())
+uncached = json.loads(open(sys.argv[2], encoding="utf-8").readline())
+obs = int(cached["init_sleep_observed_sec"])
+if abs(obs - 8) > 1:
+    raise SystemExit(f"CALIBRATION_STALE observed_sec={obs}")
+if cached.get("image_cached") != "true":
+    raise SystemExit(f"cached image_cached={cached.get('image_cached')}")
+if uncached.get("image_cached") != "false":
+    raise SystemExit(f"uncached image_cached={uncached.get('image_cached')}")
+print("COLDSTART_COLLECTOR_SMOKE_OK")
+PY
+}
+
 if [[ "${FULL}" == "true" ]]; then
   run_full_suite
 elif [[ -n "${NEGATIVE_TEST}" ]]; then
@@ -1739,6 +1818,10 @@ elif [[ -n "${CHECK}" ]]; then
     handoff-docs) check_handoff_docs ;;
     shape-curve) check_shape_curve ;;
     shape-wiring) check_shape_wiring ;;
+    bucket-fieldnames) check_bucket_fieldnames ;;
+    phase5-resume) check_phase5_resume ;;
+    hpa-stock) check_hpa_stock ;;
+    coldstart-collector) check_coldstart_collector ;;
     *) die "unknown check: ${CHECK}" ;;
   esac
 else
