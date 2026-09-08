@@ -226,6 +226,17 @@ Guards enforced for this run (evidence in `rep.log` and collection output):
 - **Tier 2 deferral:** Running Locust in-cluster (same region as the cluster) is deferred to Tier 2 to remove client-path variance from absolute latency.
 - **Saturation.** Indirect signals (`cpu_utilization_pct`, p99 latency) are collected. Direct in-flight saturation (`active_requests`) is pending Phase 5 — the column is empty in every existing run.
 
+### Cluster sizing constraint
+
+- The cluster is 3 x e2-standard-8 (24 vCPU), not the 5 nodes originally planned.
+- The 5-node figure was taken from SLO-Scaler (arXiv:2608.18390), which evaluated DeathStarBench, a twelve-microservice application. This project runs a single FastAPI service, so the node count was borrowed rather than derived.
+- The binding constraint is a project CPUS quota of 32 in us-central1. Google declined an increase on service-usage-history grounds.
+- 3 nodes still satisfy the experiment: 20 replicas at 500m request is 10 cores scheduled, and at 1000m limit is 20 cores against roughly 21 usable after GKE reservations and system pods.
+- The consequence is throughput, not design. At roughly 0.1 core-seconds per request, sustained load caps near 210 RPS at full saturation, so the realistic target is 130-150 RPS rather than 200-300. That remains inside the 120-280 RPS range used by SLO-Scaler.
+- Do not describe 3 nodes as the ideal configuration. State the constraint and its effect.
+- **Estimated Phase 5 spend (not invoiced):** ~25 h cluster at 3× `e2-standard-8` (~$0.80/hr on-demand list) plus runner `e2-standard-4` and two LoadBalancers → ballpark **~$25–27** (down from ~$35–40 at 5 nodes); see Phase 5 plan cost section.
+- **P1 capacity probe stop rule:** unchanged by node count. The probe stops at the first step where median pod CPU is ≥ 80% of the 1000m limit or RPS per user falls versus the previous step (`CAPACITY_PROBE_TIMEOUT` if neither occurs within 12 minutes). That rule is pod-local on the fixed arm (4 replicas); it does not assume a target user count from the 5-node design. Saturation may arrive at a lower Locust user count than a larger cluster would have needed to reach the same per-pod CPU, and the stop rule still fires on that step.
+
 ## Trace-derived load shapes (Phase 4)
 
 Five trace-derived shapes replace synthetic `hybrid` / `constant` / `flash` for **new** benchmark runs. Selection rule: [`docs/SHAPE_SELECTION.md`](docs/SHAPE_SELECTION.md) (`shape_selection_rule_v2`). Per-shape provenance JSON: `docs/shape_provenance/`. Locustfiles: `locust/locustfile_wc98_*.py`, `locust/locustfile_rr_periodic.py`.
