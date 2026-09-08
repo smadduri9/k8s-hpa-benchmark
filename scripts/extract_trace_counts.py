@@ -319,7 +319,7 @@ def extract_retailrocket(events_path: Path, out_dir: Path) -> RetailRocketExtrac
     rr_dir.mkdir(parents=True, exist_ok=True)
     out_path = rr_dir / "events_1s.csv"
     with out_path.open("w", newline="", encoding="utf-8") as handle:
-        handle.write("# series=retailrocket timezone=UTC bot_filter=shape_selection_rule_v1\n")
+        handle.write("# series=retailrocket timezone=UTC bot_filter=shape_selection_rule_v2\n")
         writer = csv.writer(handle)
         writer.writerow(["unix_second", "request_count"])
         for ts_sec in sorted(site_counts):
@@ -335,7 +335,7 @@ def extract_retailrocket(events_path: Path, out_dir: Path) -> RetailRocketExtrac
         "events_excluded_by_type": events_excluded_by_type,
         "seconds_with_traffic": summary.seconds_with_traffic,
         "timezone": "UTC",
-        "bot_filter": "shape_selection_rule_v1",
+        "bot_filter": "shape_selection_rule_v2",
         "kept_event_types": sorted(RR_KEPT_EVENT_TYPES),
     }
     summary_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")

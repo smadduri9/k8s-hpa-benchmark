@@ -1,8 +1,18 @@
 # Shape selection rule
 
-**Version:** `shape_selection_rule_v1`
+**Version:** `shape_selection_rule_v2`
 
-This document is frozen **before** any candidate window is scored. Do not change thresholds, templates, or filters after inspecting candidate rankings. A new rule requires a new version string and a new commit predating any rescore.
+**Supersedes:** `shape_selection_rule_v1` (commit `6efd008`).
+
+### What changed in v2 (committed before any v2 scoring)
+
+| Change | v1 | v2 | Why |
+|--------|----|----|-----|
+| Eligibility threshold | ≥ 1080 requests per 1080 s window (mean ≥ 1 req/s; ~30 counts/plateau) | **`MIN_COUNTS_PER_PLATEAU = 100`** — mean counts per plateau ≥ 100 | At ~30 counts/plateau, Poisson relative noise is ~18% (`1/√30`), same order as shape differences. `constant` archetype is especially biased: flat template cannot distinguish flat signal from counting noise. 1,487 of 1,653 WC98 series already exceed 100k requests/day; no scarcity reason to keep the low threshold. |
+| Noise floor | not reported | **`noise_floor_rmse = 1 / sqrt(mean_counts_per_plateau)`** beside each RMSE; flag **`FIT_BELOW_NOISE_FLOOR`** when `RMSE < noise_floor_rmse` | Candidates fitting below the Poisson floor are fitting counting noise, not shape, and **must not win**. |
+| Distance rationale | stated without defence | **Distance metric rationale** section added | Reviewers asking “why not DTW?” need a committed answer before scores are interpreted. |
+
+This document is frozen **before** any candidate window is scored under v2. Do not change thresholds, templates, or filters after inspecting candidate rankings. A new rule requires a new version string and a new commit predating any rescore.
 
 ## Purpose
 
@@ -13,7 +23,7 @@ Select 18-minute (1080 s) load-shape windows from WorldCup98 and RetailRocket tr
 1. Build 1-second request-count series per eligible series (below).
 2. For native archetypes (`flash`, `ramp`, `constant`): take a contiguous **1080 s** window.
 3. Aggregate each window to **36 plateaus** of **30 s** (`PLATEAU_SEC=30`, `RUN_TIME_SEC=1080`).
-4. For `periodic`: take a contiguous **86400 s** source window, then dilate to 36 plateaus (playback 1080 s; dilation factor 80) in the extraction phase — not in this scoring step’s RMSE input, which uses the 36 plateau vector after aggregation/dilation as defined in the extraction script.
+4. For `periodic`: take a contiguous **86400 s** source window, then aggregate to **36 plateaus** of **2400 s** each (`86400 / 36`); playback is 1080 s (dilation factor 80) in the Locust phase — RMSE here uses the 36-point plateau vector from the 86400 s source window.
 
 ## Series
 
@@ -45,13 +55,24 @@ Keep event types `view`, `addtocart`, and `transaction`. Record observed `visito
 |------|-----------|
 | Window length | Exactly **1080 s** (native archetypes) or **86400 s** (`periodic` source only) |
 | Stride | **60 s** between window starts |
-| Minimum requests | **≥ 1080** requests in the window (mean ≥ 1 req/s) |
+| Minimum counts per plateau | **`mean(plateau_counts) >= MIN_COUNTS_PER_PLATEAU`** where **`MIN_COUNTS_PER_PLATEAU = 100`** |
 | Timeline | 1 s bins are dense; zero bins are valid zeros, not gaps |
 | Empty ITA days | Reject days 1–4 (empty log files on ITA page) |
 | `INELIGIBLE_SERVER_ABSENT` | WorldCup98 `(server, local_day)` with **zero requests that calendar day** (+0200) — do not score any window on that pair |
-| Peak filter | **No** absolute scaled user peak. **No** `maxReplicas` gate. Report `peak_to_mean = max(plateau) / mean(plateau)` on the raw-count plateau vector (equivalent on unit-mean form). Ratio is reported; **no numeric ratio cap** in v1 |
+| Peak filter | **No** absolute scaled user peak. **No** `maxReplicas` gate. Report `peak_to_mean = max(plateau) / mean(plateau)` on the raw-count plateau vector (equivalent on unit-mean form). Ratio is reported; **no numeric ratio cap** |
 
-Eligibility does **not** depend on `SHAPE_MEAN_USERS`.
+At `PLATEAU_SEC=30` and `RUN_TIME_SEC=1080`, 36 plateaus imply **≥ 3600** requests per native window when the threshold binds uniformly. Eligibility does **not** depend on `SHAPE_MEAN_USERS`.
+
+## Poisson noise floor (reported beside RMSE)
+
+For each candidate window after plateau aggregation:
+
+```
+mean_counts_per_plateau = mean(plateau_counts)
+noise_floor_rmse = 1 / sqrt(mean_counts_per_plateau)
+```
+
+Print `noise_floor_rmse` beside `RMSE`. If **`RMSE < noise_floor_rmse`**, flag **`FIT_BELOW_NOISE_FLOOR`**. Such a candidate is fitting counting noise rather than shape and **must not win** (excluded from top-5 ranking even if RMSE sorts first).
 
 ## Canonical templates (length 36, unit mean = 1)
 
@@ -98,25 +119,39 @@ RMSE = sqrt(mean((x_norm - template)^2))
 
 Compare each eligible window to the archetype template for that scoring pass. **Do not score until this file is committed.**
 
+## Distance metric rationale
+
+Why Euclidean RMSE on unit-mean plateau vectors, not DTW or shape-based distance?
+
+1. **Empirical comparison across 112 UCR datasets** (arXiv:2004.09546): Euclidean, DTW, and shape-based distance perform similarly — winning counts 32 / 31 / 28 for DTW / shape-based / Euclidean, with ARI spread 0.016 between DTW and Euclidean. No large general advantage to DTW.
+2. **DTW alignment is largely redundant here.** The 60 s sliding stride already covers time shift; the same paper notes DTW and Euclidean are equivalent at window size 0.
+3. **DTW duration warping is wrong for autoscaling.** It treats a 3-minute spike and a 6-minute spike as similar. For HPA, burst duration relative to ~60 s reaction time matters; penalising duration mismatch is desired behaviour.
+4. **DTW cost.** The same paper reports 32 days on a 40-core machine for its largest datasets. This repo scores on the order of **240,000** candidate windows.
+5. **Shape-based distance z-normalizes** and is scale-invariant, which would erase `peak_to_mean` — the property that determines how hard the autoscaler is driven. Unit-mean normalisation removes absolute scale while preserving relative amplitude, which is what we want.
+
 ## Tie-break (lower wins first)
 
-1. Lower RMSE
+1. Lower RMSE (among candidates not `FIT_BELOW_NOISE_FLOOR`)
 2. Earlier window start (France **+0200** for WC98; Unix epoch for RR)
 3. Lower `server` id (WC98) or `retailrocket` for RR
 4. Smaller local-day index
 
 ## Report (per dataset × archetype)
 
-Publish **top 5** candidates, never only the winner. Each row includes:
+Publish **top 5** rankable candidates (excluding `FIT_BELOW_NOISE_FLOOR`), never only the winner. Each row includes:
 
 - `server_or_series_id`
 - local date (+0200 for WC98)
-- `window_offset_sec` from local midnight
+- `window_offset_sec` from local midnight (WC98) or Unix second (RR)
 - `RMSE`
+- `noise_floor_rmse`
+- `FIT_BELOW_NOISE_FLOOR` (true/false)
 - `peak_to_mean`
 - `N_windows_total`
 - `N_windows_eligible`
 - count of `INELIGIBLE_SERVER_ABSENT` pairs skipped
+
+If any archetype has **fewer than 5** eligible rankable candidates, **stop and report** rather than scoring a thin pool.
 
 ## Hurst reporting (selection phase metadata)
 
