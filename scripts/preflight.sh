@@ -230,6 +230,7 @@ if [[ -x "${VENV_PYTHON}" ]]; then
 fi
 
 if [[ "${REQUIRE_GKE}" == "true" ]]; then
+  export SKIP_DOCKER="${SKIP_DOCKER}"
   preflight_require_gke
 fi
 

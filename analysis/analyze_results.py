@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import io
 import json
 import os
 import sys
@@ -107,8 +108,9 @@ def phase_bands(ax, max_y: float):
 # ---------------------------------------------------------------------------
 
 def load_csv(path: str) -> list[dict]:
-    with open(path, newline="") as f:
-        reader = csv.DictReader(f)
+    with open(path, newline="", encoding="utf-8") as f:
+        lines = [line for line in f if not line.lstrip().startswith("#")]
+        reader = csv.DictReader(io.StringIO("".join(lines)))
         rows = []
         for row in reader:
             converted = {}
@@ -119,6 +121,12 @@ def load_csv(path: str) -> list[dict]:
                     converted[k] = v
             rows.append(converted)
     return rows
+
+
+def read_metrics_csv_rows(path: str) -> list[dict]:
+    with open(path, newline="", encoding="utf-8") as handle:
+        lines = [line for line in handle if not line.lstrip().startswith("#")]
+        return list(csv.DictReader(io.StringIO("".join(lines))))
 
 
 def extract(rows: list[dict], key: str):
@@ -706,23 +714,21 @@ def guard_inputs(
         sys.exit(1)
 
     for path in [fixed_path, hpa_path]:
-        with open(path, newline="") as handle:
-            reader = csv.DictReader(handle)
-            rows = list(reader)
-            if not rows:
-                print(f"ERROR: empty metrics file: {path}", file=sys.stderr)
-                sys.exit(1)
-            if not allow_synthetic and "data_source" in rows[0] and any(r.get("data_source") == "SYNTHETIC" for r in rows):
-                print("ERROR: synthetic data detected; pass --allow-synthetic to analyze", file=sys.stderr)
-                sys.exit(1)
-            if allow_partial_coverage:
-                continue
-            try:
-                declared = infer_declared_replicas(rows)
-                assert_column_coverage(rows, label=f"path={path}", declared_replicas=declared)
-            except RuntimeError as exc:
-                print(str(exc), file=sys.stderr)
-                sys.exit(1)
+        rows = read_metrics_csv_rows(path)
+        if not rows:
+            print(f"ERROR: empty metrics file: {path}", file=sys.stderr)
+            sys.exit(1)
+        if not allow_synthetic and "data_source" in rows[0] and any(r.get("data_source") == "SYNTHETIC" for r in rows):
+            print("ERROR: synthetic data detected; pass --allow-synthetic to analyze", file=sys.stderr)
+            sys.exit(1)
+        if allow_partial_coverage:
+            continue
+        try:
+            declared = infer_declared_replicas(rows)
+            assert_column_coverage(rows, label=f"path={path}", declared_replicas=declared)
+        except RuntimeError as exc:
+            print(str(exc), file=sys.stderr)
+            sys.exit(1)
 
 
 def main():

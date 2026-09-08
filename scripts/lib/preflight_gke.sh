@@ -54,21 +54,24 @@ preflight_check_artifact_registry_docker_auth() {
   registry_host="$(artifact_registry_host "${REGION}")"
   local docker_config="${HOME}/.docker/config.json"
 
-  if [[ ! -f "${docker_config}" ]]; then
-    preflight_fail "ARTIFACT_REGISTRY_DOCKER_AUTH_MISSING registry=${registry_host} reason=no_docker_config"
-    return
-  fi
+  if [[ "${SKIP_DOCKER:-false}" == "true" ]]; then
+    printf '%s\n' "GKE_DOCKER_CREDENTIAL_HELPER=SKIPPED reason=runner_vm_builds_on_mac"
+  else
+    if [[ ! -f "${docker_config}" ]]; then
+      preflight_fail "ARTIFACT_REGISTRY_DOCKER_AUTH_MISSING registry=${registry_host} reason=no_docker_config"
+      return
+    fi
 
-  local audit_python="${VENV_PYTHON:-}"
-  if [[ -z "${audit_python}" || ! -x "${audit_python}" ]]; then
-    audit_python="$(command -v python3 || true)"
-  fi
-  if [[ -z "${audit_python}" ]]; then
-    preflight_fail "missing python3 for docker credential helper audit"
-    return
-  fi
+    local audit_python="${VENV_PYTHON:-}"
+    if [[ -z "${audit_python}" || ! -x "${audit_python}" ]]; then
+      audit_python="$(command -v python3 || true)"
+    fi
+    if [[ -z "${audit_python}" ]]; then
+      preflight_fail "missing python3 for docker credential helper audit"
+      return
+    fi
 
-  helper="$("${audit_python}" - "${registry_host}" "${docker_config}" <<'PY'
+    helper="$("${audit_python}" - "${registry_host}" "${docker_config}" <<'PY'
 import json
 import sys
 
@@ -81,11 +84,12 @@ print(helper)
 PY
 )"
 
-  if [[ -z "${helper}" ]]; then
-    preflight_fail "ARTIFACT_REGISTRY_DOCKER_AUTH_MISSING registry=${registry_host} reason=no_cred_helper remediation=gcloud auth configure-docker ${registry_host}"
-    return
+    if [[ -z "${helper}" ]]; then
+      preflight_fail "ARTIFACT_REGISTRY_DOCKER_AUTH_MISSING registry=${registry_host} reason=no_cred_helper remediation=gcloud auth configure-docker ${registry_host}"
+      return
+    fi
+    printf '%s\n' "GKE_DOCKER_CREDENTIAL_HELPER=PASS registry=${registry_host} helper=${helper}"
   fi
-  printf '%s\n' "GKE_DOCKER_CREDENTIAL_HELPER=PASS registry=${registry_host} helper=${helper}"
 
   if ! gcloud artifacts docker images list \
       "${registry_host}/${PROJECT_ID}/${ARTIFACT_REGISTRY_REPO}" \

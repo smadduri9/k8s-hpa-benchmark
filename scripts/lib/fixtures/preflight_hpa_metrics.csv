@@ -1,6 +1,7 @@
-timestamp,elapsed_seconds,experiment,data_source,run_id,cluster_name,collection_timestamp,replicas,cpu_utilization_pct,latency_p50_ms,latency_p95_ms,latency_p99_ms,rps,error_rate
-2026-09-02T00:00:00+00:00,0,hpa,MEASURED,preflight,kind,2026-09-02T00:00:00+00:00,1,1.0,11.0,21.0,31.0,5.0,0.0
-2026-09-02T00:01:00+00:00,60,hpa,MEASURED,preflight,kind,2026-09-02T00:01:00+00:00,2,2.0,13.0,23.0,33.0,6.0,0.0
-2026-09-02T00:02:00+00:00,120,hpa,MEASURED,preflight,kind,2026-09-02T00:02:00+00:00,3,3.0,15.0,25.0,35.0,7.0,0.0
-2026-09-02T00:03:00+00:00,180,hpa,MEASURED,preflight,kind,2026-09-02T00:03:00+00:00,3,4.0,17.0,27.0,37.0,8.0,0.0
-2026-09-02T00:04:00+00:00,240,hpa,MEASURED,preflight,kind,2026-09-02T00:04:00+00:00,3,5.0,19.0,29.0,39.0,9.0,0.0
+# Synthetic preflight fixture data, not measurements from a real run. Histogram bucket counts are constructed for schema and coverage checks.
+timestamp,elapsed_seconds,experiment,data_source,run_id,cluster_name,collection_timestamp,replicas,cpu_utilization_pct,latency_p50_ms,latency_p95_ms,latency_p99_ms,latency_le_100ms_count,latency_le_250ms_count,latency_le_500ms_count,latency_le_1000ms_count,latency_le_2500ms_count,latency_le_5000ms_count,latency_le_inf_count,rps,error_rate
+2026-09-02T00:00:00+00:00,0,hpa,MEASURED,preflight,kind,2026-09-02T00:00:00+00:00,1,1.0,11.0,21.0,31.0,MISSING,MISSING,MISSING,MISSING,MISSING,MISSING,MISSING,MISSING,MISSING
+2026-09-02T00:01:00+00:00,60,hpa,MEASURED,preflight,kind,2026-09-02T00:01:00+00:00,2,2.0,13.0,23.0,33.0,MISSING,MISSING,MISSING,MISSING,MISSING,MISSING,MISSING,MISSING,MISSING
+2026-09-02T00:02:00+00:00,120,hpa,MEASURED,preflight,kind,2026-09-02T00:02:00+00:00,3,3.0,15.0,25.0,35.0,66,67,68,68,68,68,68,7.0,0.0
+2026-09-02T00:03:00+00:00,180,hpa,MEASURED,preflight,kind,2026-09-02T00:03:00+00:00,3,4.0,17.0,27.0,37.0,76,77,78,78,78,78,78,8.0,0.0
+2026-09-02T00:04:00+00:00,240,hpa,MEASURED,preflight,kind,2026-09-02T00:04:00+00:00,3,5.0,19.0,29.0,39.0,86,87,88,88,88,88,88,9.0,0.0
