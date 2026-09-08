@@ -1,0 +1,47 @@
+{
+  "rule": "shape_selection_rule_v2",
+  "MIN_COUNTS_PER_PLATEAU": 100,
+  "results": {
+    "wc98_flash": {
+      "N_windows_total": 2352219,
+      "N_windows_eligible": 1553634,
+      "N_rankable": 1553634,
+      "thin_pool": false,
+      "top5_path": "/Users/srirammadduri/Documents/Personal Projects/k8s-hpa-benchmark/docs/shape_candidates/wc98_flash_top5.csv"
+    },
+    "wc98_ramp": {
+      "N_windows_total": 2352219,
+      "N_windows_eligible": 1553634,
+      "N_rankable": 1553634,
+      "thin_pool": false,
+      "top5_path": "/Users/srirammadduri/Documents/Personal Projects/k8s-hpa-benchmark/docs/shape_candidates/wc98_ramp_top5.csv"
+    },
+    "wc98_constant": {
+      "N_windows_total": 2352219,
+      "N_windows_eligible": 1553634,
+      "N_rankable": 1553634,
+      "thin_pool": false,
+      "top5_path": "/Users/srirammadduri/Documents/Personal Projects/k8s-hpa-benchmark/docs/shape_candidates/wc98_constant_top5.csv"
+    },
+    "wc98_periodic": {
+      "N_windows_total": 1653,
+      "N_windows_eligible": 1625,
+      "N_rankable": 1625,
+      "thin_pool": false,
+      "top5_path": "/Users/srirammadduri/Documents/Personal Projects/k8s-hpa-benchmark/docs/shape_candidates/wc98_periodic_top5.csv"
+    },
+    "retailrocket_constant": {
+      "N_windows_total": 198702,
+      "N_windows_eligible": 0,
+      "thin_pool": true
+    },
+    "retailrocket_periodic": {
+      "N_windows_total": 197280,
+      "N_windows_eligible": 197280,
+      "N_rankable": 197280,
+      "thin_pool": false,
+      "top5_path": "/Users/srirammadduri/Documents/Personal Projects/k8s-hpa-benchmark/docs/shape_candidates/retailrocket_periodic_top5.csv"
+    }
+  },
+  "thin_pool_stop": true
+}
