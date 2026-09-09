@@ -1764,6 +1764,55 @@ check_hpa_stock() {
   echo "HPA_TUNED_BEHAVIOR_RESTORED"
 }
 
+check_capacity_probe_derive() {
+  local fixture_dir="${REPO_ROOT}/scripts/lib/fixtures/capacity_probe"
+  local tmp_out=""
+  local err_file=""
+
+  tmp_out="$(mktemp "${TMPDIR:-/tmp}/cap-probe-derive.XXXXXX")"
+  err_file="$(mktemp "${TMPDIR:-/tmp}/cap-probe-derive-err.XXXXXX")"
+
+  venv_python "${REPO_ROOT}/scripts/lib/capacity_probe_derive.py" \
+    --steps "${fixture_dir}/feasible_steps.csv" \
+    --out "${tmp_out}"
+
+  set +e
+  venv_python "${REPO_ROOT}/scripts/lib/capacity_probe_derive.py" \
+    --steps "${fixture_dir}/infeasible_steps.csv" \
+    --out "${tmp_out}" 2>"${err_file}"
+  local rc=$?
+  set -e
+  if [[ "${rc}" -eq 0 ]]; then
+    die "infeasible fixture should fail derive"
+  fi
+  grep -q "CAPACITY_PROBE_NO_FEASIBLE_U" "${err_file}"
+
+  set +e
+  venv_python "${REPO_ROOT}/scripts/lib/capacity_probe_derive.py" \
+    --steps "${fixture_dir}/missing_cpu_steps.csv" \
+    --out "${tmp_out}" 2>"${err_file}"
+  rc=$?
+  set -e
+  if [[ "${rc}" -eq 0 ]]; then
+    die "missing_cpu fixture should fail derive"
+  fi
+  grep -q "CAPACITY_PROBE_CPU_MISSING" "${err_file}"
+
+  set +e
+  venv_python "${REPO_ROOT}/scripts/lib/capacity_probe_derive.py" \
+    --steps "${fixture_dir}/saturated_at_start_steps.csv" \
+    --out "${tmp_out}" 2>"${err_file}"
+  rc=$?
+  set -e
+  if [[ "${rc}" -eq 0 ]]; then
+    die "saturated_at_start fixture should fail derive"
+  fi
+  grep -q "CAPACITY_PROBE_SATURATED_AT_START" "${err_file}"
+
+  rm -f "${tmp_out}" "${err_file}"
+  echo "CAPACITY_PROBE_DERIVE_SMOKE_OK"
+}
+
 check_prometheus_deployment_variant() {
   venv_python "${REPO_ROOT}/scripts/lib/check_prometheus_deployment_variant.py" \
     "${REPO_ROOT}/k8s/prometheus/deployment.yaml" \
@@ -1838,6 +1887,7 @@ elif [[ -n "${CHECK}" ]]; then
     phase5-resume) check_phase5_resume ;;
     hpa-stock) check_hpa_stock ;;
     prometheus-deployment-variant) check_prometheus_deployment_variant ;;
+    capacity-probe-derive) check_capacity_probe_derive ;;
     coldstart-collector) check_coldstart_collector ;;
     *) die "unknown check: ${CHECK}" ;;
   esac

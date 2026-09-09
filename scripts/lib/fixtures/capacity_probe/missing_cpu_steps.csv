@@ -1,0 +1,4 @@
+step,users,rps,median_millicores,ready_pods,stop_trigger
+1,20,2.0,100,4,none
+2,30,3.0,MISSING,4,none
+3,40,4.0,140,4,cpu_saturation

@@ -160,6 +160,16 @@ bash scripts/deploy_gke.sh --env-file .env
 bash scripts/run_benchmark.sh --env-file .env --smoke --repetitions 1
 ```
 
+### 3b) P1 capacity probe (derive `SHAPE_MEAN_USERS`; ≤12 min; fixed arm only)
+
+Run once after cluster deploy, **before** the Phase 5 matrix. Requires metrics-server (`kubectl top pods` must return data).
+
+```bash
+caffeinate -i bash scripts/run_capacity_probe.sh --env-file .env
+```
+
+Writes `results/capacity_probe/derivation.json`, `steps.csv`, and `probe.log`. CPU source: **metrics-server** (`CPU_SOURCE=metrics-server`, median millicores, stop at 800m = 80% of 1000m limit). Named errors: `CAPACITY_PROBE_TIMEOUT`, `METRICS_SERVER_UNAVAILABLE`, `CAPACITY_PROBE_NO_FEASIBLE_U` (stop and report — do not pick a compromise). The matrix reads `SHAPE_MEAN_USERS` from `derivation.json`; it will not run without that file.
+
 ### 4) Full GKE benchmark (walk-away)
 ```bash
 nohup bash scripts/run_benchmark.sh --env-file .env --repetitions 1 > results/latest.nohup.log 2>&1 &
@@ -176,7 +186,18 @@ tail -f results/runs/<run_id>/rep-1/rep.log
 
 ### 6) Post-run GCP orphan cleanup verification
 
-Run after **every** GKE session and **after every cluster teardown**. GKE deletes load balancer forwarding rules when the cluster is deleted, but **persistent disks**, **static IPs**, and **firewall rules** are often retained. Deleting a GKE cluster does **not** reliably delete PVC-backed PersistentVolumes — orphaned Prometheus PVC disks bill until deleted. The `gcloud compute disks list --filter="-users:*"` check below now covers those disks. This check has never been exercised against a PVC-created disk (none existed until the GKE Prometheus PVC was added). Leftover forwarding rules and `k8s-*` firewall rules block VPC deletion.
+Run after **every** GKE session and **after every cluster teardown**. GKE deletes load balancer forwarding rules when the cluster is deleted, but **persistent disks**, **static IPs**, and **firewall rules** are often retained. Deleting a GKE cluster does **not** delete dynamically provisioned PersistentVolumes or their backing disks. Leftover forwarding rules and `k8s-*` firewall rules block VPC deletion.
+
+**Prometheus PVC (`prometheus-data`).** GKE deploy applies `k8s/prometheus/pvc.yaml` (1 Gi `standard-rwo`). On the first teardown with this PVC present, the backing **pd-balanced** disk survived `gcloud container clusters delete` — confirmed orphan: `pvc-991b2700-b081-4bad-8f74-c27740792a92`. This is **expected behaviour** for dynamically provisioned PVs (Retain/reclaim policy leaves the disk in the project); it is not a GKE bug. Delete it manually:
+
+```bash
+gcloud compute disks delete pvc-991b2700-b081-4bad-8f74-c27740792a92 \
+  --zone="${ZONE}" --project="${PROJECT_ID}"
+```
+
+(Use the name from `gcloud compute disks list --filter="-users:*"` — the UUID changes per cluster.)
+
+Each orphaned Prometheus disk counts against regional **`SSD_TOTAL_GB`**. This project allocates 150 GB to the cluster (3×50 GB boot disks); with a 250 GB regional limit that leaves **~50 GB headroom**. A forgotten 1 Gi Prometheus disk is small but the pattern matters: repeated runs without cleanup erode quota and can block the next cluster create.
 
 Replace project id if yours differs:
 

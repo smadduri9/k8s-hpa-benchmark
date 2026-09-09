@@ -41,7 +41,25 @@ done
 
 load_env_file "${ENV_FILE}"
 require_venv
-export SHAPE_MEAN_USERS="${SHAPE_MEAN_USERS:-45}"
+
+CAPACITY_PROBE_DERIVATION="${REPO_ROOT}/results/capacity_probe/derivation.json"
+if [[ -f "${CAPACITY_PROBE_DERIVATION}" ]]; then
+  SHAPE_MEAN_USERS="$("${VENV_PYTHON}" - "${CAPACITY_PROBE_DERIVATION}" <<'PY'
+import json
+import sys
+with open(sys.argv[1], encoding="utf-8") as handle:
+    data = json.load(handle)
+value = data.get("SHAPE_MEAN_USERS")
+if value is None:
+    raise SystemExit("CAPACITY_PROBE_DERIVATION_INVALID reason=missing_SHAPE_MEAN_USERS")
+print(int(value))
+PY
+)"
+  export SHAPE_MEAN_USERS
+  echo "SHAPE_MEAN_USERS_SOURCE=capacity_probe derivation=${CAPACITY_PROBE_DERIVATION} value=${SHAPE_MEAN_USERS}"
+else
+  die "SHAPE_MEAN_USERS_UNCALIBRATED reason=missing_derivation_json path=${CAPACITY_PROBE_DERIVATION} run=bash scripts/run_capacity_probe.sh --env-file .env"
+fi
 
 if [[ -z "${SHAPE_MEAN_USERS}" ]]; then
   die "SHAPE_MEAN_USERS is empty"

@@ -12,6 +12,18 @@ Prometheus-derived latency in published CSVs is a quantile estimate per row. A c
 - **Arms:** `experiment="fixed"` and `experiment="hpa"` — same label selector pattern as existing latency queries in `collect_metrics.py`.
 - **`GET /`:** not instrumented; excluded from SLI (unchanged).
 
+## `cpu_utilization_pct` (existing column)
+
+| Field | Definition |
+|-------|------------|
+| **PromQL** | `avg(app_cpu_usage_percent{experiment="{mode}"})` |
+| **App gauge** | `psutil.cpu_percent(interval=None)` with no process argument — **system-wide CPU** |
+| **Container scope** | Without lxcfs (GKE does not mount it), `/proc/stat` inside the pod reflects **node-level** CPU, not cgroup/pod CPU |
+| **HPA metric** | **Not** this column. HPA uses metrics-server utilisation against the **500m request** |
+| **Published CSVs** | Values are real **node utilisation** samples; the column name implies pod CPU — read accordingly. Do not delete or recompute existing cells |
+
+The P1 capacity probe (`scripts/run_capacity_probe.sh`) uses **metrics-server** (`kubectl top pods`) for pod-scoped millicores. That source is separate from `cpu_utilization_pct`.
+
 ## Rate window
 
 Use the same lookback as other rate-derived columns in `collect_metrics.py`:

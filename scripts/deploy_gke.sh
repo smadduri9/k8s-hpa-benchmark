@@ -16,6 +16,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/lib/common.sh"
 # shellcheck source=lib/gke_shape.sh
 source "${SCRIPT_DIR}/lib/gke_shape.sh"
+# shellcheck source=lib/metrics_server_check.sh
+source "${SCRIPT_DIR}/lib/metrics_server_check.sh"
 
 ENV_FILE=""
 while [[ $# -gt 0 ]]; do
@@ -159,9 +161,11 @@ kubectl rollout status deployment/prometheus      -n "${NAMESPACE}" --timeout=12
 # Step 6: Verify metrics-server (required for HPA)
 # ---------------------------------------------------------------------------
 echo "[6/7] Verifying metrics-server..."
-kubectl wait --for=condition=Available deployment/metrics-server \
-    -n kube-system --timeout=60s || \
-    echo "  [WARN] metrics-server not ready — HPA requires it. Check: kubectl top nodes"
+if metrics_server_assert_nodes; then
+  metrics_server_assert_ready "${NAMESPACE}" || true
+else
+  echo "  [WARN] metrics-server API not responding — HPA requires it. Check: kubectl get apiservice v1beta1.metrics.k8s.io"
+fi
 
 # ---------------------------------------------------------------------------
 # Step 7: Print access info

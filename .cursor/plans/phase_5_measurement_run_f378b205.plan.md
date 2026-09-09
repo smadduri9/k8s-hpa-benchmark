@@ -395,6 +395,8 @@ Peak **requests** if fixed (4) and HPA (20) overlap: `20 × 500m + Prometheus 10
 
 ### Step 12 — P1 capacity probe (sets `SHAPE_MEAN_USERS`; not a benchmark)
 
+**Implemented:** [`scripts/run_capacity_probe.sh`](scripts/run_capacity_probe.sh), [`scripts/lib/capacity_probe_derive.py`](scripts/lib/capacity_probe_derive.py). Smoke: `bash scripts/smoke_test.sh --check capacity-probe-derive`. Matrix requires `results/capacity_probe/derivation.json` (see C2 in P1 plan).
+
 **GCP: yes.** First load on the new cluster. **Fixed arm only**, 4 replicas, 500m/1000m. No HPA.
 
 **Wall-clock cap: 12 minutes.** Named error `CAPACITY_PROBE_TIMEOUT` if the stop rule is not met.

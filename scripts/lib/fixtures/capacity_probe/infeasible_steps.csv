@@ -1,0 +1,3 @@
+step,users,rps,median_millicores,ready_pods,stop_trigger
+1,50,5.0,1,4,none
+2,60,6.0,1,4,rps_per_user_drop
