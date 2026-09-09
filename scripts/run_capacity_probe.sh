@@ -22,9 +22,16 @@ DRY_RUN=false
 PROBE_START_USERS="${PROBE_START_USERS:-20}"
 PROBE_STEP_USERS="${PROBE_STEP_USERS:-10}"
 PROBE_STEP_SEC="${PROBE_STEP_SEC:-45}"
+PROBE_CPU_SAMPLE_LEAD_SEC="${PROBE_CPU_SAMPLE_LEAD_SEC:-5}"
 PROBE_TIMEOUT_SEC="${CAPACITY_PROBE_TIMEOUT_SEC:-720}"
 PROBE_CPU_LIMIT_M="${PROBE_CPU_LIMIT_M:-1000}"
 PROBE_CPU_STOP_M=$((PROBE_CPU_LIMIT_M * 80 / 100))
+# RPS-per-user drop: >10% decline vs prior step (sub-10% is routine between 45s windows).
+PROBE_RPS_DROP_FRACTION="${PROBE_RPS_DROP_FRACTION:-0.10}"
+# Require prior observed median pod CPU before RPS drop can mean saturation (10% of limit).
+PROBE_CPU_OBSERVED_FLOOR_M="${PROBE_CPU_OBSERVED_FLOOR_M:-100}"
+# Need at least three steps before RPS drop can stop the probe (two points cannot show a trend).
+PROBE_RPS_DROP_MIN_STEPS="${PROBE_RPS_DROP_MIN_STEPS:-3}"
 FIXED_SELECTOR="app=hpa-eval,experiment=fixed"
 OUTPUT_DIR="${REPO_ROOT}/results/capacity_probe"
 
@@ -57,31 +64,7 @@ collect_fixed_pod_cpu_lines() {
 
 median_millicores_from_top() {
   local lines="$1"
-  printf '%s\n' "${lines}" | "${VENV_PYTHON}" - <<'PY'
-import sys
-from statistics import median
-
-def parse_millicores(value: str):
-    value = value.strip()
-    if not value:
-        return None
-    if value.endswith("m"):
-        return int(value[:-1])
-    return int(float(value) * 1000)
-
-values = []
-for line in sys.stdin:
-    parts = line.split()
-    if len(parts) < 2:
-        continue
-    parsed = parse_millicores(parts[1])
-    if parsed is not None:
-        values.append(parsed)
-if not values:
-    print("MISSING")
-else:
-    print(int(median(values)))
-PY
+  printf '%s\n' "${lines}" | "${VENV_PYTHON}" "${SCRIPT_DIR}/lib/capacity_probe_derive.py" top-median
 }
 
 probe_locust_wait() {
@@ -140,6 +123,14 @@ print("MISSING")
 PY
 }
 
+rps_drop_exceeds_tolerance() {
+  local cur="$1"
+  local prev="$2"
+  local fraction="$3"
+  awk -v cur="${cur}" -v prev="${prev}" -v frac="${fraction}" \
+    'BEGIN { exit !(cur < prev * (1.0 - frac)) }'
+}
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --env-file) ENV_FILE="$2"; shift 2 ;;
@@ -158,8 +149,11 @@ mkdir -p "${OUTPUT_DIR}"
 
 probe_log "CAPACITY_PROBE_BEGIN dry_run=${DRY_RUN}"
 probe_log "PROBE_START_USERS=${PROBE_START_USERS} PROBE_STEP_USERS=${PROBE_STEP_USERS} PROBE_STEP_SEC=${PROBE_STEP_SEC}"
+probe_log "PROBE_CPU_SAMPLE_LEAD_SEC=${PROBE_CPU_SAMPLE_LEAD_SEC} (CPU sampled during load, not after)"
+probe_log "PROBE_RPS_DROP_FRACTION=${PROBE_RPS_DROP_FRACTION} PROBE_RPS_DROP_MIN_STEPS=${PROBE_RPS_DROP_MIN_STEPS} PROBE_CPU_OBSERVED_FLOOR_M=${PROBE_CPU_OBSERVED_FLOOR_M}"
 probe_log "CPU_SOURCE=metrics-server cmd=kubectl_top_pods selector=${FIXED_SELECTOR} unit=millicores stop_threshold_m=${PROBE_CPU_STOP_M}"
 probe_log "CPU_STAT=median"
+probe_log "RPS_SOURCE=locust_stats_csv column=Requests/s window=full_step_includes_spawn_transient"
 
 if [[ "${DRY_RUN}" == "true" ]]; then
   if ! command -v kubectl >/dev/null 2>&1; then
@@ -176,9 +170,10 @@ if ! command -v kubectl >/dev/null 2>&1; then
   die_probe "CLUSTER_NOT_READY reason=kubectl_missing"
 fi
 
-metrics_server_assert_ready "${NAMESPACE}" || die_probe "METRICS_SERVER_UNAVAILABLE"
-
 declared="$(deployment_declared_replicas hpa-eval-fixed "${NAMESPACE}")"
+metrics_server_assert_top_pods "${NAMESPACE}" "${FIXED_SELECTOR}" "${declared}" \
+  || die_probe "METRICS_SERVER_UNAVAILABLE"
+
 current="$(kubectl get deployment hpa-eval-fixed -n "${NAMESPACE}" -o jsonpath='{.spec.replicas}' 2>/dev/null || true)"
 if [[ "${current}" != "${declared}" ]]; then
   die_probe "CAPACITY_PROBE_FIXED_REPLICAS_MISMATCH spec=${current:-MISSING} declared=${declared}"
@@ -189,6 +184,12 @@ ensure_loadbalancer_hosts_ready
 fixed_host="${FIXED_HOST}"
 probe_log "CAPACITY_PROBE_TARGET host=${fixed_host}"
 
+cpu_sample_wait_sec=$((PROBE_STEP_SEC - PROBE_CPU_SAMPLE_LEAD_SEC))
+if (( cpu_sample_wait_sec < 1 )); then
+  die_probe "CAPACITY_PROBE_STEP_TOO_SHORT step_sec=${PROBE_STEP_SEC} sample_lead_sec=${PROBE_CPU_SAMPLE_LEAD_SEC}"
+fi
+probe_log "CAPACITY_PROBE_MEASUREMENT spawn_rate_equals_users spawn_transient_sec~1 rps_window_sec=${PROBE_STEP_SEC} cpu_sample_at_sec=${cpu_sample_wait_sec}"
+
 steps_csv="${OUTPUT_DIR}/steps.csv"
 printf '%s\n' "step,users,rps,median_millicores,ready_pods,stop_trigger" > "${steps_csv}"
 
@@ -196,6 +197,7 @@ probe_start_epoch="$(_iso_to_epoch "$(iso_now)")"
 step=0
 users="${PROBE_START_USERS}"
 prev_rps_per_user=""
+peak_median_m=0
 stop_trigger="timeout"
 
 while true; do
@@ -212,8 +214,9 @@ while true; do
   mkdir -p "${step_dir}"
   csv_base="${step_dir}/locust"
   log_file="${step_dir}/locust.log"
+  spawn_rate="${users}"
 
-  probe_log "CAPACITY_PROBE_STEP_BEGIN step=${step} users=${users} elapsed_sec=${elapsed}"
+  probe_log "CAPACITY_PROBE_STEP_BEGIN step=${step} users=${users} spawn_rate=${spawn_rate} spawn_transient_sec~1 elapsed_sec=${elapsed}"
 
   locust_start_bounded_users \
     "${REPO_ROOT}/locust/locustfile_warmup.py" \
@@ -223,9 +226,9 @@ while true; do
     "${log_file}" \
     "${OUTPUT_DIR}/probe.log" \
     "${users}" \
-    "${users}"
+    "${spawn_rate}"
 
-  probe_locust_wait "${PROBE_STEP_SEC}s" "${csv_base}" "${log_file}"
+  sleep "${cpu_sample_wait_sec}"
 
   ready_count="$(ready_fixed_pod_count)"
   if [[ "${ready_count}" != "${declared}" ]]; then
@@ -234,6 +237,10 @@ while true; do
 
   top_lines="$(collect_fixed_pod_cpu_lines)"
   median_m="$(median_millicores_from_top "${top_lines}")"
+  probe_log "CAPACITY_PROBE_CPU_SAMPLE step=${step} elapsed_in_step_sec=${cpu_sample_wait_sec} median_millicores=${median_m}"
+
+  probe_locust_wait "${PROBE_STEP_SEC}s" "${csv_base}" "${log_file}"
+
   rps="$(read_locust_rps "${csv_base}_stats.csv")"
 
   rps_per_user=""
@@ -243,17 +250,22 @@ while true; do
     rps_per_user="MISSING"
   fi
 
+  if [[ "${median_m}" != "MISSING" && "${median_m}" -gt "${peak_median_m}" ]]; then
+    peak_median_m="${median_m}"
+  fi
+
   stop_trigger="none"
   if [[ "${median_m}" != "MISSING" && "${median_m}" -ge "${PROBE_CPU_STOP_M}" ]]; then
     stop_trigger="cpu_saturation"
-  elif [[ -n "${prev_rps_per_user}" && "${rps_per_user}" != "MISSING" && "${prev_rps_per_user}" != "MISSING" ]]; then
-    if awk -v cur="${rps_per_user}" -v prev="${prev_rps_per_user}" 'BEGIN { exit !(cur < prev) }'; then
-      stop_trigger="rps_per_user_drop"
-    fi
+  elif (( step >= PROBE_RPS_DROP_MIN_STEPS )) \
+      && [[ "${peak_median_m}" -ge "${PROBE_CPU_OBSERVED_FLOOR_M}" ]] \
+      && [[ -n "${prev_rps_per_user}" && "${rps_per_user}" != "MISSING" && "${prev_rps_per_user}" != "MISSING" ]] \
+      && rps_drop_exceeds_tolerance "${rps_per_user}" "${prev_rps_per_user}" "${PROBE_RPS_DROP_FRACTION}"; then
+    stop_trigger="rps_per_user_drop"
   fi
 
   printf '%s\n' "${step},${users},${rps},${median_m},${ready_count},${stop_trigger}" >> "${steps_csv}"
-  probe_log "CAPACITY_PROBE_STEP_END step=${step} users=${users} rps=${rps} median_millicores=${median_m} rps_per_user=${rps_per_user} stop_trigger=${stop_trigger}"
+  probe_log "CAPACITY_PROBE_STEP_END step=${step} users=${users} rps=${rps} median_millicores=${median_m} rps_per_user=${rps_per_user} peak_median_m=${peak_median_m} stop_trigger=${stop_trigger}"
 
   if [[ "${stop_trigger}" != "none" ]]; then
     break

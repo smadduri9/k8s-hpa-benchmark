@@ -1810,6 +1810,14 @@ check_capacity_probe_derive() {
   grep -q "CAPACITY_PROBE_SATURATED_AT_START" "${err_file}"
 
   rm -f "${tmp_out}" "${err_file}"
+
+  local median=""
+  median="$(printf '%s\n' 'hpa-eval-fixed-abc 250m 64Mi' 'hpa-eval-fixed-def 350m 64Mi' \
+    | venv_python "${REPO_ROOT}/scripts/lib/capacity_probe_derive.py" top-median)"
+  if [[ "${median}" != "300" ]]; then
+    die "top-median expected 300 got ${median}"
+  fi
+
   echo "CAPACITY_PROBE_DERIVE_SMOKE_OK"
 }
 

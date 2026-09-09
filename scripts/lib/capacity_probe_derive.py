@@ -211,6 +211,20 @@ def derive_from_steps(rows: list[dict]) -> dict:
     return result
 
 
+def median_millicores_from_kubectl_top(text: str) -> int | str:
+    values: list[int] = []
+    for line in text.splitlines():
+        parts = line.split()
+        if len(parts) < 2:
+            continue
+        parsed = parse_millicores(parts[1])
+        if parsed is not MISSING:
+            values.append(parsed)
+    if not values:
+        return MISSING
+    return int(median(values))
+
+
 def read_locust_rps(stats_csv: Path) -> float | str:
     if not stats_csv.is_file():
         return MISSING
@@ -234,6 +248,11 @@ def median_ready_pod_millicores(pod_lines: list[tuple[str, str]]) -> int | str:
 
 
 def main() -> int:
+    if len(sys.argv) >= 2 and sys.argv[1] == "top-median":
+        text = sys.argv[2] if len(sys.argv) > 2 else sys.stdin.read()
+        print(median_millicores_from_kubectl_top(text))
+        return 0
+
     parser = argparse.ArgumentParser(description="Derive SHAPE_MEAN_USERS from probe steps.")
     parser.add_argument("--steps", type=Path, required=True)
     parser.add_argument("--out", type=Path, required=True)
