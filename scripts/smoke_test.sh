@@ -33,7 +33,7 @@ usage() {
   cat <<'EOF'
 Usage:
   bash scripts/smoke_test.sh --check harness
-  bash scripts/smoke_test.sh --check coldstart|assertions|fixed-metrics|label-isolation|locust-authority|locust-warmup-validate|aggregate-runs|preflight-traps|handoff-docs|error-rate-positive|event-loop-not-blocked|endpoints-never-empty|readiness-sweep|shape-curve|shape-wiring|bucket-fieldnames|phase5-resume|phase5-matrix-scope|hpa-stock|coldstart-collector
+  bash scripts/smoke_test.sh --check coldstart|assertions|fixed-metrics|label-isolation|locust-authority|locust-warmup-validate|aggregate-runs|cold-start-association|preflight-traps|handoff-docs|error-rate-positive|event-loop-not-blocked|endpoints-never-empty|readiness-sweep|shape-curve|shape-wiring|bucket-fieldnames|phase5-resume|phase5-matrix-scope|hpa-stock|coldstart-collector
   bash scripts/smoke_test.sh --check shape-curve --shape NAME
   bash scripts/smoke_test.sh --negative-test fixed-replica-assert|empty-metrics-column|low-metrics-coverage|missing-locust-hpa|missing-locust-fixed|hpa-never-scaled|label-isolation|coldstart-readiness|liveness-restarts-hung
   bash scripts/smoke_test.sh --full --env-file .env [--reuse-artifacts]
@@ -1960,6 +1960,49 @@ check_prometheus_deployment_variant() {
     "${REPO_ROOT}/k8s/prometheus/deployment-gke.yaml"
 }
 
+check_cold_start_association() {
+  venv_python - <<PY
+import sys
+from datetime import datetime, timezone
+from pathlib import Path
+sys.path.insert(0, str(Path("${REPO_ROOT}") / "scripts" / "lib"))
+from cold_start_events import (
+    ASSOCIATION_MISSING,
+    ASSOCIATION_VERIFIED,
+    REASON_HPA_DECISION_AFTER_POD_CREATED,
+    REASON_HPA_DECISION_NO_SCALE_OUT_MATCH,
+    ScaleOutEvent,
+    associate_hpa_decision,
+)
+
+def ts(text: str) -> datetime:
+    return datetime.fromisoformat(text.replace("Z", "+00:00"))
+
+scale_outs = [
+    ScaleOutEvent(ts("2026-09-09T06:17:33Z"), 4, 6),
+    ScaleOutEvent(ts("2026-09-09T06:17:48Z"), 6, 7),
+]
+pod_a = ts("2026-09-09T06:17:35Z")
+decision, source, association, reason = associate_hpa_decision("pod-a", pod_a, scale_outs)
+if association != ASSOCIATION_VERIFIED or decision != "2026-09-09T06:17:33Z":
+    raise SystemExit(f"pod-a expected verified first scale-out got {association} {decision}")
+
+scale_outs2 = [ScaleOutEvent(ts("2026-09-09T06:30:15Z"), 6, 4)]
+pod_b = ts("2026-09-09T06:37:57Z")
+decision, source, association, reason = associate_hpa_decision("pod-b", pod_b, scale_outs2)
+if association != ASSOCIATION_MISSING or reason != REASON_HPA_DECISION_NO_SCALE_OUT_MATCH:
+    raise SystemExit(f"pod-b scale-down only expected no match got {association} {reason}")
+
+scale_outs3 = [ScaleOutEvent(ts("2026-09-09T06:17:48Z"), 6, 7)]
+pod_c = ts("2026-09-09T06:17:33Z")
+decision, source, association, reason = associate_hpa_decision("pod-c", pod_c, scale_outs3)
+if association != ASSOCIATION_MISSING or reason != REASON_HPA_DECISION_AFTER_POD_CREATED:
+    raise SystemExit(f"pod-c expected after-pod violation got {association} {reason}")
+
+print("COLD_START_ASSOCIATION_OK")
+PY
+}
+
 check_coldstart_collector() {
   local jsonl="${REPO_ROOT}/docs/cold-start-calibration/cached.jsonl"
   local uncached="${REPO_ROOT}/docs/cold-start-calibration/uncached.jsonl"
@@ -2016,6 +2059,7 @@ elif [[ -n "${CHECK}" ]]; then
     locust-authority) check_locust_authority ;;
     locust-warmup-validate) check_locust_warmup_validate ;;
     aggregate-runs) check_aggregate_runs ;;
+    cold-start-association) check_cold_start_association ;;
     preflight-traps) check_preflight_traps ;;
     error-rate-positive) check_error_rate_positive ;;
     event-loop-not-blocked) check_event_loop_not_blocked ;;

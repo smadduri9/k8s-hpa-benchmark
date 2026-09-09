@@ -448,7 +448,7 @@ PY
     --selector "${selector}" \
     --output "${events_jsonl}" \
     --timeout-sec "$(run_time_to_seconds "${RUN_TIME}")" \
-    --expect-pods 1 \
+    --capture-all-scale-out \
     --first-request-timeout-sec 60 \
     >"${dir}/collector.log" 2>&1 &
   local collector_pid=$!
@@ -539,7 +539,7 @@ main() {
       final_reason="${passed}/${attempted} arms passed"
     fi
     if [[ -z "${ONLY_ARM}" && -z "${ONLY_REP}" ]]; then
-      write_status_file "${RUN_ROOT}" "${final_state}" "${final_reason}"
+      write_status_file "${RUN_ROOT}" "${final_state} ${passed}/${attempted} arms" "${final_reason}"
     fi
     echo "SUMMARY attempted=${attempted} passed=${passed}"
     if [[ "${passed}" -eq "${attempted}" && "${attempted}" -gt 0 ]]; then

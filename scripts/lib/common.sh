@@ -173,7 +173,7 @@ write_status_file() {
   local state="$2"
   local reason="$3"
   case "${state}" in
-    COMPLETE|PARTIAL|FAILED) ;;
+    COMPLETE*|PARTIAL*|FAILED*) ;;
     *) die "invalid STATUS state: ${state}" ;;
   esac
   printf '%s\n%s\n' "${state}" "${reason}" > "${run_dir}/STATUS"

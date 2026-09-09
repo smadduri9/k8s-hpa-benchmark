@@ -186,16 +186,14 @@ write_phase5_shape_status() {
     done
   done
   local state="COMPLETE"
-  local reason="all ${arms_expected} arms passed"
+  local reason="verified from arm STATUS files"
   if [[ "${passed}" -eq 0 ]]; then
     state="FAILED"
-    reason="0/${arms_expected} arms passed"
   elif [[ "${passed}" -lt "${arms_expected}" ]]; then
     state="PARTIAL"
-    reason="${passed}/${arms_expected} arms passed"
   fi
-  write_status_file "${run_root}" "${state}" "${reason}"
-  echo "PHASE5_SHAPE_STATUS run_root=${run_root} state=${state} reason=${reason}"
+  write_status_file "${run_root}" "${state} ${passed}/${arms_expected} arms" "${reason}"
+  echo "PHASE5_SHAPE_STATUS run_root=${run_root} status=${state} ${passed}/${arms_expected} arms"
 }
 
 apply_hpa_for_arm() {

@@ -6,7 +6,7 @@ Watch-based collector: `scripts/lib/cold_start_events.py`. Kind calibration harn
 
 | Stage | Field | Source |
 |-------|-------|--------|
-| 1 | `hpa_decision` | Kubernetes Event `reason=SuccessfulRescale` only (`eventTime` / `lastTimestamp` / `firstTimestamp`). `status.lastScaleTime` is **not** used. |
+| 1 | `hpa_decision` | Kubernetes Event `reason=SuccessfulRescale` only (`eventTime` / `lastTimestamp` / `firstTimestamp`). `status.lastScaleTime` is **not** used. Each pod is associated with the scale-out event whose replica-count transition created it (`hpa_decision_association=verified`), or timestamp-consistent only (`consistent`). Causally impossible matches (`hpa_decision` after `pod_created`) are written as `MISSING` with `hpa_decision_reason`. |
 | 2 | `pod_created` | Pod `metadata.creationTimestamp` |
 | 3+ | Pod conditions, image pull, container start, `Ready`, `first_request_served` | Pod status, Events, app stderr (`FIRST_REQUEST_SERVED`) |
 
@@ -21,7 +21,11 @@ Coverage = rows_with_hpa_decision / rows_total
 THRESHOLD = 0.90
 ```
 
-A row counts toward `rows_with_hpa_decision` when `hpa_decision` is not `MISSING` and `hpa_decision_source` is `SuccessfulRescale`.
+A row counts toward `rows_with_hpa_decision` when `hpa_decision_association` is `verified` (slot-matched scale-out only; `consistent` does not count).
+
+**Measured arms:** `run_benchmark.sh` passes `--capture-all-scale-out` so the collector runs the full Locust window (~18 minutes) and records every pod above baseline that reaches Ready, not only the first. Calibration keeps `--expect-pods 1`.
+
+**`first_request_served`:** when `MISSING`, `first_request_served_reason` is one of `NO_QUALIFYING_REQUEST_IN_WINDOW` (no non-`/health` request reached this pod within the post-Ready window), `LOG_FOLLOW_FAILED` (`kubectl logs` error), or `POD_NOT_READY_BEFORE_COLLECT_END`. The timeout is not extended to force a hit.
 
 **At or above 0.90:** publish the decision-to-serving distribution, stating the coverage figure.
 

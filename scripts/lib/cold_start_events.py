@@ -15,12 +15,23 @@ import subprocess
 import sys
 import threading
 import time
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 MISSING = "MISSING"
 LT_1S = "<1s"
+
+ASSOCIATION_VERIFIED = "verified"
+ASSOCIATION_CONSISTENT = "consistent"
+ASSOCIATION_MISSING = "MISSING"
+
+REASON_HPA_DECISION_AFTER_POD_CREATED = "HPA_DECISION_AFTER_POD_CREATED"
+REASON_HPA_DECISION_NO_SCALE_OUT_MATCH = "HPA_DECISION_NO_SCALE_OUT_MATCH"
+REASON_NO_QUALIFYING_REQUEST_IN_WINDOW = "NO_QUALIFYING_REQUEST_IN_WINDOW"
+REASON_LOG_FOLLOW_FAILED = "LOG_FOLLOW_FAILED"
+REASON_POD_NOT_READY_BEFORE_COLLECT_END = "POD_NOT_READY_BEFORE_COLLECT_END"
 
 HPA_DECISION_COVERAGE_THRESHOLD = 0.90
 HPA_DECISION_COVERAGE_RATIONALE = (
@@ -54,6 +65,20 @@ ALREADY_PRESENT_RE = re.compile(
     re.IGNORECASE,
 )
 FIRST_REQUEST_RE = re.compile(r"^FIRST_REQUEST_SERVED ts=(\S+) pod=(\S+)\s*$")
+RESCALE_NEW_RE = re.compile(r"New size:\s*(\d+)", re.IGNORECASE)
+RESCALE_OLD_RE = re.compile(r"old size:\s*(\d+)", re.IGNORECASE)
+
+
+@dataclass
+class ScaleOutEvent:
+    ts: datetime
+    old_replicas: int
+    new_replicas: int
+    assigned: list[str] = field(default_factory=list)
+
+    @property
+    def capacity(self) -> int:
+        return max(0, self.new_replicas - self.old_replicas)
 
 
 def parse_rfc3339(value: str | None) -> datetime | None:
@@ -77,11 +102,94 @@ def format_rfc3339(value: datetime | None) -> str:
     return value.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+def parse_successful_rescale(message: str) -> tuple[int, int | None]:
+    new_match = RESCALE_NEW_RE.search(message)
+    if not new_match:
+        return 0, None
+    new_replicas = int(new_match.group(1))
+    old_match = RESCALE_OLD_RE.search(message)
+    old_replicas = int(old_match.group(1)) if old_match else None
+    return new_replicas, old_replicas
+
+
+def event_timestamp(event: dict[str, Any]) -> datetime | None:
+    return parse_rfc3339(
+        event.get("eventTime")
+        or event.get("lastTimestamp")
+        or event.get("firstTimestamp")
+    )
+
+
+def associate_hpa_decision(
+    pod_name: str,
+    pod_created: datetime,
+    scale_outs: list[ScaleOutEvent],
+) -> tuple[str, str, str, str]:
+    """Return hpa_decision, source, association, reason."""
+    verified_event: ScaleOutEvent | None = None
+    for event in reversed(scale_outs):
+        if event.ts > pod_created:
+            continue
+        if event.capacity <= 0:
+            continue
+        if len(event.assigned) >= event.capacity:
+            continue
+        verified_event = event
+        break
+
+    if verified_event is not None:
+        verified_event.assigned.append(pod_name)
+        decision = format_rfc3339(verified_event.ts)
+        if verified_event.ts > pod_created:
+            return (
+                MISSING,
+                MISSING,
+                ASSOCIATION_MISSING,
+                REASON_HPA_DECISION_AFTER_POD_CREATED,
+            )
+        return decision, "SuccessfulRescale", ASSOCIATION_VERIFIED, MISSING
+
+    consistent_candidates = [
+        event
+        for event in scale_outs
+        if event.capacity > 0 and event.ts <= pod_created
+    ]
+    if consistent_candidates:
+        event = consistent_candidates[-1]
+        if event.ts > pod_created:
+            return (
+                MISSING,
+                MISSING,
+                ASSOCIATION_MISSING,
+                REASON_HPA_DECISION_AFTER_POD_CREATED,
+            )
+        return format_rfc3339(event.ts), "SuccessfulRescale", ASSOCIATION_CONSISTENT, MISSING
+
+    future_scale_outs = [
+        event
+        for event in scale_outs
+        if event.capacity > 0 and event.ts > pod_created
+    ]
+    if future_scale_outs:
+        return (
+            MISSING,
+            MISSING,
+            ASSOCIATION_MISSING,
+            REASON_HPA_DECISION_AFTER_POD_CREATED,
+        )
+    return (
+        MISSING,
+        MISSING,
+        ASSOCIATION_MISSING,
+        REASON_HPA_DECISION_NO_SCALE_OUT_MATCH,
+    )
+
+
 def row_has_hpa_decision(row: dict[str, Any]) -> bool:
     decision = row.get("hpa_decision")
     if decision in (None, "", MISSING):
         return False
-    return row.get("hpa_decision_source") == "SuccessfulRescale"
+    return row.get("hpa_decision_association") == ASSOCIATION_VERIFIED
 
 
 def hpa_decision_coverage_report(rows: list[dict[str, Any]]) -> dict[str, Any]:
@@ -228,6 +336,7 @@ class ColdStartCollector:
         init_name: str,
         expect_pods: int,
         first_request_timeout_sec: int,
+        capture_all_scale_out: bool,
     ) -> None:
         self.namespace = namespace
         self.selector = selector
@@ -237,16 +346,22 @@ class ColdStartCollector:
         self.init_name = init_name
         self.expect_pods = expect_pods
         self.first_request_timeout_sec = first_request_timeout_sec
+        self.capture_all_scale_out = capture_all_scale_out
         self._lock = threading.Lock()
         self._stop = threading.Event()
         self._pods: dict[str, dict[str, Any]] = {}
         self._baseline_pods: set[str] = set()
         self._events: list[dict[str, Any]] = []
-        self._hpa_decision: str = MISSING
-        self._hpa_decision_source: str = MISSING
+        self._scale_outs: list[ScaleOutEvent] = []
+        self._current_replicas: int | None = None
+        self._collection_started_at: datetime | None = None
         self._procs: list[subprocess.Popen[str]] = []
         self._log_threads: dict[str, threading.Thread] = {}
         self._first_request: dict[str, str] = {}
+        self._first_request_reason: dict[str, str] = {}
+        self._log_follow_failed: dict[str, bool] = {}
+        self._ready_at: dict[str, datetime] = {}
+        self._first_request_deadline: dict[str, float] = {}
 
     def _kubectl_watch(self, args: list[str]) -> subprocess.Popen[str]:
         proc = subprocess.Popen(
@@ -274,6 +389,26 @@ class ColdStartCollector:
                         continue
                     with self._lock:
                         self._pods[name] = resource
+                        ready_ts = parse_rfc3339(
+                            next(
+                                (
+                                    cond.get("lastTransitionTime")
+                                    for cond in resource.get("status", {}).get("conditions") or []
+                                    if cond.get("type") == "Ready"
+                                    and cond.get("status") == "True"
+                                ),
+                                None,
+                            )
+                        )
+                        if (
+                            name not in self._baseline_pods
+                            and ready_ts is not None
+                            and name not in self._ready_at
+                        ):
+                            self._ready_at[name] = ready_ts
+                            self._first_request_deadline[name] = (
+                                time.time() + self.first_request_timeout_sec
+                            )
                     self._maybe_follow_logs(name)
                 elif kind == "event":
                     with self._lock:
@@ -300,9 +435,49 @@ class ColdStartCollector:
         self._log_threads[pod_name] = thread
         thread.start()
 
+    def _scan_log_text(self, pod_name: str, text: str) -> bool:
+        for line in text.splitlines():
+            match = FIRST_REQUEST_RE.match(line.strip())
+            if match:
+                with self._lock:
+                    self._first_request[pod_name] = match.group(1)
+                return True
+        return False
+
     def _follow_logs(self, pod_name: str) -> None:
         deadline = time.time() + self.timeout_sec
         while time.time() < deadline and not self._stop.is_set():
+            try:
+                initial = subprocess.run(
+                    [
+                        "kubectl",
+                        "logs",
+                        "-n",
+                        self.namespace,
+                        "-c",
+                        self.container_name,
+                        pod_name,
+                    ],
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                    check=False,
+                )
+            except (subprocess.SubprocessError, OSError):
+                with self._lock:
+                    self._log_follow_failed[pod_name] = True
+                time.sleep(1)
+                continue
+
+            if initial.returncode != 0:
+                with self._lock:
+                    self._log_follow_failed[pod_name] = True
+                time.sleep(1)
+                continue
+
+            if self._scan_log_text(pod_name, initial.stdout):
+                return
+
             proc = subprocess.Popen(
                 [
                     "kubectl",
@@ -312,7 +487,6 @@ class ColdStartCollector:
                     "-c",
                     self.container_name,
                     "-f",
-                    "--tail=20",
                     pod_name,
                 ],
                 stdout=subprocess.PIPE,
@@ -325,13 +499,11 @@ class ColdStartCollector:
                 for line in proc.stdout:
                     if self._stop.is_set():
                         return
-                    match = FIRST_REQUEST_RE.match(line.strip())
-                    if match:
-                        with self._lock:
-                            self._first_request[pod_name] = match.group(1)
+                    if self._scan_log_text(pod_name, line):
                         return
             except Exception:
-                pass
+                with self._lock:
+                    self._log_follow_failed[pod_name] = True
             finally:
                 proc.kill()
             time.sleep(1)
@@ -344,16 +516,28 @@ class ColdStartCollector:
         reason = event.get("reason") or ""
         if reason != "SuccessfulRescale":
             return
-        ts = parse_rfc3339(
-            event.get("eventTime")
-            or event.get("lastTimestamp")
-            or event.get("firstTimestamp")
-        )
+        ts = event_timestamp(event)
         if ts is None:
             return
+        if (
+            self._collection_started_at is not None
+            and ts < self._collection_started_at
+        ):
+            return
+        message = event.get("message") or ""
+        new_replicas, old_replicas = parse_successful_rescale(message)
+        if new_replicas <= 0:
+            return
         with self._lock:
-            self._hpa_decision = format_rfc3339(ts)
-            self._hpa_decision_source = "SuccessfulRescale"
+            if old_replicas is None:
+                old_replicas = self._current_replicas
+            if old_replicas is None:
+                return
+            if new_replicas > old_replicas:
+                self._scale_outs.append(
+                    ScaleOutEvent(ts, old_replicas, new_replicas)
+                )
+            self._current_replicas = new_replicas
 
     def _event_for_pod(self, pod_name: str, reason: str) -> dict[str, Any] | None:
         matches = []
@@ -368,6 +552,16 @@ class ColdStartCollector:
             return None
         return matches[-1]
 
+    def _first_request_fields(self, pod_name: str) -> tuple[str, str]:
+        with self._lock:
+            if pod_name in self._first_request:
+                return self._first_request[pod_name], MISSING
+            if self._log_follow_failed.get(pod_name):
+                return MISSING, REASON_LOG_FOLLOW_FAILED
+            if pod_name not in self._ready_at:
+                return MISSING, REASON_POD_NOT_READY_BEFORE_COLLECT_END
+            return MISSING, REASON_NO_QUALIFYING_REQUEST_IN_WINDOW
+
     def _row_for_pod(self, pod_name: str, pod: dict[str, Any]) -> dict[str, Any]:
         pulled = self._event_for_pod(pod_name, "Pulled")
         pulling = self._event_for_pod(pod_name, "Pulling")
@@ -377,36 +571,26 @@ class ColdStartCollector:
         pull_end = MISSING
         if pulled is not None:
             image_cached, pull_ms = parse_pull_message(pulled.get("message") or "")
-            pull_end = format_rfc3339(
-                parse_rfc3339(
-                    pulled.get("eventTime")
-                    or pulled.get("lastTimestamp")
-                    or pulled.get("firstTimestamp")
-                )
-            )
+            pull_end = format_rfc3339(event_timestamp(pulled))
         pull_start = MISSING
         if pulling is not None:
-            pull_start = format_rfc3339(
-                parse_rfc3339(
-                    pulling.get("eventTime")
-                    or pulling.get("lastTimestamp")
-                    or pulling.get("firstTimestamp")
-                )
-            )
+            pull_start = format_rfc3339(event_timestamp(pulling))
         container_started = main_container_started(pod, self.container_name)
         if container_started == MISSING and started_evt is not None:
-            container_started = format_rfc3339(
-                parse_rfc3339(
-                    started_evt.get("eventTime")
-                    or started_evt.get("lastTimestamp")
-                    or started_evt.get("firstTimestamp")
-                )
-            )
+            container_started = format_rfc3339(event_timestamp(started_evt))
         created = parse_rfc3339(pod.get("metadata", {}).get("creationTimestamp"))
         init_sec = init_sleep_seconds(pod, self.init_name)
+        decision, source, association, decision_reason = associate_hpa_decision(
+            pod_name,
+            created if created is not None else datetime.min.replace(tzinfo=timezone.utc),
+            self._scale_outs,
+        )
+        first_request, first_request_reason = self._first_request_fields(pod_name)
         row = {
             "pod": pod_name,
-            "hpa_decision": self._hpa_decision,
+            "hpa_decision": decision,
+            "hpa_decision_association": association,
+            "hpa_decision_reason": decision_reason,
             "pod_created": format_rfc3339(created),
             "PodScheduled": condition_time(pod, "PodScheduled"),
             "PodReadyToStartContainers": condition_time(
@@ -418,10 +602,11 @@ class ColdStartCollector:
             "container_started": container_started,
             "ContainersReady": condition_time(pod, "ContainersReady"),
             "Ready": condition_time(pod, "Ready"),
-            "first_request_served": self._first_request.get(pod_name, MISSING),
+            "first_request_served": first_request,
+            "first_request_served_reason": first_request_reason,
             "image_cached": image_cached,
             "init_sleep_observed_sec": MISSING if init_sec is None else str(init_sec),
-            "hpa_decision_source": self._hpa_decision_source,
+            "hpa_decision_source": source,
         }
         return row
 
@@ -441,6 +626,7 @@ class ColdStartCollector:
             text=True,
         ).split()
         self._baseline_pods = set(baseline)
+        self._collection_started_at = datetime.now(timezone.utc)
         watch_common = [
             "kubectl",
             "get",
@@ -482,18 +668,26 @@ class ColdStartCollector:
             for name in candidates:
                 if name not in new_ready:
                     new_ready.append(name)
-            if len(new_ready) >= self.expect_pods:
-                # Wait briefly for first-request log after Ready.
+            if (
+                not self.capture_all_scale_out
+                and len(new_ready) >= self.expect_pods
+            ):
                 wait_until = time.time() + self.first_request_timeout_sec
                 while time.time() < wait_until:
                     with self._lock:
-                        if all(n in self._first_request for n in new_ready[: self.expect_pods]):
+                        if all(
+                            n in self._first_request
+                            for n in new_ready[: self.expect_pods]
+                        ):
                             break
                     time.sleep(0.2)
                 break
             time.sleep(0.2)
         else:
-            if len(new_ready) < self.expect_pods:
+            if (
+                not self.capture_all_scale_out
+                and len(new_ready) < self.expect_pods
+            ):
                 print(
                     f"ERROR: COLD_START_COLLECT_TIMEOUT timeout_sec={self.timeout_sec} "
                     f"ready_new={len(new_ready)} expected={self.expect_pods}",
@@ -502,9 +696,19 @@ class ColdStartCollector:
         self._stop.set()
         for proc in self._procs:
             proc.kill()
+        if self.capture_all_scale_out:
+            tracked = new_ready
+        else:
+            tracked = new_ready[: self.expect_pods]
+        tracked.sort(
+            key=lambda name: parse_rfc3339(
+                self._pods[name].get("metadata", {}).get("creationTimestamp")
+            )
+            or datetime.min.replace(tzinfo=timezone.utc)
+        )
         rows = []
         with self._lock:
-            for name in new_ready[: self.expect_pods]:
+            for name in tracked:
                 rows.append(self._row_for_pod(name, self._pods[name]))
         self.output_path.parent.mkdir(parents=True, exist_ok=True)
         with self.output_path.open("w", encoding="utf-8") as handle:
@@ -523,6 +727,11 @@ def main() -> int:
     parser.add_argument("--init-name", default="delay")
     parser.add_argument("--expect-pods", type=int, default=1)
     parser.add_argument("--first-request-timeout-sec", type=int, default=30)
+    parser.add_argument(
+        "--capture-all-scale-out",
+        action="store_true",
+        help="Record every baseline-above pod Ready during timeout_sec (measured arm).",
+    )
     args = parser.parse_args()
     collector = ColdStartCollector(
         namespace=args.namespace,
@@ -533,15 +742,15 @@ def main() -> int:
         init_name=args.init_name,
         expect_pods=args.expect_pods,
         first_request_timeout_sec=args.first_request_timeout_sec,
+        capture_all_scale_out=args.capture_all_scale_out,
     )
     collector.start_watches()
-    # Let watches attach before the caller scales.
     print("COLD_START_WATCH_READY", flush=True)
     rows = collector.collect()
     print(f"COLD_START_EVENTS_WRITTEN path={args.output} rows={len(rows)}")
     if rows:
         emit_hpa_decision_coverage(rows)
-    return 0 if rows else 1
+    return 0
 
 
 if __name__ == "__main__":

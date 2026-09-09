@@ -245,6 +245,29 @@ Guards enforced for this run (evidence in `rep.log` and collection output):
 - **P1 capacity probe stop rule:** unchanged by node count. The probe stops at the first step where median pod CPU (metrics-server, sampled during load) is ≥ 80% of the 1000m limit, or RPS-per-user falls by **>10%** vs the prior step after at least **three** steps and a prior median CPU ≥ **100m**. Sub-10% RPS swings between 45s windows are noise. RPS is the full-step Locust aggregate (includes ~1s spawn transient); CPU is sampled `PROBE_CPU_SAMPLE_LEAD_SEC` (default 5s) before the step ends.
 - **`SHAPE_MEAN_USERS`:** Derived by the P1 capacity probe (`bash scripts/run_capacity_probe.sh --env-file .env`), not assumed from the A7 Little's-law default of 45. The integer is written to `results/capacity_probe/derivation.json` after a live probe run. **No value is recorded here until that artifact exists.**
 
+## Phase 5 measured — `wc98_flash` (`run-phase5-wc98_flash`, n=6)
+
+**STATUS: COMPLETE 18/18 arms** — 6 reps × 3 arms (`fixed`, `hpa_tuned`, `hpa_stock`). `SHAPE_MEAN_USERS` from capacity probe derivation.
+
+| Metric | fixed (median) | hpa_tuned (median) | hpa_stock (median) |
+|--------|---------------:|-------------------:|---------------------:|
+| client_p95_ms | 510 | 400 | 380 |
+| client_p99_ms | 930 | 715 | 670 |
+| pod_hours | 1.19 | 1.83 | 2.24 |
+| failure_rate | 0 | ~0 | ~3e-5 |
+
+**Wilcoxon (n=6, `P_FLOOR=0.031250`):**
+
+| Comparison | client_p95_ms | client_p99_ms | pod_hours |
+|------------|--------------:|--------------:|----------:|
+| fixed vs hpa_tuned | **0.031250** | 0.062500 | **0.031250** |
+| fixed vs hpa_stock | **0.031250** | **0.031250** | **0.031250** |
+| **hpa_tuned vs hpa_stock** | 0.093750 | 0.187500 | 0.437500 |
+
+Both HPA arms beat fixed on latency at n=6. **hpa_tuned vs hpa_stock** (the stock-vs-tuned finding this tier exists for) is **not significant** at α=0.05 on p95 or p99. Direction: stock slower on p95 in 1/6 reps.
+
+**Cold-start collection: WITHDRAWN.** `results/runs/run-phase5-wc98_flash/**/cold_start_events.jsonl` from the first harvest (12 rows, one per HPA arm) is **not published**. Five rows had causally impossible `hpa_decision` ordering; seven passed timestamp ordering but were not replica-slot verified; association could pick decisions from a **previous arm's** event stream. Latency, throughput, cost, and `replica_series_*.csv` from this tier are **unaffected** — the collector was a passive passenger and did not drive load or scaling. Re-harvest with the fixed collector (`--capture-all-scale-out`, per-pod scale-out association) is required before any cold-start claim from Phase 5.
+
 ## Trace-derived load shapes (Phase 4)
 
 Five trace-derived shapes replace synthetic `hybrid` / `constant` / `flash` for **new** benchmark runs. Selection rule: [`docs/SHAPE_SELECTION.md`](docs/SHAPE_SELECTION.md) (`shape_selection_rule_v2`). Per-shape provenance JSON: `docs/shape_provenance/`. Locustfiles: `locust/locustfile_wc98_*.py`, `locust/locustfile_rr_periodic.py`.
