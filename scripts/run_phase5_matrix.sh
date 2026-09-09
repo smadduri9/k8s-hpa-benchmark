@@ -160,6 +160,7 @@ for shape in "${SELECTED_SHAPES[@]}"; do
         --run-id "${run_id}"
     done
   done
+  write_phase5_shape_status "${REPO_ROOT}/results/runs/${run_id}" "${effective_n}"
   echo "PHASE5_SHAPE_DONE shape=${shape}"
 done
 

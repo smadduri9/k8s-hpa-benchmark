@@ -538,7 +538,9 @@ main() {
       final_state="PARTIAL"
       final_reason="${passed}/${attempted} arms passed"
     fi
-    write_status_file "${RUN_ROOT}" "${final_state}" "${final_reason}"
+    if [[ -z "${ONLY_ARM}" && -z "${ONLY_REP}" ]]; then
+      write_status_file "${RUN_ROOT}" "${final_state}" "${final_reason}"
+    fi
     echo "SUMMARY attempted=${attempted} passed=${passed}"
     if [[ "${passed}" -eq "${attempted}" && "${attempted}" -gt 0 ]]; then
       exit 0

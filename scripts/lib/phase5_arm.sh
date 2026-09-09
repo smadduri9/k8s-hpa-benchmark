@@ -171,6 +171,33 @@ write_arm_status() {
   printf '%s\n%s\n' "${state}" "${reason}" > "${dir}/STATUS"
 }
 
+write_phase5_shape_status() {
+  local run_root="$1"
+  local effective_reps="$2"
+  local arms_expected=$((effective_reps * ${#PHASE5_ARMS[@]}))
+  local passed=0
+  local rep arm dir
+  for ((rep=1; rep<=effective_reps; rep++)); do
+    for arm in "${PHASE5_ARMS[@]}"; do
+      dir="$(arm_dir "${run_root}/rep-${rep}" "${arm}")"
+      if arm_is_complete "${dir}" "${arm}"; then
+        passed=$((passed + 1))
+      fi
+    done
+  done
+  local state="COMPLETE"
+  local reason="all ${arms_expected} arms passed"
+  if [[ "${passed}" -eq 0 ]]; then
+    state="FAILED"
+    reason="0/${arms_expected} arms passed"
+  elif [[ "${passed}" -lt "${arms_expected}" ]]; then
+    state="PARTIAL"
+    reason="${passed}/${arms_expected} arms passed"
+  fi
+  write_status_file "${run_root}" "${state}" "${reason}"
+  echo "PHASE5_SHAPE_STATUS run_root=${run_root} state=${state} reason=${reason}"
+}
+
 apply_hpa_for_arm() {
   local arm="$1"
   case "${arm}" in

@@ -33,7 +33,7 @@ usage() {
   cat <<'EOF'
 Usage:
   bash scripts/smoke_test.sh --check harness
-  bash scripts/smoke_test.sh --check coldstart|assertions|fixed-metrics|label-isolation|locust-authority|locust-warmup-validate|preflight-traps|handoff-docs|error-rate-positive|event-loop-not-blocked|endpoints-never-empty|readiness-sweep|shape-curve|shape-wiring|bucket-fieldnames|phase5-resume|phase5-matrix-scope|hpa-stock|coldstart-collector
+  bash scripts/smoke_test.sh --check coldstart|assertions|fixed-metrics|label-isolation|locust-authority|locust-warmup-validate|aggregate-runs|preflight-traps|handoff-docs|error-rate-positive|event-loop-not-blocked|endpoints-never-empty|readiness-sweep|shape-curve|shape-wiring|bucket-fieldnames|phase5-resume|phase5-matrix-scope|hpa-stock|coldstart-collector
   bash scripts/smoke_test.sh --check shape-curve --shape NAME
   bash scripts/smoke_test.sh --negative-test fixed-replica-assert|empty-metrics-column|low-metrics-coverage|missing-locust-hpa|missing-locust-fixed|hpa-never-scaled|label-isolation|coldstart-readiness|liveness-restarts-hung
   bash scripts/smoke_test.sh --full --env-file .env [--reuse-artifacts]
@@ -1014,6 +1014,53 @@ check_locust_warmup_validate() {
   echo "LOCUST_WARMUP_VALIDATE_OK"
 }
 
+check_aggregate_runs() {
+  local fixture="${REPO_ROOT}/scripts/lib/fixtures"
+  local tmp out
+  tmp="$(mktemp -d)"
+
+  mkdir -p "${tmp}/legacy/rep-1"
+  cp "${fixture}/preflight_locust_fixed_stats.csv" "${tmp}/legacy/rep-1/locust_fixed_stats.csv"
+  cp "${fixture}/preflight_locust_hpa_stats.csv" "${tmp}/legacy/rep-1/locust_hpa_stats.csv"
+  cp "${fixture}/preflight_replica_series_fixed.csv" "${tmp}/legacy/rep-1/replica_series_fixed.csv"
+  cp "${fixture}/preflight_replica_series_hpa.csv" "${tmp}/legacy/rep-1/replica_series_hpa.csv"
+  printf '%s\n' '{"shape":"constant"}' > "${tmp}/legacy/manifest.json"
+
+  out="$(venv_python "${REPO_ROOT}/analysis/aggregate_runs.py" --run-root "${tmp}/legacy")"
+  if [[ "${out}" != *"layout=legacy arms=fixed,hpa n=1"* ]]; then
+    rm -rf "${tmp}"
+    die "aggregate-runs legacy layout failed: ${out}"
+  fi
+  if [[ "${out}" != *"arm_a=fixed arm_b=hpa"* ]]; then
+    rm -rf "${tmp}"
+    die "aggregate-runs legacy comparison failed: ${out}"
+  fi
+
+  local arm
+  for arm in fixed hpa_tuned hpa_stock; do
+    mkdir -p "${tmp}/phase5/rep-1/${arm}"
+    if [[ "${arm}" == "fixed" ]]; then
+      cp "${fixture}/preflight_locust_fixed_stats.csv" "${tmp}/phase5/rep-1/${arm}/locust_${arm}_stats.csv"
+      cp "${fixture}/preflight_replica_series_fixed.csv" "${tmp}/phase5/rep-1/${arm}/replica_series_fixed.csv"
+    else
+      cp "${fixture}/preflight_locust_hpa_stats.csv" "${tmp}/phase5/rep-1/${arm}/locust_${arm}_stats.csv"
+      cp "${fixture}/preflight_replica_series_hpa.csv" "${tmp}/phase5/rep-1/${arm}/replica_series_hpa.csv"
+    fi
+  done
+  printf '%s\n' '{"shape":"wc98_flash"}' > "${tmp}/phase5/manifest.json"
+
+  out="$(venv_python "${REPO_ROOT}/analysis/aggregate_runs.py" --run-root "${tmp}/phase5")"
+  rm -rf "${tmp}"
+  if [[ "${out}" != *"layout=phase5 arms=fixed,hpa_tuned,hpa_stock n=1"* ]]; then
+    die "aggregate-runs phase5 layout failed: ${out}"
+  fi
+  if [[ "${out}" != *"arm_a=hpa_tuned arm_b=hpa_stock"* ]]; then
+    die "aggregate-runs phase5 tuned-vs-stock comparison failed: ${out}"
+  fi
+
+  echo "AGGREGATE_RUNS_SMOKE_OK"
+}
+
 verify_trap_scenario() {
   local mode="$1"
   local marker="/tmp/trap-test-${mode}-$$.log"
@@ -1968,6 +2015,7 @@ elif [[ -n "${CHECK}" ]]; then
     label-isolation) check_label_isolation ;;
     locust-authority) check_locust_authority ;;
     locust-warmup-validate) check_locust_warmup_validate ;;
+    aggregate-runs) check_aggregate_runs ;;
     preflight-traps) check_preflight_traps ;;
     error-rate-positive) check_error_rate_positive ;;
     event-loop-not-blocked) check_event_loop_not_blocked ;;
