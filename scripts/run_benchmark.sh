@@ -418,7 +418,8 @@ run_phase5_arm() {
     "${WARMUP_RUN_TIME}" \
     "${dir}/locust_${arm}_warmup" \
     "${dir}/locust_${arm}_warmup.log" \
-    "${dir}/arm.log"
+    "${dir}/arm.log" \
+    "true"
 
   if ! assert_replicas_at_floor "${arm}"; then
     write_arm_status "${dir}" "FAIL" "WARMUP_TRIGGERED_SCALE"

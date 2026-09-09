@@ -33,7 +33,7 @@ usage() {
   cat <<'EOF'
 Usage:
   bash scripts/smoke_test.sh --check harness
-  bash scripts/smoke_test.sh --check coldstart|assertions|fixed-metrics|label-isolation|locust-authority|preflight-traps|handoff-docs|error-rate-positive|event-loop-not-blocked|endpoints-never-empty|readiness-sweep|shape-curve|shape-wiring|bucket-fieldnames|phase5-resume|phase5-matrix-scope|hpa-stock|coldstart-collector
+  bash scripts/smoke_test.sh --check coldstart|assertions|fixed-metrics|label-isolation|locust-authority|locust-warmup-validate|preflight-traps|handoff-docs|error-rate-positive|event-loop-not-blocked|endpoints-never-empty|readiness-sweep|shape-curve|shape-wiring|bucket-fieldnames|phase5-resume|phase5-matrix-scope|hpa-stock|coldstart-collector
   bash scripts/smoke_test.sh --check shape-curve --shape NAME
   bash scripts/smoke_test.sh --negative-test fixed-replica-assert|empty-metrics-column|low-metrics-coverage|missing-locust-hpa|missing-locust-fixed|hpa-never-scaled|label-isolation|coldstart-readiness|liveness-restarts-hung
   bash scripts/smoke_test.sh --full --env-file .env [--reuse-artifacts]
@@ -986,6 +986,32 @@ check_locust_authority() {
     --hpa-stats "${run_dir}/locust_hpa_stats.csv" \
     --output "${run_dir}/locust_summary.json"
   echo "LOCUST_BOTH_ARMS_INGESTED"
+}
+
+check_locust_warmup_validate() {
+  local fixture="${REPO_ROOT}/scripts/lib/fixtures/preflight_locust_fixed_stats.csv"
+  local tmp_log
+  tmp_log="$(mktemp "${TMPDIR:-/tmp}/locust-warmup-log.XXXXXX")"
+  printf '%s\n' '--run-time limit reached, shutting down' > "${tmp_log}"
+
+  local out rc
+  out="$(venv_python "${SCRIPT_DIR}/lib/locust_validate_arm.py" --warmup "${fixture}" "${tmp_log}" 0)"
+  if [[ "${out}" != *"LOCUST_WARMUP_ARTIFACTS_VALID requests=100 failures=10"* ]]; then
+    rm -f "${tmp_log}"
+    die "locust-warmup-validate expected warmup pass got: ${out}"
+  fi
+
+  rc=0
+  out="$(venv_python "${SCRIPT_DIR}/lib/locust_validate_arm.py" "${fixture}" "${tmp_log}" 0 2>&1)" || rc=$?
+  rm -f "${tmp_log}"
+  if [[ "${rc}" -eq 0 ]]; then
+    die "locust-warmup-validate measured path should fail without shape marker"
+  fi
+  if [[ "${out}" != *"LOCUST_SHAPE_INCOMPLETE"* ]]; then
+    die "locust-warmup-validate measured path wrong error: ${out}"
+  fi
+
+  echo "LOCUST_WARMUP_VALIDATE_OK"
 }
 
 verify_trap_scenario() {
@@ -1941,6 +1967,7 @@ elif [[ -n "${CHECK}" ]]; then
     fixed-metrics) check_fixed_metrics ;;
     label-isolation) check_label_isolation ;;
     locust-authority) check_locust_authority ;;
+    locust-warmup-validate) check_locust_warmup_validate ;;
     preflight-traps) check_preflight_traps ;;
     error-rate-positive) check_error_rate_positive ;;
     event-loop-not-blocked) check_event_loop_not_blocked ;;

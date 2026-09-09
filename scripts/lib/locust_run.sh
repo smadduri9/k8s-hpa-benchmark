@@ -236,6 +236,7 @@ locust_wait_bounded() {
   local csv_base="${4:-}"
   local log_file="${5:-}"
   local harness_log="${6:-}"
+  local warmup_mode="${7:-false}"
 
   local locust_pid="${LOCUST_STARTED_PID:-}"
   local watcher_pid="${LOCUST_WATCHER_PID:-}"
@@ -258,14 +259,22 @@ locust_wait_bounded() {
   fi
 
   local validate_py="${LIB_DIR}/locust_validate_arm.py"
+  local -a validate_args=("${validate_py}")
+  if [[ "${warmup_mode}" == "true" ]]; then
+    validate_args+=(--warmup)
+  fi
+  validate_args+=("${csv_base}_stats.csv" "${log_file}" "${rc}")
   local validate_rc=0
   set +e
-  "${VENV_PYTHON}" "${validate_py}" "${csv_base}_stats.csv" "${log_file}" "${rc}" >> "${harness_log}" 2>&1
+  "${VENV_PYTHON}" "${validate_args[@]}" >> "${harness_log}" 2>&1
   validate_rc=$?
   set -e
   if [[ "${validate_rc}" -ne 0 ]]; then
     if [[ "${rc}" -ne 0 ]]; then
       die "LOCUST_FAILED exit_code=${rc}"
+    fi
+    if [[ "${warmup_mode}" == "true" ]]; then
+      die "LOCUST_WARMUP_ARTIFACTS_INVALID stats_csv=${csv_base}_stats.csv log=${log_file}"
     fi
     die "LOCUST_ARTIFACTS_INVALID stats_csv=${csv_base}_stats.csv log=${log_file}"
   fi
