@@ -33,7 +33,7 @@ usage() {
   cat <<'EOF'
 Usage:
   bash scripts/smoke_test.sh --check harness
-  bash scripts/smoke_test.sh --check coldstart|assertions|fixed-metrics|label-isolation|locust-authority|preflight-traps|handoff-docs|error-rate-positive|event-loop-not-blocked|endpoints-never-empty|readiness-sweep|shape-curve|shape-wiring|bucket-fieldnames|phase5-resume|hpa-stock|coldstart-collector
+  bash scripts/smoke_test.sh --check coldstart|assertions|fixed-metrics|label-isolation|locust-authority|preflight-traps|handoff-docs|error-rate-positive|event-loop-not-blocked|endpoints-never-empty|readiness-sweep|shape-curve|shape-wiring|bucket-fieldnames|phase5-resume|phase5-matrix-scope|hpa-stock|coldstart-collector
   bash scripts/smoke_test.sh --check shape-curve --shape NAME
   bash scripts/smoke_test.sh --negative-test fixed-replica-assert|empty-metrics-column|low-metrics-coverage|missing-locust-hpa|missing-locust-fixed|hpa-never-scaled|label-isolation|coldstart-readiness|liveness-restarts-hung
   bash scripts/smoke_test.sh --full --env-file .env [--reuse-artifacts]
@@ -1749,6 +1749,66 @@ check_phase5_resume() {
   rm -rf "${tmp}"
 }
 
+check_phase5_matrix_scope() {
+  source "${SCRIPT_DIR}/lib/phase5_arm.sh"
+  local -a resolved=()
+  local out shape
+
+  local err_file
+  err_file="$(mktemp "${TMPDIR:-/tmp}/phase5-scope-err.XXXXXX")"
+  if phase5_resolve_shapes "not_a_shape" > /dev/null 2>"${err_file}"; then
+    rm -f "${err_file}"
+    die "phase5-matrix-scope expected unknown shape failure"
+  fi
+  out="$(<"${err_file}")"
+  rm -f "${err_file}"
+  if [[ "${out}" != *"PHASE5_MATRIX_UNKNOWN_SHAPE"* ]]; then
+    die "phase5-matrix-scope missing PHASE5_MATRIX_UNKNOWN_SHAPE: ${out}"
+  fi
+  if [[ "${out}" != *"valid=wc98_flash,wc98_ramp,wc98_constant,wc98_periodic,rr_periodic"* ]]; then
+    die "phase5-matrix-scope missing valid list: ${out}"
+  fi
+
+  resolved=()
+  shape_list_file="$(mktemp "${TMPDIR:-/tmp}/phase5-scope-shapes.XXXXXX")"
+  phase5_resolve_shapes "wc98_constant,wc98_flash" > "${shape_list_file}"
+  while IFS= read -r shape; do
+    [[ -n "${shape}" ]] || continue
+    resolved+=("${shape}")
+  done < "${shape_list_file}"
+  rm -f "${shape_list_file}"
+  if [[ "${#resolved[@]}" -ne 2 ]]; then
+    die "phase5-matrix-scope expected 2 shapes got ${#resolved[@]}"
+  fi
+  if [[ "${resolved[0]}" != "wc98_flash" || "${resolved[1]}" != "wc98_constant" ]]; then
+    die "phase5-matrix-scope order wrong: ${resolved[*]}"
+  fi
+
+  resolved=()
+  shape_list_file="$(mktemp "${TMPDIR:-/tmp}/phase5-scope-all.XXXXXX")"
+  phase5_resolve_shapes "" > "${shape_list_file}"
+  while IFS= read -r shape; do
+    [[ -n "${shape}" ]] || continue
+    resolved+=("${shape}")
+  done < "${shape_list_file}"
+  rm -f "${shape_list_file}"
+  if [[ "${#resolved[@]}" -ne 5 ]]; then
+    die "phase5-matrix-scope default expected 5 shapes got ${#resolved[@]}"
+  fi
+
+  if [[ "$(phase5_effective_reps wc98_flash 1)" != "1" ]]; then
+    die "phase5-matrix-scope effective_reps cap failed"
+  fi
+  if [[ "$(phase5_effective_reps wc98_ramp)" != "3" ]]; then
+    die "phase5-matrix-scope effective_reps default failed"
+  fi
+  if [[ "$(phase5_effective_reps wc98_ramp 10)" != "3" ]]; then
+    die "phase5-matrix-scope effective_reps above defined failed"
+  fi
+
+  echo "PHASE5_MATRIX_SCOPE_OK"
+}
+
 check_hpa_stock() {
   kubectl config use-context "kind-${CLUSTER_NAME}" >/dev/null 2>&1 || true
   kubectl apply -f "${REPO_ROOT}/k8s/namespace.yaml"
@@ -1893,6 +1953,7 @@ elif [[ -n "${CHECK}" ]]; then
     shape-wiring) check_shape_wiring ;;
     bucket-fieldnames) check_bucket_fieldnames ;;
     phase5-resume) check_phase5_resume ;;
+    phase5-matrix-scope) check_phase5_matrix_scope ;;
     hpa-stock) check_hpa_stock ;;
     prometheus-deployment-variant) check_prometheus_deployment_variant ;;
     capacity-probe-derive) check_capacity_probe_derive ;;

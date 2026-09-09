@@ -6,6 +6,118 @@ set -euo pipefail
 
 PHASE5_ARMS=(hpa_tuned hpa_stock fixed)
 PHASE5_SHAPE_ORDER=(wc98_flash wc98_ramp wc98_constant wc98_periodic rr_periodic)
+# Prometheus query + scrape budget per arm; overestimate is intentional for operator planning.
+PHASE5_METRICS_COLLECT_BUDGET_SEC="${PHASE5_METRICS_COLLECT_BUDGET_SEC:-300}"
+
+shape_matrix_n() {
+  case "$1" in
+    wc98_flash) echo 6 ;;
+    wc98_ramp|wc98_constant|wc98_periodic|rr_periodic) echo 3 ;;
+    *) die "unsupported phase5 shape: $1" ;;
+  esac
+}
+
+phase5_valid_shape_names_csv() {
+  local IFS=,
+  echo "${PHASE5_SHAPE_ORDER[*]}"
+}
+
+_phase5_run_time_to_seconds() {
+  case "$1" in
+    *m) echo $((${1%m} * 60)) ;;
+    *s) echo "${1%s}" ;;
+    *) die "unsupported run_time: $1" ;;
+  esac
+}
+
+phase5_arm_wall_estimate_sec() {
+  local cold_start_sec="${COLD_START_READINESS_TIMEOUT_SEC:-180}"
+  local preroll_sec="${METRICS_RATE_PREROLL_SEC:-60}"
+  local warmup_sec
+  warmup_sec="$(_phase5_run_time_to_seconds "${WARMUP_RUN_TIME:-5m}")"
+  local load_sec=1080
+  local locust_margin="${LOCUST_WALL_MARGIN_SEC:-60}"
+  local collector_ready_sec=30
+  local overhead_sec=45
+  echo $((cold_start_sec + preroll_sec + warmup_sec + load_sec + locust_margin + collector_ready_sec + PHASE5_METRICS_COLLECT_BUDGET_SEC + overhead_sec))
+}
+
+phase5_format_wall_estimate() {
+  local sec="$1"
+  local h=$((sec / 3600))
+  local m=$(((sec % 3600) / 60))
+  printf '%dh%02dm' "${h}" "${m}"
+}
+
+_phase5_trim() {
+  local s="$1"
+  s="${s#"${s%%[![:space:]]*}"}"
+  s="${s%"${s##*[![:space:]]}"}"
+  printf '%s' "${s}"
+}
+
+phase5_shape_is_known() {
+  local name="$1"
+  local known
+  for known in "${PHASE5_SHAPE_ORDER[@]}"; do
+    if [[ "${name}" == "${known}" ]]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+# Prints one shape per line in deliberate matrix order (subset of PHASE5_SHAPE_ORDER).
+phase5_resolve_shapes() {
+  local shapes_csv="${1:-}"
+  local csv_remain item known
+
+  if [[ -z "${shapes_csv}" ]]; then
+    printf '%s\n' "${PHASE5_SHAPE_ORDER[@]}"
+    return 0
+  fi
+
+  csv_remain="${shapes_csv},"
+  while [[ -n "${csv_remain}" ]]; do
+    item="${csv_remain%%,*}"
+    csv_remain="${csv_remain#${item},}"
+    item="$(_phase5_trim "${item}")"
+    [[ -n "${item}" ]] || continue
+    if ! phase5_shape_is_known "${item}"; then
+      echo "ERROR: PHASE5_MATRIX_UNKNOWN_SHAPE shape=${item} valid=$(phase5_valid_shape_names_csv)" >&2
+      return 1
+    fi
+  done
+
+  for known in "${PHASE5_SHAPE_ORDER[@]}"; do
+    csv_remain="${shapes_csv},"
+    while [[ -n "${csv_remain}" ]]; do
+      item="${csv_remain%%,*}"
+      csv_remain="${csv_remain#${item},}"
+      item="$(_phase5_trim "${item}")"
+      if [[ "${item}" == "${known}" ]]; then
+        printf '%s\n' "${known}"
+        break
+      fi
+    done
+  done
+}
+
+phase5_effective_reps() {
+  local shape="$1"
+  local max_reps="${2:-}"
+  local defined
+  defined="$(shape_matrix_n "${shape}")"
+  if [[ -z "${max_reps}" ]]; then
+    echo "${defined}"
+    return 0
+  fi
+  if (( max_reps < defined )); then
+    echo "${max_reps}"
+  else
+    echo "${defined}"
+  fi
+}
 
 shape_locust_rel() {
   case "$1" in

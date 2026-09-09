@@ -170,6 +170,23 @@ caffeinate -i bash scripts/run_capacity_probe.sh --env-file .env
 
 Writes `results/capacity_probe/derivation.json`, `steps.csv`, and `probe.log`. CPU source: **metrics-server** (`CPU_SOURCE=metrics-server`, median millicores from `kubectl top pods -l app=hpa-eval,experiment=fixed` during load — sampled `PROBE_CPU_SAMPLE_LEAD_SEC` before step end, default 5s). Preflight uses the **same selector** and requires four fixed pods (`METRICS_SERVER_SELECTOR_EMPTY` if zero). Stop rules: `cpu_saturation` at 800m (80% of 1000m limit); `rps_per_user_drop` only after step ≥3, prior median CPU ≥100m, and >10% RPS-per-user decline (sub-10% is noise). RPS is full-window Locust `Requests/s` (includes ~1s spawn transient). Named errors: `CAPACITY_PROBE_TIMEOUT`, `METRICS_SERVER_UNAVAILABLE`, `CAPACITY_PROBE_NO_FEASIBLE_U`.
 
+### 3c) Phase 5 matrix (tiered / dress rehearsal)
+
+```bash
+# Dress rehearsal: one wc98_flash rep, all three arms (~plan log wall_estimate before start)
+caffeinate -i bash scripts/run_phase5_matrix.sh --env-file .env \
+  --shapes wc98_flash --max-reps 1
+
+# One tier (e.g. flash only, full n=6); compose with --resume after interruption
+caffeinate -i bash scripts/run_phase5_matrix.sh --env-file .env \
+  --shapes wc98_flash
+
+# Full matrix (default: all five shapes, defined reps each)
+caffeinate -i bash scripts/run_phase5_matrix.sh --env-file .env
+```
+
+`--shapes` is comma-separated; order follows the matrix definition. `--max-reps` caps reps per shape; capped runs record `matrix_repetitions_defined` vs `matrix_repetitions_requested` in each shape's `manifest.json` so aggregation cannot treat a partial run as complete. Unknown shape names fail with `PHASE5_MATRIX_UNKNOWN_SHAPE`.
+
 ### 4) Full GKE benchmark (walk-away)
 ```bash
 nohup bash scripts/run_benchmark.sh --env-file .env --repetitions 1 > results/latest.nohup.log 2>&1 &

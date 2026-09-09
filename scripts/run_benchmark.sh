@@ -39,6 +39,7 @@ HPA_NO_SCALE_POLICY="abort"
 PHASE5=false
 ONLY_ARM=""
 ONLY_REP=""
+MATRIX_REPETITIONS_DEFINED=""
 WARMUP_RUN_TIME="${WARMUP_RUN_TIME:-5m}"
 
 usage() {
@@ -80,6 +81,7 @@ while [[ $# -gt 0 ]]; do
     --phase5) PHASE5=true; shift ;;
     --only-arm) ONLY_ARM="$2"; shift 2 ;;
     --only-rep) ONLY_REP="$2"; shift 2 ;;
+    --matrix-repetitions-defined) MATRIX_REPETITIONS_DEFINED="$2"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     *) die "unknown argument: $1" ;;
   esac
@@ -132,11 +134,19 @@ RUN_ROOT="${REPO_ROOT}/results/runs/${RUN_ID}"
 mkdir -p "${RUN_ROOT}"
 MANIFEST_PATH="${RUN_ROOT}/manifest.json"
 manifest_hpa_max="$(hpa_max_replicas 2>/dev/null || echo "null")"
+matrix_reps_defined="${MATRIX_REPETITIONS_DEFINED:-${REPETITIONS}}"
+matrix_reps_capped="false"
+if (( matrix_reps_defined > REPETITIONS )); then
+  matrix_reps_capped="true"
+fi
 cat > "${MANIFEST_PATH}" <<EOF
 {
   "run_id": "${RUN_ID}",
   "smoke": ${SMOKE},
   "repetitions": ${REPETITIONS},
+  "matrix_repetitions_defined": ${matrix_reps_defined},
+  "matrix_repetitions_requested": ${REPETITIONS},
+  "matrix_repetitions_capped": ${matrix_reps_capped},
   "duration_minutes": ${DURATION_MINUTES},
   "hpa_max_replicas": ${manifest_hpa_max},
   "shape": "${SHAPE}",
