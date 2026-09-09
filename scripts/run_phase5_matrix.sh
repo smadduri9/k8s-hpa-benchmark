@@ -138,7 +138,6 @@ for shape in "${SELECTED_SHAPES[@]}"; do
   fi
   run_id="run-phase5-${shape}"
   echo "PHASE5_SHAPE_START shape=${shape} matrix_reps_defined=${matrix_n} effective_reps=${effective_n} run_id=${run_id}"
-  local_rep
   for ((local_rep=1; local_rep<=effective_n; local_rep++)); do
     for arm in "${PHASE5_ARMS[@]}"; do
       dir="${REPO_ROOT}/results/runs/${run_id}/rep-${local_rep}/${arm}"
