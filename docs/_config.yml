@@ -1,0 +1,6 @@
+title: k8s-hpa-benchmark
+description: Phase 5 Kubernetes HPA benchmark results
+markdown: kramdown
+kramdown:
+  hard_wrap: false
+highlighter: null
