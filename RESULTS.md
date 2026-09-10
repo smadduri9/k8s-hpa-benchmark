@@ -5,7 +5,159 @@ Authority split:
 - **Prometheus:** CPU and **in-handler service time** (`app_request_latency_seconds` on `/cpu` only)
 - **kubectl in-run sampling:** `spec_replicas`, `status_replicas`, `ready_replicas` in `replica_series_<arm>.csv` and metrics CSV
 
-## Calibrated results (minReplicas=3 both arms)
+## Phase 5 findings (measurement of record)
+
+Trace-derived load, three arms (`fixed`, `hpa_tuned`, `hpa_stock`), `SHAPE_MEAN_USERS=69` from `results/capacity_probe/derivation.json`, `minReplicas=4`, `maxReplicas=12`. Manifests: `k8s/deployment-fixed.yaml`, `k8s/hpa.yaml` (tuned `behavior:`), `k8s/hpa-stock.yaml` (no `behavior:` block). Cluster: 3 × `e2-standard-4`, `us-central1-b`. Collection is finished. GCP resources were torn down afterward.
+
+Locust percentiles are the Aggregated `50%` / `95%` / `99%` cells in `locust_*_stats.csv`. Replica peaks are `max(spec_replicas)` in `replica_series_*.csv`. Latency medians and Wilcoxon values for n=6 are the output of `analysis/aggregate_runs.py --run-root results/runs/run-phase5-wc98_flash`. Tuned pod-hours and `cost_per_1k_successful` drop rep-1 (see the replica-series leak below) and use the aggregator's `median_iqr` and `wilcoxon_signed_rank` on reps 2–6.
+
+### Replica-series leak (`run-phase5-wc98_flash` rep-1 `hpa_tuned`)
+
+`results/runs/run-phase5-wc98_flash/rep-1/hpa_tuned/replica_series_hpa.csv` has 4991 samples from `2026-09-09T06:12:17Z` to `2026-09-10T03:23:44Z` (76287 s). A single 15 s sampler over an 18-minute window writes 70 samples. 4991 samples over 18 minutes would be one row every 0.22 s. That is the wrong window. The file spans 21 hours. Mean interval over the whole file is 15.288 s.
+
+Timestamps do not repeat. All 4991 timestamps are unique. None step backward. Two writers did not collide on the same second.
+
+They did interleave. Split at the Locust window `t0` to `t0+18m` (`t0.txt` = `2026-09-09T06:12:17Z`):
+
+| Slice | samples | mean interval (s) | delta range (s) |
+|-------|--------:|------------------:|-----------------:|
+| In window | 140 | 7.727 | 6–9 |
+| After window | 4851 | 15.505 | 15–21 |
+
+140 samples in 18 minutes is two 15 s loops offset by about 7 s. After Locust ended, one loop remained and wrote at 15 s until the next morning. Collection already saw the double writer: `/tmp/flash-tier.log` has `REPLICA_SERIES_LOADED path=.../rep-1/hpa_tuned/replica_series_hpa.csv samples=140`. Every later complete flash arm loaded 70 samples from its own file.
+
+`rep-1/hpa_tuned/arm.log` does not log sampler start or stop. It records one warmup Locust and one 18-minute Locust.
+
+The second writer is a leftover from the dress rehearsal. `/tmp/rehearsal.log` used the same `run_id=run-phase5-wc98_flash`, issued `PHASE5_ARM_RETRY shape=wc98_flash rep=1 arm=hpa_tuned removing incomplete`, and started load at `2026-09-09T05:52:13Z`. `PHASE5_ARM_RETRY` runs `rm -rf` on the arm directory. It does not stop a sampler that still has that path open. The measured arm then called `replica_sampler_start`, which truncates the file and starts a new loop. `replica_sampler_stop` kills only `$!`. `run_phase5_arm` does not `register_heartbeat_pid` for the sampler, so EXIT cleanup would not have reaped the leftover either. That is the same process-lifetime class as the port-forward and collector leaks.
+
+`pod_hours_from_replica_series` on the full file returns 96.64138888888888. The integral includes later arms and scale-to-zero (`spec_replicas=0` at `2026-09-09T09:46:33Z` and `2026-09-09T20:54:00Z`). The n=6 aggregator median 1.825 used that value as the largest of six. It is not an 18-minute arm and is not published.
+
+No other complete Phase 5 series has this signature. 31 series have 70 samples. `run-phase5-wc98_ramp/rep-2/hpa_tuned/replica_series_hpa.csv` has 69. `run-phase5-wc98_ramp/rep-3/hpa_tuned/replica_series_hpa.csv` has 19 and is an incomplete leftover, not a published repetition.
+
+Locust for this arm is a normal 18-minute run (`locust_hpa_tuned_stats.csv`, 33738 requests, 4 failures) and stays in the n=6 latency table. Tuned pod-hours and `cost_per_1k_successful` use reps 2–6 only.
+
+### Finding 1. `wc98_flash` n=6 latency, n=5 tuned pod-hours
+
+`results/runs/run-phase5-wc98_flash/` is COMPLETE, 6 reps × 3 arms. Shape `wc98_flash` (`docs/shape_provenance/wc98_flash.json`, `peak_to_mean=2.015377`).
+
+Client p95 medians are **510 ms** fixed, **400 ms** hpa_tuned, **380 ms** hpa_stock. Both HPA arms beat fixed on p95 at **p=0.031250**, the n=6 two-sided exact Wilcoxon floor (`P_FLOOR n=6 min_attainable_two_sided_p=0.031250`), in 6 of 6 reps (`DIRECTION_CONSISTENCY … arm_b_slower_in=0/6`).
+
+hpa_tuned vs hpa_stock on client p95 is **p=0.093750** (exact Wilcoxon, one tie, stock slower in 1 of 6 reps). That is not significant at α=0.05. Tuning the HPA `behavior:` block (`k8s/hpa.yaml`: `scaleDown.stabilizationWindowSeconds=60` vs Kubernetes default 300, `scaleUp` `periodSeconds=30` vs default 15) made no detectable difference to latency. Tuned vs stock pod-hours on the five intact pairs is p=0.062500, the n=5 floor, so it cannot be significant at 0.05 either. This is a null result. Phase 1 had disclosed the `behavior:` confound as unmeasured. The three-arm flash tier closed it.
+
+Pod-hours medians are **1.18556** fixed (n=6), **1.78361** hpa_tuned (n=5, reps 2–6), **2.23514** hpa_stock (n=6). HPA uses more compute than the 4-replica floor. Stock vs fixed pod-hours remains p=0.031250 at n=6. Tuned vs fixed pod-hours on the five intact pairs is p=0.062500 (n=5 floor).
+
+| Metric | fixed (median) | hpa_tuned (median) | hpa_stock (median) | n | Source |
+|--------|---------------:|-------------------:|-------------------:|--:|--------|
+| client_p50_ms | 160 | 160 | 160 | 6 | `aggregate_runs.py` MEDIAN_IQR |
+| client_p95_ms | 510 | 400 | 380 | 6 | same |
+| client_p99_ms | 930 | 715 | 670 | 6 | same |
+| failure_rate | 0 | 0 | 2.93269e-05 | 6 | same |
+| pod_hours | 1.18556 | 1.78361 | 2.23514 | 6 / **5** / 6 | aggregator n=6 except tuned reps 2–6 |
+| cost_per_1k_successful | 9.413e-05 | 0.000140692 | 0.000175519 | 6 / **5** / 6 | same |
+
+IQR client_p95 (n=6): fixed q1=487.5 q3=525 iqr=37.5; hpa_tuned q1=385 q3=422.5 iqr=37.5; hpa_stock q1=372.5 q3=395 iqr=22.5. pod_hours IQR: fixed 0 (n=6); hpa_tuned 0.0880556 (n=5); hpa_stock 0.101806 (n=6).
+
+**Wilcoxon signed-rank (exact, two-sided):**
+
+| Comparison | client_p95_ms | client_p99_ms | pod_hours | cost_per_1k_successful |
+|------------|--------------:|--------------:|----------:|-----------------------:|
+| fixed vs hpa_tuned | **0.031250** (n=6, 0/6 HPA slower) | 0.062500 (n=5, one tie) | 0.062500 (n=5 floor) | 0.062500 (n=5 floor) |
+| fixed vs hpa_stock | **0.031250** (n=6, 0/6 HPA slower) | **0.031250** (n=6, 0/6 HPA slower) | **0.031250** (n=6) | **0.031250** (n=6) |
+| hpa_tuned vs hpa_stock | 0.093750 (n=6, one tie; stock slower 1/6) | 0.187500 | 0.062500 (n=5 floor) | 0.062500 (n=5 floor) |
+
+Per-rep Locust Aggregated `95%` and `Request Count` / `Failure Count` from `locust_*_stats.csv`; `peak_spec` from `replica_series_*.csv`:
+
+| Rep | fixed p95 (req / fail) | hpa_tuned p95 (req / fail) | hpa_stock p95 (req / fail) | tuned peak_spec | stock peak_spec |
+|----:|------------------------|----------------------------|----------------------------|----------------:|----------------:|
+| 1 | 480 (33848 / 0) | 440 (33738 / 4) | 410 (33872 / 6) | 12 | 11 |
+| 2 | 550 (33545 / 0) | 400 (33912 / 0) | 380 (34030 / 0) | 11 | 12 |
+| 3 | 510 (33775 / 0) | 430 (33900 / 0) | 400 (34049 / 1) | 11 | 12 |
+| 4 | 470 (33789 / 0) | 380 (33976 / 1) | 370 (34127 / 0) | 11 | 11 |
+| 5 | 510 (33608 / 0) | 370 (34187 / 0) | 380 (34072 / 3) | 10 | 11 |
+| 6 | 530 (33508 / 0) | 400 (34048 / 0) | 370 (34148 / 1) | 11 | 11 |
+
+Fixed-arm peak `spec_replicas` is **4** in all six reps (70 samples each). HPA flash peak `spec_replicas` across the six reps is **10–12**.
+
+### Finding 2. Workload coverage
+
+Observed peak `spec_replicas` at `SHAPE_MEAN_USERS=69`, `minReplicas=4`, `maxReplicas=12`. Peak-to-mean is `peak_to_mean` from `docs/shape_provenance/<shape>.json`. HPA peaks from `replica_series_hpa.csv`.
+
+| Shape | `peak_to_mean` | Observed peak `spec_replicas` | Run |
+|-------|---------------:|-------------------------------|-----|
+| `wc98_flash` | 2.015377 | **10–12** (n=6; see Finding 1 table) | `run-phase5-wc98_flash` |
+| `wc98_ramp` | 1.520607 | **8** on the first cluster (rep-1 tuned and stock); **4** (rep-2 tuned) and **5** (rep-2 stock) on the second | `run-phase5-wc98_ramp` |
+| `wc98_periodic` | 1.588318 | **5** (rep-1 both HPA arms) | `run-phase5-wc98_periodic` |
+| `rr_periodic` | 1.509042 | **5** (rep-1 both HPA arms) | `run-phase5-rr_periodic` |
+| `wc98_constant` | 1.05071 | **4** (rep-1 both HPA arms) | `run-phase5-wc98_constant` |
+
+Fixed arms stayed at `spec_replicas=4` on every shape above.
+
+Only the flash-crowd class (peak-to-mean **2.015377**) drove CPU-target HPA past `minReplicas` by more than one replica. The other four archetypes come from the same WorldCup98 / RetailRocket traces (WorldCup98 extraction notes approximately 1.3B records in `scripts/extract_trace_counts.py`). They left the autoscaler at the floor or one replica above it. Request volume is comparable across these 18-minute runs (Locust Aggregated `Request Count` is 33508–34872 on flash n=6 and 33835–34872 on the n=1 shapes). Peak-to-mean ratio determines whether this CPU-target HPA engages. Absolute request volume does not.
+
+That prediction was committed in **`514048c`** (`Fail Phase 5 arms when metrics collection fails; record n=1 predictions`) before the n=1 remaining-shape runs. The prediction table is preserved below, unedited. Outcome: `wc98_constant` stayed at 4; `wc98_ramp` / `wc98_periodic` / `rr_periodic` were marginal (4 or 5); flash had already measured 10–12. The prediction matched.
+
+Remaining shapes are n=1 (three arms) by design. See Finding 3. They are not a ranked latency table.
+
+n=1 Locust Aggregated `Request Count` / `Failure Count` and peak `spec_replicas`:
+
+| Shape | Arm | Requests | Failures | peak_spec | samples |
+|-------|-----|---------:|---------:|----------:|--------:|
+| `wc98_ramp` rep-1 | hpa_tuned | 34283 | 0 | 8 | 70 |
+| `wc98_ramp` rep-1 | hpa_stock | 34202 | 0 | 8 | 70 |
+| `wc98_ramp` rep-1 | fixed | 34181 | 0 | 4 | 70 |
+| `wc98_ramp` rep-2 | hpa_tuned | 33835 | 2 | 4 | 69 |
+| `wc98_ramp` rep-2 | hpa_stock | 34787 | 0 | 5 | 70 |
+| `wc98_ramp` rep-2 | fixed | 34561 | 1 | 4 | 70 |
+| `wc98_constant` rep-1 | hpa_tuned | 34872 | 0 | 4 | 70 |
+| `wc98_constant` rep-1 | hpa_stock | 34594 | 66 | 4 | 70 |
+| `wc98_constant` rep-1 | fixed | 34693 | 2 | 4 | 70 |
+| `wc98_periodic` rep-1 | hpa_tuned | 34593 | 1 | 5 | 70 |
+| `wc98_periodic` rep-1 | hpa_stock | 34811 | 1 | 5 | 70 |
+| `wc98_periodic` rep-1 | fixed | 34438 | 6 | 4 | 70 |
+| `rr_periodic` rep-1 | hpa_tuned | 34734 | 6 | 5 | 70 |
+| `rr_periodic` rep-1 | hpa_stock | 34740 | 0 | 5 | 70 |
+| `rr_periodic` rep-1 | fixed | 34549 | 1 | 4 | 70 |
+
+`run-phase5-wc98_ramp/STATUS` is `COMPLETE 6/6 arms` (rep-1 + rep-2). `rep-3/hpa_tuned/` is an incomplete leftover and is not a published repetition.
+
+### Finding 3. Reproducibility
+
+`wc98_ramp` is the evidence. Same locustfile, same `SHAPE_MEAN_USERS=69`, same HPA 4–12, same 18-minute window. Load is near-identical on the surviving Locust Aggregated rows: **34283** requests (`rep-1/hpa_tuned/locust_hpa_tuned_stats.csv`) vs **33835** (`rep-2/hpa_tuned/locust_hpa_tuned_stats.csv`). Second-cluster stock is **34787** (`rep-2/hpa_stock/locust_hpa_stock_stats.csv`).
+
+Peak `spec_replicas`: **8** on the first cluster (rep-1, both HPA arms, 70 samples each) vs **4** (rep-2 tuned, 69 samples) and **5** (rep-2 stock, 70 samples) on the second.
+
+Warm-up is the same hold: 37 Locust users, 5 minutes, below the 60% HPA target (`WARMUP_LOCUST users=37` in each `arm.log`; `WARMUP_USERS=37` in the operator log). Metrics-server `kubectl top` after that hold (`WARMUP_CPU_OBSERVED` from `scripts/run_benchmark.sh`; last arm only is retained in `manifest.json`):
+
+- First cluster, `wc98_ramp` rep-1 `hpa_tuned`: **154m, 176m, 219m, 240m** (operator log `collector-check.log`). Median of those four: **197.5m**.
+- Second cluster, first attempt of the same arm: **73m, 93m, 127m, 166m** (operator log `final-tier.log`). Median of those four: **110m**.
+- Second cluster, surviving PASS redo of that arm (`n1-remaining.log`, written into `results/runs/run-phase5-wc98_ramp/rep-2/hpa_tuned/`): **67m, 78m, 88m, 92m**. Peak `spec_replicas` stayed **4**.
+- Surviving `results/runs/run-phase5-wc98_ramp/manifest.json` last-arm string (rep-2 `hpa_stock`): **72m, 125m, 112m, 138m**.
+
+GKE `e2-standard-4` spans CPU generations. The draw is not selectable. That affects the reproducibility of any GKE benchmark on e2, including this one. A marginal shape (ramp peak-to-mean **1.520607**) can flip between scale-out and floor across deployments of the same cluster spec. Remaining-shape results are therefore reported at n=1. Repeating them would mix hardware draws rather than estimate a sampling distribution.
+
+### Cold-start collection dropped
+
+Five collector attempts produced no usable published rows. The waterfall is withdrawn. Locust, replica-series, and metrics results are unaffected. The collector was a passive observer (`docs/COLD_START.md`). It does not drive load or scaling.
+
+What was built:
+
+1. **Flash harvest** (`run-phase5-wc98_flash/**/cold_start_events.jsonl`): 12 HPA files, one row each; all fixed-arm files empty (0 bytes). 4 rows have `hpa_decision` after `pod_created` (example: `rep-1/hpa_tuned` decision `2026-09-09T06:17:48Z`, created `2026-09-09T06:17:33Z`). 1 row has `hpa_decision` 7 minutes before `pod_created` (`rep-1/hpa_stock`: decision `2026-09-09T06:30:15Z`, created `2026-09-09T06:37:57Z`), which is a previous-arm event. The remaining 7 HPA rows have equal timestamps and no `hpa_decision_association` field. Withdrawn.
+2. **Watch-shutdown deadlock** on ramp (collector SIGKILL of its kubectl watches, then hang). Fixed in `089230d` (`RLock`; bounded `wait_cold_start_collector`). That hang produced no usable jsonl.
+3. **Per-pod association** and `--capture-all-scale-out` (`237cf0b`).
+4. **Seed from live Deployment `spec.replicas`** plus scale-out sequence guard (`59b7383`). Kind calibration on that code: `docs/cold-start-calibration/{cached,uncached}.jsonl`. Rows have `hpa_decision_association=verified`, `SCALE_OUT_SEED`, and `SUCCESSFUL_RESCALE accepted`.
+5. **Remaining-shape GKE harvest** with that collector. `wc98_ramp` rep-1 HPA jsonl: 4 rows each, every `hpa_decision=MISSING` / `HPA_DECISION_NO_SCALE_OUT_MATCH` even though `peak_spec=8`. `wc98_ramp` rep-2 `hpa_tuned`: empty file (0 bytes; no scale-out, `peak_spec=4`). `wc98_constant`: empty on all three arms. `wc98_periodic` and `rr_periodic`: a few rows with `association=verified` but `Ready` / `ContainersReady` often `MISSING` and `hpa_decision_reason=MISSING`. Coverage never reached the 0.90 verified-decision rule in `docs/COLD_START.md`.
+
+No decision-to-serving distribution is published. Do not analyse the surviving jsonl as a cold-start result.
+
+### Known issues
+
+**Cold-start scale reads live `spec.replicas`, not the manifest.** Not fixed. After `wc98_ramp` rep-2 `hpa_stock` peaked at 5, `wc98_constant` cold-start issued `DEPLOY_SCALE_ISSUED deployment=hpa-eval-hpa declared_replicas=5` (`SCALE_TO_ZERO_ISSUED … previous_declared=5`) instead of manifest `minReplicas` / `replicas: 4`. Operator log: `n1-remaining.log`. Same class as the flash-tier resume bug: the scaler read live Deployment spec left by the previous arm. During the measured window `replica_series_hpa.csv` for constant is 70 samples at `spec_replicas=4` (`HPA_DID_NOT_SCALE_ON_STEADY_LOAD peak_spec=4`). The extra replica was gone before Locust t0. Latency cells are not rewritten. Future resumes must scale from the manifest.
+
+**Replica sampler survives `PHASE5_ARM_RETRY` `rm -rf`.** Documented above. `run_phase5_arm` should register the sampler PID for EXIT cleanup and kill any writer on that path before starting a new loop. Not fixed. The cluster is gone.
+
+## Calibrated results (minReplicas=3 both arms), superseded
+
+**Superseded by [Phase 5](#phase-5-findings-measurement-of-record).** These runs used synthetic Locust shapes (`hybrid`, `constant`, `flash`) and two arms at `minReplicas=3`. Tables, SLO analysis, and figures below are preserved verbatim.
 
 Both arms started at equal capacity (`minReplicas=3`). **Aggregate figures are pending** — per-rep charts are not published here.
 
@@ -55,7 +207,7 @@ Both arms started at equal capacity (`minReplicas=3`). **Aggregate figures are p
 
 **Scope:** `/cpu` only. `GET /` is not instrumented in `app_request_latency_seconds` and does not increment `app_requests_total`; Locust offers roughly **80%** of traffic to `/cpu` (`@task(4)` vs `@task(1)`).
 
-**Headline finding (99% at 500 ms):** **Neither arm meets the SLO in any calibrated repetition** (hybrid n=6, constant n=3). Fixed arms are **fewer than 50%** faster than 500 ms in every rep — all six hybrid reps and all three constant reps. HPA arms do better on some reps but still miss by a wide margin: in hybrid, the best bracket observed is **>50% and <=66%** (reps 2, 3, 4, 6); in constant, the best is **>66% and <=75%** (rep-1). The error budget is exhausted many times over in every run (for example hybrid rep-1: **>= 5000%** consumed; hybrid rep-2 HPA: **>= 3400% and < 5000%**). This qualifies the [calibrated latency table](#calibrated-results-minreplicas3-both-arms) above: HPA's lower `client_p50_ms` medians do not imply a 500 ms tail-SLO win.
+**Headline finding (99% at 500 ms):** **Neither arm meets the SLO in any calibrated repetition** (hybrid n=6, constant n=3). Fixed arms are **fewer than 50%** faster than 500 ms in every rep — all six hybrid reps and all three constant reps. HPA arms do better on some reps but still miss by a wide margin: in hybrid, the best bracket observed is **>50% and <=66%** (reps 2, 3, 4, 6); in constant, the best is **>66% and <=75%** (rep-1). The error budget is exhausted many times over in every run (for example hybrid rep-1: **>= 5000%** consumed; hybrid rep-2 HPA: **>= 3400% and < 5000%**). This qualifies the [calibrated latency table](#calibrated-results-minreplicas3-both-arms-superseded) above: HPA's lower `client_p50_ms` medians do not imply a 500 ms tail-SLO win.
 
 **Why the SLI brackets can look inconsistent with `client_p50_ms`:** the calibrated table uses Locust's **Aggregated** row, which mixes **`GET /`** (trivial, ~20% of traffic) with **`GET /cpu?intensity=low`** (the expensive ~80%). The SLI below is scoped to the **`GET,/cpu?intensity=low`** row only. That is why HPA can show **`client_p50_ms` 370** in the hybrid calibrated table while the SLI reports **fewer than 50% faster than 500 ms** for some reps. Both numbers are correct over different populations; neither contradicts the other.
 
@@ -120,7 +272,7 @@ Source: `analysis/scaling_events.py` on `results/runs/`.
 
 ## What is not being claimed
 
-- **HPA `behavior:` vs stock Kubernetes (`k8s/hpa.yaml`).** This manifest sets `scaleDown.stabilizationWindowSeconds: 60` (Kubernetes default **300**) and `scaleUp` policy `periodSeconds: 30` (Kubernetes default **15**). Direction only: this HPA scales up more slowly and sheds pods sooner than stock Kubernetes. No effect on cost or latency from these settings has been measured.
+- **HPA `behavior:` vs stock Kubernetes.** Disclosed here before Phase 5 as unmeasured. The three-arm flash tier measured it. Client p95 p=0.093750 (n=6). Tuned vs stock pod-hours p=0.062500 (n=5 floor). See [Finding 1](#finding-1-wc98_flash-n6-latency-n5-tuned-pod-hours). Direction of the settings is unchanged (`scaleDown.stabilizationWindowSeconds: 60` vs default **300**; `scaleUp` `periodSeconds: 30` vs default **15**).
 - **Prometheus `rps` and `error_rate` coverage.** Both are derived from `app_requests_total` in `analysis/collect_metrics.py`. `GET /` never increments that counter (`app/main.py`), so roughly **20%** of offered Locust traffic is invisible to both series.
 - **`active_requests` in existing runs.** The `active_requests` column is empty in every run that exists. **Two causes:** Prometheus `--storage.tsdb.retention.time=2h` expired hybrid and constant samples before the backfill (~21:52 on 2026-09-06; only data after ~19:52 remained); `reset_prometheus_deployment` destroyed the flash remainder. Retention was never revisited. The limitation bullets under [`active_requests`](#active_requests-in-flight-saturation-gauge) apply to **future** runs only.
 - **Load shapes.** All existing benchmark runs used synthetic phased shapes in `locust/locustfile.py` (`hybrid`, `constant`, `flash`). The measurements are real; those traffic patterns were invented. **New runs** should use trace-derived shapes (`wc98_*`, `rr_periodic`); synthetic locustfiles remain byte-identical for published-run replay only.
@@ -211,7 +363,7 @@ Guards enforced for this run (evidence in `rep.log` and collection output):
 
 ## Measurement limitations
 
-- **HPA `behavior:` vs stock Kubernetes (`k8s/hpa.yaml`).** `scaleDown.stabilizationWindowSeconds: 60` vs Kubernetes default **300**; `scaleUp` policy `periodSeconds: 30` vs default **15**. Direction only: this HPA scales up more slowly and sheds pods sooner than stock Kubernetes. No measured effect on cost or latency is claimed.
+- **HPA `behavior:` vs stock Kubernetes.** Settings as in `k8s/hpa.yaml` vs `k8s/hpa-stock.yaml`. Measured on `wc98_flash`: latency null at n=6, tuned pod-hours n=5. Not re-measured on the n=1 shapes.
 - **Synthetic load shapes.** Published runs through Phase A used phased shapes in `locust/locustfile.py` (`hybrid`, `constant`, `flash`). The measurements are real; those traffic patterns were invented. **`locust/locustfile.py` and `locustfile_{constant,flash}.py` are frozen** for published-run replay; do not change them. **New runs** use trace-derived shapes (`wc98_*`, `rr_periodic`); see [Trace-derived load shapes (Phase 4)](#trace-derived-load-shapes-phase-4).
 - **Sub-plateau arrival burstiness is not reproduced.** Locust uses a closed-loop user model (`wait_time = between(1, 3)` per user). The superposition of N independent renewal processes is approximately Poisson (Palm-Khintchine), so traffic delivered to pods within each plateau is near-Poisson regardless of the source trace's fine-grained statistics. Conclusions about autoscaler behaviour under **bursty arrivals** apply to the **30 s envelope timescale and above**, not to fine-grained arrival burstiness in the original traces. Reproducing source arrival statistics would require an open-loop request scheduler (deferred — different load generator, not a Locust parameter change).
 - **Application change after run-20260904T230444Z:** `/cpu` was `async def` (CPU work on the event loop, blocking `/health` under load). It is now sync `def` (Starlette threadpool dispatch). **Future runs are not comparable to run-20260904T230444Z** — the application under test has changed.
@@ -244,30 +396,7 @@ Guards enforced for this run (evidence in `rep.log` and collection output):
 - **Estimated Phase 5 spend (not invoiced):** ~25 h cluster at 3× `e2-standard-4` (~$0.40/hr on-demand list) plus two LoadBalancers → ballpark **~$11–13**; runner VM stopped during the run. See Phase 5 plan cost section.
 - **P1 capacity probe stop rule:** unchanged by node count. The probe stops at the first step where median pod CPU (metrics-server, sampled during load) is ≥ 80% of the 1000m limit, or RPS-per-user falls by **>10%** vs the prior step after at least **three** steps and a prior median CPU ≥ **100m**. Sub-10% RPS swings between 45s windows are noise. RPS is the full-step Locust aggregate (includes ~1s spawn transient); CPU is sampled `PROBE_CPU_SAMPLE_LEAD_SEC` (default 5s) before the step ends.
 - **`SHAPE_MEAN_USERS`:** Derived by the P1 capacity probe (`bash scripts/run_capacity_probe.sh --env-file .env`). Artifact `results/capacity_probe/derivation.json` records **69**. Do not raise it to force HPA scale-out on later shapes — the integer applies to all five shapes and changing it breaks comparability with the flash n=6 result.
-- **GKE e2 CPU-generation draw is not controllable.** The same cluster spec (`3 × e2-standard-4`, `us-central1-b`) produced materially different per-pod CPU for identical warm-up work (37 Locust users, 5 min, below the 60% HPA target). First cluster (`wc98_ramp` rep-1 `hpa_tuned`): **154m, 176m, 219m, 240m**. Current cluster (rep-2 `hpa_tuned`): **73m, 93m, 127m, 166m**. Medians **198m vs 110m**. The current-cluster median is **0.66×** the probe's expected 168m at 37 users (step 14: 150 users at 680m scaled linearly). That is why ramp scaled to `peak_spec=8` on the first cluster and stayed at 4 on the next. Any GKE result on e2 is hardware-draw-dependent; replica counts are not portable across deployments of the same machine type.
-
-## Phase 5 measured — `wc98_flash` (`run-phase5-wc98_flash`, n=6)
-
-**STATUS: COMPLETE 18/18 arms** — 6 reps × 3 arms (`fixed`, `hpa_tuned`, `hpa_stock`). `SHAPE_MEAN_USERS` from capacity probe derivation.
-
-| Metric | fixed (median) | hpa_tuned (median) | hpa_stock (median) |
-|--------|---------------:|-------------------:|---------------------:|
-| client_p95_ms | 510 | 400 | 380 |
-| client_p99_ms | 930 | 715 | 670 |
-| pod_hours | 1.19 | 1.83 | 2.24 |
-| failure_rate | 0 | ~0 | ~3e-5 |
-
-**Wilcoxon (n=6, `P_FLOOR=0.031250`):**
-
-| Comparison | client_p95_ms | client_p99_ms | pod_hours |
-|------------|--------------:|--------------:|----------:|
-| fixed vs hpa_tuned | **0.031250** | 0.062500 | **0.031250** |
-| fixed vs hpa_stock | **0.031250** | **0.031250** | **0.031250** |
-| **hpa_tuned vs hpa_stock** | 0.093750 | 0.187500 | 0.437500 |
-
-Both HPA arms beat fixed on latency at n=6. **hpa_tuned vs hpa_stock** (the stock-vs-tuned finding this tier exists for) is **not significant** at α=0.05 on p95 or p99. Direction: stock slower on p95 in 1/6 reps.
-
-**Cold-start collection: WITHDRAWN.** `results/runs/run-phase5-wc98_flash/**/cold_start_events.jsonl` from the first harvest (12 rows, one per HPA arm) is **not published**. Five rows had causally impossible `hpa_decision` ordering; seven passed timestamp ordering but were not replica-slot verified; association could pick decisions from a **previous arm's** event stream. Latency, throughput, cost, and `replica_series_*.csv` from this tier are **unaffected** — the collector was a passive passenger and did not drive load or scaling. Re-harvest with the fixed collector (`--capture-all-scale-out`, per-pod scale-out association) is required before any cold-start claim from Phase 5.
+- **GKE e2 CPU-generation draw is not controllable.** The same cluster spec (`3 × e2-standard-4`, `us-central1-b`) produced materially different per-pod CPU for identical warm-up work (37 Locust users, 5 min, below the 60% HPA target). First cluster (`wc98_ramp` rep-1 `hpa_tuned`): **154m, 176m, 219m, 240m**. Current cluster (rep-2 `hpa_tuned`): **73m, 93m, 127m, 166m**. Medians of those four millicores: **197.5m vs 110m**. The current-cluster median is **0.66×** the probe's expected 168m at 37 users (step 14: 150 users at 680m scaled linearly). That is why ramp scaled to `peak_spec=8` on the first cluster and stayed at 4 on the next. Any GKE result on e2 is hardware-draw-dependent; replica counts are not portable across deployments of the same machine type.
 
 ## Phase 5 n=1 remaining shapes — prediction (recorded before the run)
 
@@ -288,6 +417,8 @@ n=3 on `wc98_ramp`, `wc98_constant`, `wc98_periodic`, `rr_periodic` is **not run
 | `wc98_constant` | 1.051 | 72 | 65.3% | 43% | 2.9 | **never** (`warn` by design) |
 
 If a shape's HPA arms stay at `peak_spec=4`, that is the finding: 69 does not exercise the autoscaler on this hardware. Do not raise `SHAPE_MEAN_USERS` afterward to force a scale-out.
+
+**Outcome (recorded after the run; prediction table above is unchanged).** Observed peak `spec_replicas` matched the prediction: `wc98_constant` stayed at **4**; `wc98_ramp` rep-2 tuned **4** / stock **5**; `wc98_periodic` **5** / **5**; `rr_periodic` **5** / **5**. Detail in [Finding 2](#finding-2--only-flash-crowd-bursts-drive-cpu-target-hpa-off-its-floor).
 
 ## Trace-derived load shapes (Phase 4)
 
@@ -315,7 +446,7 @@ Periodic shapes dilate a **24 h** source window (`source_window_sec=86400`) into
 
 ### Baseline calibration (Tier 2 Phase A, A8)
 
-Calibrated outcomes are published in [Calibrated results](#calibrated-results-minreplicas3-both-arms) (hybrid n=6, constant n=3, flash n=2 PARTIAL).
+Calibrated outcomes are published in [Calibrated results](#calibrated-results-minreplicas3-both-arms-superseded) (hybrid n=6, constant n=3, flash n=2 PARTIAL).
 
 - **`run-20260905T160157Z` is non-comparable to all future runs.** Its HPA arm ran `minReplicas: 1` against a fixed arm declared at 3, so the HPA arm began at one third the capacity and paid scale-up queueing the fixed arm never incurred. Evidence: `results/runs/run-20260905T160157Z/rep-1/replica_series_hpa.csv` reaches a minimum `spec_replicas` of **1** across its 70 samples. `k8s/hpa.yaml` now sets `minReplicas: 3`, so both arms start at equal capacity and the only remaining difference is HPA's ability to scale **up**. This removes the minimum-size confound; it does not make the earlier run wrong, it makes it a different experiment.
 - **Why this matters (uncalibrated baseline).** RLScale-Bench (arXiv:2605.26418) names this as a gap that makes comparisons unreliable: "When RL studies compare against an uncalibrated baseline, apparent improvements may reflect baseline weakness rather than algorithmic gains." The A7 result — fixed beating HPA on p95, p99 and cost — was measured against exactly such a baseline.
@@ -420,7 +551,7 @@ Collected as `sum(app_active_requests{experiment="<mode>"})` and written to the 
 
 ## Latency — two metrics, never merged
 
-**Superseded run (`run-20260904T230444Z`).** The percentile tables below are not the calibrated results. See [Calibrated results](#calibrated-results-minreplicas3-both-arms) for hybrid and constant medians.
+**Superseded run (`run-20260904T230444Z`).** The percentile tables below are not the calibrated results. See [Calibrated results](#calibrated-results-minreplicas3-both-arms-superseded) for hybrid and constant medians.
 
 Published latency is **two separate metrics**. Do not compare or average them.
 
@@ -499,7 +630,7 @@ On graceful shutdown, Kubernetes marks the pod **terminating**, removes it from 
 
 ## Derived metrics — calibrated runs
 
-Medians and p-values below match [Calibrated results](#calibrated-results-minreplicas3-both-arms). No throughput ratio — request counts for these runs were not published in this pass. No flash derived metrics.
+Medians and p-values below match [Calibrated results](#calibrated-results-minreplicas3-both-arms-superseded). No throughput ratio — request counts for these runs were not published in this pass. No flash derived metrics.
 
 ### hybrid — `run-20260905T220046Z-hybrid` (n=6)
 

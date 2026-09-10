@@ -2,9 +2,27 @@
 
 Personal benchmark project that evaluates Kubernetes Horizontal Pod Autoscaler (HPA) behavior on bursty traffic patterns.
 
-## Calibrated results (minReplicas=3 both arms)
+## Phase 5 results (measurement of record)
 
-Both arms started at equal capacity (`minReplicas=3`). **Aggregate figures are pending** — per-rep charts are not published here. Full write-up: [RESULTS.md](RESULTS.md#calibrated-results-minreplicas3-both-arms). SLO and error-budget analysis: [RESULTS.md § SLO](RESULTS.md#slo-and-error-budget-calibrated-runs); incident write-up: [POSTMORTEM.md](POSTMORTEM.md); policy: [docs/error-budget-policy.md](docs/error-budget-policy.md).
+Published page: [smadduri9.github.io/k8s-hpa-benchmark](https://smadduri9.github.io/k8s-hpa-benchmark/). Full write-up and per-rep tables: [RESULTS.md](RESULTS.md#phase-5-findings-measurement-of-record).
+
+Trace-derived WorldCup98 `wc98_flash`, n=6, three arms (`fixed`, `hpa_tuned`, `hpa_stock`), `SHAPE_MEAN_USERS=69`, HPA 4–12.
+
+**Finding 1.** Client p95 medians: fixed 510 ms, hpa_tuned 400 ms, hpa_stock 380 ms (`analysis/aggregate_runs.py` on `results/runs/run-phase5-wc98_flash`). Both HPA arms beat fixed at p=0.031250, the n=6 Wilcoxon floor, in 6 of 6 reps. hpa_tuned vs hpa_stock p=0.093750. Tuning the `behavior:` block made no detectable difference to latency. That is a null result that closes a confound the project had previously only disclosed. Tuned pod-hours use n=5 (1.78361) because `rep-1/hpa_tuned/replica_series_hpa.csv` is a leaked sampler (96.64138888888888 pod-hours over 21 hours). Fixed 1.18556 and stock 2.23514 remain n=6.
+
+**Finding 2.** At `SHAPE_MEAN_USERS=69`, peak `spec_replicas` was 10–12 for flash, 8 then 4–5 for ramp, 5 for periodic, 5 for `rr_periodic`, and 4 for constant. Peak-to-mean ratio determines whether CPU-target HPA engages. Only flash-crowd bursts move it off its floor. Predicted in `514048c` before those runs. The prediction matched.
+
+**Finding 3.** Identical `wc98_ramp` config produced peak `spec_replicas` 8 on one GKE cluster and 4–5 on the next. Locust request counts were 34283 vs 33835. Warm-up CPU for the same 37-user hold was 154–240 millicores vs 73–166. GKE e2 CPU generation is not selectable. A marginal shape can change behaviour between deployments of the same spec. Marginal-shape results are therefore n=1.
+
+Cold-start collection was dropped after five attempts with no usable rows. The collector was a passive observer. Locust, replica, and metrics results are unaffected. `declared_replicas=5` from live spec is a known issue.
+
+CI on GitHub Actions runs unit-level checks only (Wilcoxon self-test, metrics contract on fixtures, repo-path quoting audit, analysis imports). Shape validation and the benchmark itself require a cluster.
+
+Cite via [CITATION.cff](CITATION.cff). A Zenodo DOI is minted from a GitHub release. Steps are in [CONTRIBUTING.md](CONTRIBUTING.md#zenodo-archive-doi). GitHub Pages is the `docs/` directory on `main`. Enable it under Settings, Pages, Deploy from a branch, `main`, `/docs`.
+
+## Calibrated results (minReplicas=3 both arms), superseded
+
+**Superseded by Phase 5** (synthetic shapes, two arms, `minReplicas=3`). Tables below are preserved in place. Full write-up: [RESULTS.md](RESULTS.md#calibrated-results-minreplicas3-both-arms-superseded). SLO and error-budget analysis: [RESULTS.md § SLO](RESULTS.md#slo-and-error-budget-calibrated-runs); incident write-up: [POSTMORTEM.md](POSTMORTEM.md); policy: [docs/error-budget-policy.md](docs/error-budget-policy.md).
 
 ### hybrid — `run-20260905T220046Z-hybrid` (n=6)
 
@@ -99,10 +117,11 @@ Prior committed artifacts were superseded to `superseded/sample_data-2026-03/` (
 
 ## Overview
 
-This project compares two deployment strategies for the same FastAPI workload:
+This project compares deployment strategies for the same FastAPI workload.
 
-- **Fixed baseline**: static 3 replicas
-- **HPA policy**: dynamic 3–10 replicas, CPU target 60%
+**Phase 5 (measurement of record):** static **4** replicas vs HPA **4–12** at 60% CPU, with a stock Kubernetes `behavior:` arm and a tuned `behavior:` arm, on trace-derived load.
+
+**Phase 1 calibrated runs (superseded):** static **3** replicas vs HPA **3–10**, synthetic shapes.
 
 The benchmark measures reliability, latency, throughput, scaling behavior, and cost efficiency.
 
