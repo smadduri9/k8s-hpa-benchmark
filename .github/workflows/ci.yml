@@ -1,0 +1,29 @@
+# Unit-level checks only. Shape-curve validation and the GKE benchmark
+# require a live cluster and are not run here.
+name: unit-checks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+      - name: Install tooling venv
+        run: |
+          python -m venv .venv
+          .venv/bin/python -m pip install -r requirements-tooling.txt
+      - name: Wilcoxon self-test
+        run: .venv/bin/python analysis/wilcoxon.py --self-test
+      - name: Metrics contract against fixtures
+        run: .venv/bin/python scripts/ci_metrics_contract.py
+      - name: Repo path quoting audit
+        run: .venv/bin/python scripts/lib/audit_repo_path_quoting.py "${GITHUB_WORKSPACE}" --force
+      - name: Analysis module imports
+        run: .venv/bin/python scripts/lib/preflight_python.py

@@ -124,13 +124,14 @@ def audit_scripts(scripts_dir: Path) -> list[str]:
 
 
 def main() -> int:
-    if len(sys.argv) != 2:
-        print("usage: audit_repo_path_quoting.py <repo_root>", file=sys.stderr)
+    if len(sys.argv) not in (2, 3) or (len(sys.argv) == 3 and sys.argv[2] != "--force"):
+        print("usage: audit_repo_path_quoting.py <repo_root> [--force]", file=sys.stderr)
         return 2
 
     repo_root = Path(sys.argv[1]).resolve()
     repo_text = str(repo_root)
-    if " " not in repo_text and "\t" not in repo_text:
+    force = len(sys.argv) == 3
+    if not force and " " not in repo_text and "\t" not in repo_text:
         print("repo_path_whitespace_audit=SKIPPED")
         return 0
 
