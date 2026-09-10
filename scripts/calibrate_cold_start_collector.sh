@@ -216,11 +216,21 @@ evaluate_row() {
   local jsonl="$1"
   local want_cached="$2"
   local label="$3"
+  local log_file="${4:-}"
   if [[ ! -s "${jsonl}" ]]; then
     die_named "CALIBRATION_NO_ROWS path=${jsonl}"
   fi
   echo "=== ${label} JSONL row ==="
   cat "${jsonl}"
+  if [[ -z "${log_file}" || ! -f "${log_file}" ]]; then
+    die_named "CALIBRATION_FAILED reason=collector_log_missing log=${log_file}"
+  fi
+  if ! grep -q "SCALE_OUT_SEED spec_replicas=" "${log_file}"; then
+    die_named "CALIBRATION_FAILED reason=SCALE_OUT_SEED_missing log=${log_file}"
+  fi
+  if ! grep -q "SUCCESSFUL_RESCALE accepted" "${log_file}"; then
+    die_named "CALIBRATION_FAILED reason=SUCCESSFUL_RESCALE_accepted_missing log=${log_file}"
+  fi
   "${VENV_PYTHON}" - "${jsonl}" "${EXPECTED_SLEEP}" "${FLOOR_SEC}" "${want_cached}" <<'PY'
 import json
 import sys
@@ -241,6 +251,11 @@ print(f"hpa_decision={decision}")
 print(f"hpa_decision_source={source}")
 if decision in (None, "MISSING", "") or source != "SuccessfulRescale":
     print("CALIBRATION_FAILED reason=hpa_decision_not_SuccessfulRescale")
+    sys.exit(1)
+assoc = row.get("hpa_decision_association")
+print(f"hpa_decision_association={assoc}")
+if assoc != "verified":
+    print("CALIBRATION_FAILED reason=hpa_decision_association_not_verified")
     sys.exit(1)
 
 created = parse(row.get("pod_created"))
@@ -351,7 +366,7 @@ run_cached_hpa() {
     "${CACHED_JSONL}"
   echo "=== cached collector log ==="
   cat "${OUT_DIR}/cached-collector.log"
-  evaluate_row "${CACHED_JSONL}" "true" "cached"
+  evaluate_row "${CACHED_JSONL}" "true" "cached" "${OUT_DIR}/cached-collector.log"
 }
 
 run_uncached_hpa() {
@@ -407,7 +422,7 @@ run_uncached_hpa() {
   kubectl uncordon "${running_node}" || true
   echo "=== uncached collector log ==="
   cat "${OUT_DIR}/uncached-collector.log"
-  evaluate_row "${UNCACHED_JSONL}" "false" "uncached"
+  evaluate_row "${UNCACHED_JSONL}" "false" "uncached" "${OUT_DIR}/uncached-collector.log"
 }
 
 main() {

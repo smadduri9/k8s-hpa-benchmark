@@ -497,6 +497,13 @@ PY
     "${t0}" \
     "$(run_time_to_seconds "${RUN_TIME}")" \
     "${dir}"
+  if [[ -f "${events_jsonl}" && -f "${replica_series}" ]]; then
+    "${VENV_PYTHON}" "${REPO_ROOT}/scripts/lib/cold_start_events.py" \
+      --validate-sequence \
+      --output "${events_jsonl}" \
+      --replica-series "${replica_series}" \
+      >>"${dir}/collector.log" 2>&1
+  fi
 
   local t1
   t1="$(iso_add_run_time "${t0}" "${RUN_TIME}")"

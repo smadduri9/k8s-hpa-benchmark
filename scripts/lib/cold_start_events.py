@@ -29,9 +29,15 @@ ASSOCIATION_MISSING = "MISSING"
 
 REASON_HPA_DECISION_AFTER_POD_CREATED = "HPA_DECISION_AFTER_POD_CREATED"
 REASON_HPA_DECISION_NO_SCALE_OUT_MATCH = "HPA_DECISION_NO_SCALE_OUT_MATCH"
+REASON_SCALE_OUT_SEQUENCE_MISMATCH = "SCALE_OUT_SEQUENCE_MISMATCH"
 REASON_NO_QUALIFYING_REQUEST_IN_WINDOW = "NO_QUALIFYING_REQUEST_IN_WINDOW"
 REASON_LOG_FOLLOW_FAILED = "LOG_FOLLOW_FAILED"
 REASON_POD_NOT_READY_BEFORE_COLLECT_END = "POD_NOT_READY_BEFORE_COLLECT_END"
+
+SCALE_OUT_SEQUENCE_SAMPLE_LIMITATION = (
+    "replica_series is 15s-sampled; comparison is consecutive spec_replicas "
+    "values only, not event timing"
+)
 
 HPA_DECISION_COVERAGE_THRESHOLD = 0.90
 HPA_DECISION_COVERAGE_RATIONALE = (
@@ -113,11 +119,143 @@ def parse_successful_rescale(message: str) -> tuple[int, int | None]:
 
 
 def event_timestamp(event: dict[str, Any]) -> datetime | None:
+    # Occurrence time, not series start. eventTime / firstTimestamp are when
+    # the Event object was created (cold-start 0→4 can own the series).
+    series = event.get("series")
+    last_observed = None
+    if isinstance(series, dict):
+        last_observed = series.get("lastObservedTime")
     return parse_rfc3339(
-        event.get("eventTime")
+        last_observed
         or event.get("lastTimestamp")
+        or event.get("eventTime")
         or event.get("firstTimestamp")
     )
+
+
+def consecutive_unique(values: list[int]) -> list[int]:
+    seq: list[int] = []
+    for value in values:
+        if not seq or seq[-1] != value:
+            seq.append(value)
+    return seq
+
+
+def format_spec_sequence(values: list[int]) -> str:
+    if not values:
+        return "EMPTY"
+    return ">".join(str(v) for v in values)
+
+
+def sampled_spec_sequence(replica_series_path: Path) -> list[int]:
+    import csv
+
+    values: list[int] = []
+    with replica_series_path.open(encoding="utf-8") as handle:
+        reader = csv.DictReader(handle)
+        for row in reader:
+            raw = (row.get("spec_replicas") or "").strip()
+            if raw == "":
+                continue
+            values.append(int(raw))
+    return consecutive_unique(values)
+
+
+def event_spec_sequence(seed: int | None, chain: list[dict[str, Any]]) -> list[int]:
+    values: list[int] = []
+    if seed is not None:
+        values.append(seed)
+    for step in chain:
+        values.append(int(step["new"]))
+    return consecutive_unique(values)
+
+
+def invalidate_hpa_decision_rows(
+    rows: list[dict[str, Any]], reason: str
+) -> list[dict[str, Any]]:
+    cleared = []
+    for row in rows:
+        updated = dict(row)
+        updated["hpa_decision"] = MISSING
+        updated["hpa_decision_association"] = ASSOCIATION_MISSING
+        updated["hpa_decision_source"] = MISSING
+        updated["hpa_decision_reason"] = reason
+        cleared.append(updated)
+    return cleared
+
+
+def apply_scale_out_sequence_guard(
+    jsonl_path: Path,
+    sequence_path: Path,
+    replica_series_path: Path,
+) -> int:
+    """Compare event chain to sampled spec_replicas. Rewrite jsonl on mismatch.
+
+    Returns 0 always: a mismatch withholds associations; it does not fail the arm.
+    """
+    if not jsonl_path.is_file():
+        print(
+            "SCALE_OUT_SEQUENCE_SKIPPED reason=jsonl_missing "
+            f"path={jsonl_path}",
+            flush=True,
+        )
+        return 0
+    if not sequence_path.is_file():
+        print(
+            "SCALE_OUT_SEQUENCE_SKIPPED reason=sequence_sidecar_missing "
+            f"path={sequence_path}",
+            flush=True,
+        )
+        return 0
+    if not replica_series_path.is_file():
+        print(
+            "SCALE_OUT_SEQUENCE_SKIPPED reason=replica_series_missing "
+            f"path={replica_series_path}",
+            flush=True,
+        )
+        return 0
+
+    payload = json.loads(sequence_path.read_text(encoding="utf-8"))
+    seed = payload.get("seed")
+    chain = payload.get("chain") or []
+    if seed is None:
+        print("SCALE_OUT_SEQUENCE_SKIPPED reason=no_seed", flush=True)
+        return 0
+
+    event_seq = event_spec_sequence(int(seed), chain)
+    sampled_seq = sampled_spec_sequence(replica_series_path)
+    event_text = format_spec_sequence(event_seq)
+    sampled_text = format_spec_sequence(sampled_seq)
+    if event_seq == sampled_seq:
+        print(
+            f"SCALE_OUT_SEQUENCE_OK event={event_text} sampled={sampled_text} "
+            f"limitation={SCALE_OUT_SEQUENCE_SAMPLE_LIMITATION}",
+            flush=True,
+        )
+        return 0
+
+    print(
+        f"ERROR: SCALE_OUT_SEQUENCE_MISMATCH event={event_text} "
+        f"sampled={sampled_text} "
+        f"limitation={SCALE_OUT_SEQUENCE_SAMPLE_LIMITATION}",
+        file=sys.stderr,
+        flush=True,
+    )
+    rows = []
+    with jsonl_path.open(encoding="utf-8") as handle:
+        for line in handle:
+            line = line.strip()
+            if line:
+                rows.append(json.loads(line))
+    cleared = invalidate_hpa_decision_rows(rows, REASON_SCALE_OUT_SEQUENCE_MISMATCH)
+    tmp_path = jsonl_path.with_suffix(jsonl_path.suffix + ".tmp")
+    with tmp_path.open("w", encoding="utf-8") as handle:
+        for row in cleared:
+            handle.write(json.dumps(row, sort_keys=False) + "\n")
+    tmp_path.replace(jsonl_path)
+    if cleared:
+        emit_hpa_decision_coverage(cleared)
+    return 0
 
 
 def associate_hpa_decision(
@@ -357,6 +495,8 @@ class ColdStartCollector:
         self._events: list[dict[str, Any]] = []
         self._scale_outs: list[ScaleOutEvent] = []
         self._current_replicas: int | None = None
+        self._scale_out_seed: int | None = None
+        self._scale_out_chain: list[dict[str, Any]] = []
         self._collection_started_at: datetime | None = None
         self._procs: list[subprocess.Popen[str]] = []
         self._log_threads: dict[str, threading.Thread] = {}
@@ -533,30 +673,88 @@ class ColdStartCollector:
         # lastScaleTime is not the SuccessfulRescale event. Do not use it for hpa_decision.
         _ = hpa
 
+    def _log_rescale(self, action: str, **fields: Any) -> None:
+        parts = [f"SUCCESSFUL_RESCALE {action}"]
+        for key, value in fields.items():
+            parts.append(f"{key}={value}")
+        print(" ".join(parts), file=sys.stderr, flush=True)
+
     def _ingest_event(self, event: dict[str, Any]) -> None:
         reason = event.get("reason") or ""
         if reason != "SuccessfulRescale":
             return
         ts = event_timestamp(event)
+        ts_text = format_rfc3339(ts) if ts is not None else MISSING
+        message = event.get("message") or ""
+        new_replicas, old_replicas = parse_successful_rescale(message)
         if ts is None:
+            self._log_rescale(
+                "dropped",
+                ts=MISSING,
+                old=old_replicas if old_replicas is not None else MISSING,
+                new=new_replicas if new_replicas > 0 else MISSING,
+                reason="unparseable_timestamp",
+            )
             return
         if (
             self._collection_started_at is not None
             and ts < self._collection_started_at
         ):
+            self._log_rescale(
+                "dropped",
+                ts=ts_text,
+                old=old_replicas if old_replicas is not None else MISSING,
+                new=new_replicas if new_replicas > 0 else MISSING,
+                reason="before_collection_started_at",
+            )
             return
-        message = event.get("message") or ""
-        new_replicas, old_replicas = parse_successful_rescale(message)
         if new_replicas <= 0:
+            self._log_rescale(
+                "dropped",
+                ts=ts_text,
+                old=old_replicas if old_replicas is not None else MISSING,
+                new=MISSING,
+                reason="unparseable_new_size",
+            )
             return
         with self._lock:
             if old_replicas is None:
                 old_replicas = self._current_replicas
             if old_replicas is None:
+                self._log_rescale(
+                    "dropped",
+                    ts=ts_text,
+                    old=MISSING,
+                    new=new_replicas,
+                    reason="no_old_replicas",
+                )
                 return
+            step = {
+                "ts": ts_text,
+                "old": old_replicas,
+                "new": new_replicas,
+            }
             if new_replicas > old_replicas:
                 self._scale_outs.append(
                     ScaleOutEvent(ts, old_replicas, new_replicas)
+                )
+                step["kind"] = "scale_out"
+                self._scale_out_chain.append(step)
+                self._log_rescale(
+                    "accepted",
+                    ts=ts_text,
+                    old=old_replicas,
+                    new=new_replicas,
+                )
+            else:
+                step["kind"] = "not_scale_out"
+                self._scale_out_chain.append(step)
+                self._log_rescale(
+                    "chain",
+                    ts=ts_text,
+                    old=old_replicas,
+                    new=new_replicas,
+                    reason="not_scale_out",
                 )
             self._current_replicas = new_replicas
 
@@ -631,6 +829,58 @@ class ColdStartCollector:
         }
         return row
 
+    def _seed_current_replicas(self) -> None:
+        raw = subprocess.check_output(
+            [
+                "kubectl",
+                "get",
+                "deploy",
+                "-n",
+                self.namespace,
+                "-l",
+                self.selector,
+                "-o",
+                "jsonpath={.items[*].spec.replicas}",
+            ],
+            text=True,
+        ).split()
+        if len(raw) != 1:
+            print(
+                f"ERROR: SCALE_OUT_SEED_FAILED count={len(raw)} "
+                f"selector={self.selector}",
+                file=sys.stderr,
+                flush=True,
+            )
+            raise SystemExit("SCALE_OUT_SEED_FAILED")
+        try:
+            seed = int(raw[0])
+        except ValueError:
+            print(
+                f"ERROR: SCALE_OUT_SEED_FAILED value={raw[0]!r} "
+                f"selector={self.selector}",
+                file=sys.stderr,
+                flush=True,
+            )
+            raise SystemExit("SCALE_OUT_SEED_FAILED")
+        self._current_replicas = seed
+        self._scale_out_seed = seed
+        print(f"SCALE_OUT_SEED spec_replicas={seed}", flush=True)
+
+    def _write_scale_out_sequence(self) -> None:
+        with self._lock:
+            payload = {
+                "seed": self._scale_out_seed,
+                "chain": list(self._scale_out_chain),
+            }
+        path = self.output_path.with_name("scale_out_sequence.json")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+        print(
+            f"SCALE_OUT_SEQUENCE_WRITTEN path={path} "
+            f"seed={self._scale_out_seed} steps={len(payload['chain'])}",
+            flush=True,
+        )
+
     def start_watches(self) -> None:
         baseline = subprocess.check_output(
             [
@@ -647,6 +897,7 @@ class ColdStartCollector:
             text=True,
         ).split()
         self._baseline_pods = set(baseline)
+        self._seed_current_replicas()
         self._collection_started_at = datetime.now(timezone.utc)
         watch_common = [
             "kubectl",
@@ -796,12 +1047,13 @@ class ColdStartCollector:
         finally:
             self._stop.set()
             self._reap_procs()
+            self._write_scale_out_sequence()
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Watch-based cold-start collector")
     parser.add_argument("--namespace", default="hpa-eval")
-    parser.add_argument("--selector", required=True)
+    parser.add_argument("--selector", required=False)
     parser.add_argument("--output", required=True)
     parser.add_argument("--timeout-sec", type=int, default=180)
     parser.add_argument("--container-name", default="hpa-eval-app")
@@ -813,7 +1065,32 @@ def main() -> int:
         action="store_true",
         help="Record every baseline-above pod Ready during timeout_sec (measured arm).",
     )
+    parser.add_argument(
+        "--validate-sequence",
+        action="store_true",
+        help="Compare event chain to replica_series spec_replicas; rewrite jsonl on mismatch.",
+    )
+    parser.add_argument("--replica-series")
+    parser.add_argument("--sequence-file")
     args = parser.parse_args()
+    if args.validate_sequence:
+        if not args.replica_series:
+            print(
+                "ERROR: SCALE_OUT_SEQUENCE_UNREADABLE reason=replica_series_required",
+                file=sys.stderr,
+            )
+            return 1
+        jsonl_path = Path(args.output)
+        sequence_path = (
+            Path(args.sequence_file)
+            if args.sequence_file
+            else jsonl_path.with_name("scale_out_sequence.json")
+        )
+        return apply_scale_out_sequence_guard(
+            jsonl_path, sequence_path, Path(args.replica_series)
+        )
+    if not args.selector:
+        parser.error("--selector is required unless --validate-sequence")
     collector = ColdStartCollector(
         namespace=args.namespace,
         selector=args.selector,

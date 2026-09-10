@@ -15,21 +15,28 @@
     "artifact": "cached.jsonl",
     "image_cached": "true",
     "hpa_decision_source": "SuccessfulRescale",
+    "hpa_decision_association": "verified",
     "hpa_sync_lag": "<1s",
     "init_sleep_observed_sec": "8",
-    "first_request_served": "populated"
+    "first_request_served": "populated",
+    "scale_out_seed": 1,
+    "successful_rescale": "1->2"
   },
   "uncached": {
     "artifact": "uncached.jsonl",
     "image": "cal-registry:5000/hpa-eval-app:calibrate",
     "image_cached": "false",
-    "image_pull_duration_ms": "15",
+    "image_pull_duration_ms": "17",
     "hpa_decision_source": "SuccessfulRescale",
+    "hpa_decision_association": "verified",
     "hpa_sync_lag": "<1s",
     "init_sleep_observed_sec": "8",
-    "first_request_served": "populated"
+    "first_request_served": "populated",
+    "scale_out_seed": 1,
+    "successful_rescale": "1->2"
   },
-  "image_pull_duration_ms_note": "Uncached image_pull_duration_ms=15 came from kind's local registry (cal-registry:5000). The parser is proven; the realistic pull-duration range is untested. GKE pulls from Artifact Registry will take seconds. Do not cite 15ms as evidence about the metric's behaviour under real conditions.",
+  "image_pull_duration_ms_note": "Uncached image_pull_duration_ms=17 came from kind's local registry (cal-registry:5000). The parser is proven; the realistic pull-duration range is untested. GKE pulls from Artifact Registry will take seconds. Do not cite 17ms as evidence about the metric's behaviour under real conditions.",
   "hpa_decision_coverage_threshold": 0.9,
-  "successful_rescale_on_kind": "captured in both calibration rows; Events remain lossy on GKE harvest — see docs/COLD_START.md HPA_DECISION_COVERAGE"
+  "successful_rescale_on_kind": "captured in both calibration rows via SCALE_OUT_SEED plus in-window SuccessfulRescale (HPA message has no old size). Events remain lossy on GKE harvest — see docs/COLD_START.md HPA_DECISION_COVERAGE",
+  "ingest_path": "This calibration was collected by the seeded ingest path (SCALE_OUT_SEED from live spec.replicas; occurrence time lastObservedTime/lastTimestamp). Uncached dropped pre-window 1->2 and 2->1 as before_collection_started_at, then accepted in-window 1->2 from the seed."
 }

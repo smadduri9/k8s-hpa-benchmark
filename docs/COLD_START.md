@@ -6,7 +6,7 @@ Watch-based collector: `scripts/lib/cold_start_events.py`. Kind calibration harn
 
 | Stage | Field | Source |
 |-------|-------|--------|
-| 1 | `hpa_decision` | Kubernetes Event `reason=SuccessfulRescale` only (`eventTime` / `lastTimestamp` / `firstTimestamp`). `status.lastScaleTime` is **not** used. Each pod is associated with the scale-out event whose replica-count transition created it (`hpa_decision_association=verified`), or timestamp-consistent only (`consistent`). Causally impossible matches (`hpa_decision` after `pod_created`) are written as `MISSING` with `hpa_decision_reason`. |
+| 1 | `hpa_decision` | Kubernetes Event `reason=SuccessfulRescale` only. Occurrence time is `series.lastObservedTime` or `lastTimestamp` — not series `eventTime` / `firstTimestamp` (those are when the Event object was created). `status.lastScaleTime` is **not** used. `_current_replicas` is seeded from live Deployment `spec.replicas` at watch start; HPA messages are `New size: N; reason: ...` and do not include old size. Each pod is associated with the scale-out event whose replica-count transition created it (`hpa_decision_association=verified`), or timestamp-consistent only (`consistent`). Causally impossible matches (`hpa_decision` after `pod_created`) are written as `MISSING` with `hpa_decision_reason`. |
 | 2 | `pod_created` | Pod `metadata.creationTimestamp` |
 | 3+ | Pod conditions, image pull, container start, `Ready`, `first_request_served` | Pod status, Events, app stderr (`FIRST_REQUEST_SERVED`) |
 
@@ -45,10 +45,22 @@ A prior ramp hang (`WATCH_ENDED … rc=-9`, no jsonl, `wait $collector_pid` for 
 
 The collector emits `HPA_DECISION_COVERAGE` after every write. Implementation: `hpa_decision_coverage_report()` in `scripts/lib/cold_start_events.py`.
 
+## Scale-out ingest
+
+At watch start the collector seeds `_current_replicas` from live Deployment `spec.replicas` (`SCALE_OUT_SEED spec_replicas=N`). Each SuccessfulRescale is logged as `SUCCESSFUL_RESCALE accepted|dropped|chain` with `ts`, `old`, `new`, and `reason` (`before_collection_started_at`, `no_old_replicas`, `unparseable_new_size`, `unparseable_timestamp`, `not_scale_out`). Scale-downs update the chain (`chain`) so the next event's `old` is the previous event's `new`.
+
+## Scale-out sequence guard
+
+After each measured arm, `run_benchmark.sh` compares the event-derived replica chain (`scale_out_sequence.json`: seed plus each applied SuccessfulRescale `new`) to consecutive unique `spec_replicas` from `replica_series_*.csv`.
+
+On disagreement it emits `SCALE_OUT_SEQUENCE_MISMATCH` with both sequences and rewrites every row's `hpa_decision` to `MISSING` / `hpa_decision_reason=SCALE_OUT_SEQUENCE_MISMATCH`. The arm still PASSes; Locust data stay authoritative.
+
+**Limitation (stated on the report line):** replica_series is 15s-sampled. The check is the sequence of `spec_replicas` values only, not event timing. A replica count that lasts less than one sample interval may be absent from the sampled sequence. A false mismatch withholds associations rather than publishing a broken chain.
+
 ## Kind calibration (Gate A)
 
 Record: `docs/cold-start-calibration/calibration.json`. Rows: `cached.jsonl`, `uncached.jsonl`.
 
-HPA-triggered scale-out (min 1, max 3, CPU target 10%) with init-container `sleep 8`. `hpa_decision` populated from `SuccessfulRescale` on both rows. `CALIBRATION_RECOVERED` passes with `hpa_decision` present.
+HPA-triggered scale-out (min 1, max 3, CPU target 10%) with init-container `sleep 8`. `hpa_decision` populated from `SuccessfulRescale` on both rows (`hpa_decision_association=verified`). `CALIBRATION_RECOVERED` passes with `hpa_decision` present. Both collector logs contain `SCALE_OUT_SEED spec_replicas=1` and `SUCCESSFUL_RESCALE accepted` `1→2`.
 
-**Uncached `image_pull_duration_ms`:** the uncached row reports `image_pull_duration_ms=15` from kind's local registry (`cal-registry:5000`). The **parser** is proven (`image_cached=false`, duration parsed from the Pulled message). The **realistic pull-duration range is untested** on kind. GKE pulls from Artifact Registry will take seconds. Do not cite 15ms as evidence about the metric's behaviour under real conditions.
+**Uncached `image_pull_duration_ms`:** the uncached row reports `image_pull_duration_ms=17` from kind's local registry (`cal-registry:5000`). The **parser** is proven (`image_cached=false`, duration parsed from the Pulled message). The **realistic pull-duration range is untested** on kind. GKE pulls from Artifact Registry will take seconds. Do not cite 17ms as evidence about the metric's behaviour under real conditions.

@@ -2104,17 +2104,26 @@ PY
 
 check_cold_start_association() {
   venv_python - <<PY
+import json
 import sys
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 sys.path.insert(0, str(Path("${REPO_ROOT}") / "scripts" / "lib"))
 from cold_start_events import (
     ASSOCIATION_MISSING,
     ASSOCIATION_VERIFIED,
+    MISSING,
     REASON_HPA_DECISION_AFTER_POD_CREATED,
     REASON_HPA_DECISION_NO_SCALE_OUT_MATCH,
+    REASON_SCALE_OUT_SEQUENCE_MISMATCH,
+    ColdStartCollector,
     ScaleOutEvent,
+    apply_scale_out_sequence_guard,
     associate_hpa_decision,
+    event_spec_sequence,
+    event_timestamp,
+    sampled_spec_sequence,
 )
 
 def ts(text: str) -> datetime:
@@ -2141,6 +2150,132 @@ decision, source, association, reason = associate_hpa_decision("pod-c", pod_c, s
 if association != ASSOCIATION_MISSING or reason != REASON_HPA_DECISION_AFTER_POD_CREATED:
     raise SystemExit(f"pod-c expected after-pod violation got {association} {reason}")
 
+occ = event_timestamp({
+    "eventTime": "2026-09-10T03:29:00Z",
+    "firstTimestamp": "2026-09-10T03:29:00Z",
+    "lastTimestamp": "2026-09-10T03:43:18Z",
+    "series": {"lastObservedTime": "2026-09-10T03:43:24Z"},
+})
+if occ != ts("2026-09-10T03:43:24Z"):
+    raise SystemExit(f"event_timestamp expected lastObservedTime got {occ}")
+occ2 = event_timestamp({
+    "eventTime": "2026-09-10T03:29:00Z",
+    "lastTimestamp": "2026-09-10T03:43:18Z",
+})
+if occ2 != ts("2026-09-10T03:43:18Z"):
+    raise SystemExit(f"event_timestamp expected lastTimestamp got {occ2}")
+
+tmp = Path(tempfile.mkdtemp())
+collector = ColdStartCollector(
+    namespace="ns",
+    selector="app=x",
+    output_path=tmp / "cold_start_events.jsonl",
+    timeout_sec=5,
+    container_name="hpa-eval-app",
+    init_name="delay",
+    expect_pods=1,
+    first_request_timeout_sec=5,
+    capture_all_scale_out=True,
+)
+collector._current_replicas = 4
+collector._scale_out_seed = 4
+collector._collection_started_at = ts("2026-09-10T03:35:00Z")
+collector._ingest_event({
+    "reason": "SuccessfulRescale",
+    "lastTimestamp": "2026-09-10T03:43:18Z",
+    "message": "New size: 5; reason: cpu resource utilization (percentage of request) above target",
+})
+if len(collector._scale_outs) != 1:
+    raise SystemExit(f"seeded ingest expected 1 scale-out got {len(collector._scale_outs)}")
+so = collector._scale_outs[0]
+if so.old_replicas != 4 or so.new_replicas != 5:
+    raise SystemExit(f"seeded ingest expected 4->5 got {so.old_replicas}->{so.new_replicas}")
+
+collector._ingest_event({
+    "reason": "SuccessfulRescale",
+    "lastTimestamp": "2026-09-10T03:20:00Z",
+    "message": "New size: 4; reason: cpu resource utilization (percentage of request) above target",
+})
+if len(collector._scale_outs) != 1:
+    raise SystemExit("pre-window rescale should be dropped")
+
+unseeded = ColdStartCollector(
+    namespace="ns",
+    selector="app=x",
+    output_path=tmp / "unseeded.jsonl",
+    timeout_sec=5,
+    container_name="hpa-eval-app",
+    init_name="delay",
+    expect_pods=1,
+    first_request_timeout_sec=5,
+    capture_all_scale_out=True,
+)
+unseeded._ingest_event({
+    "reason": "SuccessfulRescale",
+    "lastTimestamp": "2026-09-10T03:43:18Z",
+    "message": "New size: 5; reason: cpu resource utilization (percentage of request) above target",
+})
+if unseeded._scale_outs:
+    raise SystemExit("unseeded ingest must drop New size without old replicas")
+
+jsonl = tmp / "cold_start_events.jsonl"
+jsonl.write_text(json.dumps({
+    "pod": "p1",
+    "hpa_decision": "2026-09-10T03:43:18Z",
+    "hpa_decision_association": ASSOCIATION_VERIFIED,
+    "hpa_decision_reason": MISSING,
+    "hpa_decision_source": "SuccessfulRescale",
+}) + "\n", encoding="utf-8")
+seq = tmp / "scale_out_sequence.json"
+seq.write_text(json.dumps({
+    "seed": 4,
+    "chain": [
+        {"ts": "2026-09-10T03:43:18Z", "old": 4, "new": 5, "kind": "scale_out"},
+        {"ts": "2026-09-10T03:44:48Z", "old": 5, "new": 7, "kind": "scale_out"},
+    ],
+}) + "\n", encoding="utf-8")
+series = tmp / "replica_series_hpa.csv"
+series.write_text(
+    "timestamp,spec_replicas,status_replicas,ready_replicas\n"
+    "2026-09-10T03:35:40Z,4,4,4\n"
+    "2026-09-10T03:43:24Z,5,5,4\n"
+    "2026-09-10T03:44:57Z,6,6,6\n"
+    "2026-09-10T03:49:19Z,7,7,7\n",
+    encoding="utf-8",
+)
+if event_spec_sequence(4, json.loads(seq.read_text())["chain"]) != [4, 5, 7]:
+    raise SystemExit("event_spec_sequence unexpected")
+if sampled_spec_sequence(series) != [4, 5, 6, 7]:
+    raise SystemExit(f"sampled_spec_sequence unexpected {sampled_spec_sequence(series)}")
+apply_scale_out_sequence_guard(jsonl, seq, series)
+row = json.loads(jsonl.read_text(encoding="utf-8").splitlines()[0])
+if row["hpa_decision"] != MISSING or row["hpa_decision_association"] != ASSOCIATION_MISSING:
+    raise SystemExit(f"mismatch did not clear association got {row}")
+if row["hpa_decision_reason"] != REASON_SCALE_OUT_SEQUENCE_MISMATCH:
+    raise SystemExit(f"mismatch reason {row['hpa_decision_reason']}")
+
+jsonl_ok = tmp / "ok.jsonl"
+jsonl_ok.write_text(json.dumps({
+    "pod": "p1",
+    "hpa_decision": "2026-09-10T03:43:18Z",
+    "hpa_decision_association": ASSOCIATION_VERIFIED,
+    "hpa_decision_reason": MISSING,
+    "hpa_decision_source": "SuccessfulRescale",
+}) + "\n", encoding="utf-8")
+seq_ok = tmp / "ok_sequence.json"
+seq_ok.write_text(json.dumps({
+    "seed": 4,
+    "chain": [
+        {"ts": "2026-09-10T03:43:18Z", "old": 4, "new": 5, "kind": "scale_out"},
+        {"ts": "2026-09-10T03:44:57Z", "old": 5, "new": 6, "kind": "scale_out"},
+        {"ts": "2026-09-10T03:49:19Z", "old": 6, "new": 7, "kind": "scale_out"},
+    ],
+}) + "\n", encoding="utf-8")
+apply_scale_out_sequence_guard(jsonl_ok, seq_ok, series)
+row_ok = json.loads(jsonl_ok.read_text(encoding="utf-8").splitlines()[0])
+if row_ok["hpa_decision_association"] != ASSOCIATION_VERIFIED:
+    raise SystemExit("matching sequence should leave verified association")
+
 print("COLD_START_ASSOCIATION_OK")
 PY
 }
@@ -2149,7 +2284,15 @@ check_coldstart_collector() {
   check_coldstart_collector_hang
   local jsonl="${REPO_ROOT}/docs/cold-start-calibration/cached.jsonl"
   local uncached="${REPO_ROOT}/docs/cold-start-calibration/uncached.jsonl"
+  local need_calibrate=0
   if [[ ! -s "${jsonl}" || ! -s "${uncached}" ]]; then
+    need_calibrate=1
+  else
+    if ! grep -q '"hpa_decision_association": "verified"' "${jsonl}"; then
+      need_calibrate=1
+    fi
+  fi
+  if [[ "${need_calibrate}" -eq 1 ]]; then
     bash "${SCRIPT_DIR}/calibrate_cold_start_collector.sh"
   fi
   venv_python - "${jsonl}" "${uncached}" <<'PY'
@@ -2164,6 +2307,8 @@ if cached.get("hpa_decision") in (None, "MISSING", ""):
     raise SystemExit("cached hpa_decision=MISSING")
 if cached.get("hpa_decision_source") != "SuccessfulRescale":
     raise SystemExit(f"cached source={cached.get('hpa_decision_source')}")
+if cached.get("hpa_decision_association") != "verified":
+    raise SystemExit(f"cached association={cached.get('hpa_decision_association')}")
 if cached.get("image_cached") != "true":
     raise SystemExit(f"cached image_cached={cached.get('image_cached')}")
 if cached.get("first_request_served") in (None, "MISSING", ""):
@@ -2174,6 +2319,10 @@ if uncached.get("first_request_served") in (None, "MISSING", ""):
     raise SystemExit("uncached first_request_served=MISSING")
 if uncached.get("hpa_decision") in (None, "MISSING", ""):
     raise SystemExit("uncached hpa_decision=MISSING")
+if uncached.get("hpa_decision_source") != "SuccessfulRescale":
+    raise SystemExit(f"uncached source={uncached.get('hpa_decision_source')}")
+if uncached.get("hpa_decision_association") != "verified":
+    raise SystemExit(f"uncached association={uncached.get('hpa_decision_association')}")
 print("COLDSTART_COLLECTOR_SMOKE_OK")
 PY
 }
