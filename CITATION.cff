@@ -2,6 +2,8 @@ cff-version: 1.2.0
 message: If you use this benchmark, cite it using these metadata.
 type: software
 title: k8s-hpa-benchmark
+version: 1.0.0
+doi: 10.5281/zenodo.22697397
 authors:
   - family-names: Madduri
     given-names: Sriram
