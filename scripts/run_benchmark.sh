@@ -452,6 +452,7 @@ PY
     --first-request-timeout-sec 60 \
     >"${dir}/collector.log" 2>&1 &
   local collector_pid=$!
+  register_heartbeat_pid "${collector_pid}"
   local waited=0
   while (( waited < 30 )); do
     if grep -q "COLD_START_WATCH_READY" "${dir}/collector.log" 2>/dev/null; then
@@ -491,7 +492,11 @@ PY
     "${dir}/locust_${arm}.log" \
     "${dir}/arm.log"
   replica_sampler_stop "${sampler_pid}" "${replica_series}"
-  wait "${collector_pid}" || true
+  wait_cold_start_collector \
+    "${collector_pid}" \
+    "${t0}" \
+    "$(run_time_to_seconds "${RUN_TIME}")" \
+    "${dir}"
 
   local t1
   t1="$(iso_add_run_time "${t0}" "${RUN_TIME}")"

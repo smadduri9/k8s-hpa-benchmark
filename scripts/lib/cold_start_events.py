@@ -347,7 +347,10 @@ class ColdStartCollector:
         self.expect_pods = expect_pods
         self.first_request_timeout_sec = first_request_timeout_sec
         self.capture_all_scale_out = capture_all_scale_out
-        self._lock = threading.Lock()
+        # RLock: _emit_rows holds this while _row_for_pod → _first_request_fields
+        # acquires it again. A non-reentrant Lock deadlocks there, which is what
+        # hung the ramp arm after shutdown (jsonl never written; wait unbounded).
+        self._lock = threading.RLock()
         self._stop = threading.Event()
         self._pods: dict[str, dict[str, Any]] = {}
         self._baseline_pods: set[str] = set()
@@ -362,6 +365,8 @@ class ColdStartCollector:
         self._log_follow_failed: dict[str, bool] = {}
         self._ready_at: dict[str, datetime] = {}
         self._first_request_deadline: dict[str, float] = {}
+        self._watch_rc: dict[str, int | None] = {}
+        self.truncated_reason: str | None = None
 
     def _kubectl_watch(self, args: list[str]) -> subprocess.Popen[str]:
         proc = subprocess.Popen(
@@ -419,10 +424,26 @@ class ColdStartCollector:
         except Exception as exc:
             print(f"WATCH_ERROR kind={kind} err={exc}", file=sys.stderr)
         finally:
-            if proc.poll() is None:
-                proc.kill()
-            if kind != "hpa":
-                print(f"WATCH_ENDED kind={kind} rc={proc.poll()}", file=sys.stderr)
+            rc = proc.poll()
+            if rc is None and not self._stop.is_set():
+                # Stream ended while kubectl still ran. SIGTERM so an unexpected
+                # SIGKILL (rc=-9) is distinguishable from this path.
+                proc.terminate()
+                try:
+                    rc = proc.wait(timeout=2)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                    rc = proc.poll()
+            if rc is None:
+                rc = proc.poll()
+            with self._lock:
+                self._watch_rc[kind] = rc
+            if kind in ("pod", "event"):
+                print(
+                    f"WATCH_ENDED kind={kind} rc={rc} stop={self._stop.is_set()}",
+                    file=sys.stderr,
+                    flush=True,
+                )
 
     def _maybe_follow_logs(self, pod_name: str) -> None:
         if pod_name in self._baseline_pods:
@@ -654,67 +675,127 @@ class ColdStartCollector:
             daemon=True,
         ).start()
 
-    def collect(self) -> list[dict[str, Any]]:
-        deadline = time.time() + self.timeout_sec
-        new_ready: list[str] = []
-        while time.time() < deadline and not self._stop.is_set():
-            with self._lock:
-                candidates = [
-                    name
-                    for name, pod in self._pods.items()
-                    if name not in self._baseline_pods
-                    and condition_time(pod, "Ready") != MISSING
-                ]
-            for name in candidates:
-                if name not in new_ready:
-                    new_ready.append(name)
-            if (
-                not self.capture_all_scale_out
-                and len(new_ready) >= self.expect_pods
-            ):
-                wait_until = time.time() + self.first_request_timeout_sec
-                while time.time() < wait_until:
-                    with self._lock:
-                        if all(
-                            n in self._first_request
-                            for n in new_ready[: self.expect_pods]
-                        ):
-                            break
-                    time.sleep(0.2)
-                break
-            time.sleep(0.2)
-        else:
-            if (
-                not self.capture_all_scale_out
-                and len(new_ready) < self.expect_pods
-            ):
-                print(
-                    f"ERROR: COLD_START_COLLECT_TIMEOUT timeout_sec={self.timeout_sec} "
-                    f"ready_new={len(new_ready)} expected={self.expect_pods}",
-                    file=sys.stderr,
-                )
-        self._stop.set()
-        for proc in self._procs:
-            proc.kill()
-        if self.capture_all_scale_out:
-            tracked = new_ready
-        else:
-            tracked = new_ready[: self.expect_pods]
-        tracked.sort(
-            key=lambda name: parse_rfc3339(
-                self._pods[name].get("metadata", {}).get("creationTimestamp")
-            )
-            or datetime.min.replace(tzinfo=timezone.utc)
-        )
-        rows = []
+    def _data_watches_ended(self) -> bool:
         with self._lock:
+            return "pod" in self._watch_rc and "event" in self._watch_rc
+
+    def _watch_death_line(self) -> str:
+        with self._lock:
+            pod_rc = self._watch_rc.get("pod")
+            event_rc = self._watch_rc.get("event")
+        return (
+            f"COLD_START_WATCHES_DIED pod_rc={pod_rc} event_rc={event_rc} "
+            "collection=truncated collector cannot outlive its data sources"
+        )
+
+    def _reap_procs(self) -> None:
+        # Terminate, then SIGKILL stragglers. Do not block indefinitely on wait.
+        for proc in list(self._procs):
+            if proc.poll() is None:
+                proc.terminate()
+        deadline = time.time() + 2.0
+        for proc in list(self._procs):
+            if proc.poll() is not None:
+                continue
+            remaining = deadline - time.time()
+            if remaining > 0:
+                try:
+                    proc.wait(timeout=remaining)
+                    continue
+                except subprocess.TimeoutExpired:
+                    pass
+            proc.kill()
+            try:
+                proc.wait(timeout=1)
+            except subprocess.TimeoutExpired:
+                print(
+                    f"WATCH_REAP_TIMEOUT pid={proc.pid}",
+                    file=sys.stderr,
+                    flush=True,
+                )
+
+    def _emit_rows(self, new_ready: list[str]) -> list[dict[str, Any]]:
+        if self.capture_all_scale_out:
+            tracked = list(new_ready)
+        else:
+            tracked = list(new_ready[: self.expect_pods])
+        with self._lock:
+            tracked.sort(
+                key=lambda name: parse_rfc3339(
+                    (self._pods.get(name) or {})
+                    .get("metadata", {})
+                    .get("creationTimestamp")
+                )
+                or datetime.min.replace(tzinfo=timezone.utc)
+            )
+            rows = []
             for name in tracked:
-                rows.append(self._row_for_pod(name, self._pods[name]))
+                pod = self._pods.get(name)
+                if pod is None:
+                    continue
+                rows.append(self._row_for_pod(name, pod))
         self.output_path.parent.mkdir(parents=True, exist_ok=True)
         with self.output_path.open("w", encoding="utf-8") as handle:
             for row in rows:
                 handle.write(json.dumps(row, sort_keys=False) + "\n")
         return rows
+
+    def _mark_watches_died(self) -> None:
+        if self.truncated_reason == "COLD_START_WATCHES_DIED":
+            return
+        self.truncated_reason = "COLD_START_WATCHES_DIED"
+        print(f"ERROR: {self._watch_death_line()}", file=sys.stderr, flush=True)
+
+    def collect(self) -> list[dict[str, Any]]:
+        deadline = time.time() + self.timeout_sec
+        new_ready: list[str] = []
+        try:
+            while time.time() < deadline and not self._stop.is_set():
+                with self._lock:
+                    candidates = [
+                        name
+                        for name, pod in self._pods.items()
+                        if name not in self._baseline_pods
+                        and condition_time(pod, "Ready") != MISSING
+                    ]
+                for name in candidates:
+                    if name not in new_ready:
+                        new_ready.append(name)
+                if self._data_watches_ended():
+                    self._mark_watches_died()
+                    break
+                if (
+                    not self.capture_all_scale_out
+                    and len(new_ready) >= self.expect_pods
+                ):
+                    wait_until = time.time() + self.first_request_timeout_sec
+                    while time.time() < wait_until:
+                        if self._data_watches_ended():
+                            self._mark_watches_died()
+                            break
+                        with self._lock:
+                            if all(
+                                n in self._first_request
+                                for n in new_ready[: self.expect_pods]
+                            ):
+                                break
+                        time.sleep(0.2)
+                    break
+                time.sleep(0.2)
+            else:
+                if (
+                    not self.capture_all_scale_out
+                    and len(new_ready) < self.expect_pods
+                ):
+                    print(
+                        f"ERROR: COLD_START_COLLECT_TIMEOUT timeout_sec={self.timeout_sec} "
+                        f"ready_new={len(new_ready)} expected={self.expect_pods}",
+                        file=sys.stderr,
+                    )
+            return self._emit_rows(new_ready)
+        finally:
+            self._stop.set()
+            self._reap_procs()
 
 
 def main() -> int:
@@ -750,6 +831,8 @@ def main() -> int:
     print(f"COLD_START_EVENTS_WRITTEN path={args.output} rows={len(rows)}")
     if rows:
         emit_hpa_decision_coverage(rows)
+    if collector.truncated_reason:
+        return 1
     return 0
 
 

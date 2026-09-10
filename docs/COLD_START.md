@@ -23,7 +23,17 @@ THRESHOLD = 0.90
 
 A row counts toward `rows_with_hpa_decision` when `hpa_decision_association` is `verified` (slot-matched scale-out only; `consistent` does not count).
 
-**Measured arms:** `run_benchmark.sh` passes `--capture-all-scale-out` so the collector runs the full Locust window (~18 minutes) and records every pod above baseline that reaches Ready, not only the first. Calibration keeps `--expect-pods 1`.
+**Measured arms:** `run_benchmark.sh` passes `--capture-all-scale-out` so the collector runs the full Locust window (`--timeout-sec` = `RUN_TIME`, ~18 minutes) and records every pod above baseline that reaches Ready, not only the first. Calibration keeps `--expect-pods 1`.
+
+## Collector lifetime
+
+The collector is a passive observer. It must not outlive its data sources or block an arm after Locust has finished.
+
+- **Watch death:** if both the pod and event `kubectl --watch` processes exit, the collector writes whatever rows it has, logs `COLD_START_WATCHES_DIED` (collection truncated), and exits non-zero. It does not keep sleeping until `--timeout-sec`.
+- **Arm wall-clock:** `wait_cold_start_collector` will not wait past `t0 + RUN_TIME + COLD_START_COLLECTOR_GRACE_SEC` (default grace **60s**). On expiry it logs `COLD_START_COLLECTOR_TIMEOUT`, SIGTERM then SIGKILL the collector and its kubectl children, writes `COLD_START_INCOMPLETE` in the arm directory, and the arm continues. Locust CSVs remain authoritative.
+- **Shutdown signal:** the collector reaps watches with SIGTERM (then SIGKILL if they ignore TERM). `WATCH_ENDED` includes `stop=True|False` so a self-requested reap is distinguishable from an unexpected `rc=-9` (SIGKILL) while `stop=False`.
+
+A prior ramp hang (`WATCH_ENDED … rc=-9`, no jsonl, `wait $collector_pid` for hours) was the collector SIGKILLing its own watches at the end of the duration window, then deadlocking on a non-reentrant lock while writing rows. That lock is now an `RLock`; rows are written before reap.
 
 **`first_request_served`:** when `MISSING`, `first_request_served_reason` is one of `NO_QUALIFYING_REQUEST_IN_WINDOW` (no non-`/health` request reached this pod within the post-Ready window), `LOG_FOLLOW_FAILED` (`kubectl logs` error), or `POD_NOT_READY_BEFORE_COLLECT_END`. The timeout is not extended to force a hit.
 

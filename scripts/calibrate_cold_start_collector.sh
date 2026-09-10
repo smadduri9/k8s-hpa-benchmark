@@ -9,6 +9,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/common.sh
 source "${SCRIPT_DIR}/lib/common.sh"
+# shellcheck source=lib/cold_start.sh
+source "${SCRIPT_DIR}/lib/cold_start.sh"
 require_venv
 
 KIND_CLUSTER="${KIND_CLUSTER_NAME:-hpa-eval-smoke}"
@@ -25,6 +27,8 @@ EXPECTED_SLEEP=8
 FLOOR_SEC=1
 LOAD_PID=""
 PF_PID=""
+COLLECTOR_PID=""
+COLLECTOR_T0=""
 
 die_named() {
   echo "ERROR: $*" >&2
@@ -126,6 +130,7 @@ start_collector_logged() {
     --container-name "hpa-eval-app" \
     --first-request-timeout-sec 45 >"${log_file}" 2>&1 &
   COLLECTOR_PID=$!
+  COLLECTOR_T0="$(iso_now)"
   local waited=0
   while (( waited < 30 )); do
     if grep -q "COLD_START_WATCH_READY" "${log_file}" 2>/dev/null; then
@@ -337,7 +342,13 @@ run_cached_hpa() {
   start_collector_logged "app=cold-start-calibrate" "${CACHED_JSONL}" "${OUT_DIR}/cached-collector.log"
   start_cpu_load
   curl_new_pod "app=cold-start-calibrate" "${baseline}"
-  wait "${COLLECTOR_PID}" || true
+  wait_cold_start_collector \
+    "${COLLECTOR_PID}" \
+    "${COLLECTOR_T0}" \
+    "${TIMEOUT_SEC}" \
+    "${OUT_DIR}" \
+    "${OUT_DIR}/cached-collector.log" \
+    "${CACHED_JSONL}"
   echo "=== cached collector log ==="
   cat "${OUT_DIR}/cached-collector.log"
   evaluate_row "${CACHED_JSONL}" "true" "cached"
@@ -386,7 +397,13 @@ run_uncached_hpa() {
   start_collector_logged "app=cold-start-calibrate" "${UNCACHED_JSONL}" "${OUT_DIR}/uncached-collector.log"
   start_cpu_load
   curl_new_pod "app=cold-start-calibrate" "${baseline}"
-  wait "${COLLECTOR_PID}" || true
+  wait_cold_start_collector \
+    "${COLLECTOR_PID}" \
+    "${COLLECTOR_T0}" \
+    "${TIMEOUT_SEC}" \
+    "${OUT_DIR}" \
+    "${OUT_DIR}/uncached-collector.log" \
+    "${UNCACHED_JSONL}"
   kubectl uncordon "${running_node}" || true
   echo "=== uncached collector log ==="
   cat "${OUT_DIR}/uncached-collector.log"

@@ -33,7 +33,7 @@ usage() {
   cat <<'EOF'
 Usage:
   bash scripts/smoke_test.sh --check harness
-  bash scripts/smoke_test.sh --check coldstart|assertions|fixed-metrics|label-isolation|locust-authority|locust-warmup-validate|aggregate-runs|cold-start-association|preflight-traps|handoff-docs|error-rate-positive|event-loop-not-blocked|endpoints-never-empty|readiness-sweep|shape-curve|shape-wiring|bucket-fieldnames|phase5-resume|phase5-matrix-scope|hpa-stock|coldstart-collector
+  bash scripts/smoke_test.sh --check coldstart|assertions|fixed-metrics|label-isolation|locust-authority|locust-warmup-validate|aggregate-runs|cold-start-association|preflight-traps|handoff-docs|error-rate-positive|event-loop-not-blocked|endpoints-never-empty|readiness-sweep|shape-curve|shape-wiring|bucket-fieldnames|phase5-resume|phase5-matrix-scope|hpa-stock|coldstart-collector|coldstart-collector-hang
   bash scripts/smoke_test.sh --check shape-curve --shape NAME
   bash scripts/smoke_test.sh --negative-test fixed-replica-assert|empty-metrics-column|low-metrics-coverage|missing-locust-hpa|missing-locust-fixed|hpa-never-scaled|label-isolation|coldstart-readiness|liveness-restarts-hung
   bash scripts/smoke_test.sh --full --env-file .env [--reuse-artifacts]
@@ -1590,6 +1590,7 @@ run_full_suite() {
   check_locust_authority
   check_phase5_resume
   check_bucket_fieldnames
+  check_coldstart_collector_hang
   check_preflight_traps
   negative_fixed_replica_assert
   negative_empty_metrics_column
@@ -1960,6 +1961,147 @@ check_prometheus_deployment_variant() {
     "${REPO_ROOT}/k8s/prometheus/deployment-gke.yaml"
 }
 
+check_coldstart_collector_hang() {
+  venv_python - <<PY
+import sys
+import tempfile
+import threading
+import time
+from pathlib import Path
+
+sys.path.insert(0, str(Path("${REPO_ROOT}") / "scripts" / "lib"))
+from cold_start_events import ColdStartCollector
+
+POD = {
+    "metadata": {
+        "name": "new-pod",
+        "creationTimestamp": "2026-09-09T00:00:00Z",
+    },
+    "status": {
+        "conditions": [
+            {
+                "type": "Ready",
+                "status": "True",
+                "lastTransitionTime": "2026-09-09T00:00:01Z",
+            }
+        ]
+    },
+}
+
+
+def make_collector(output, timeout_sec=30, capture_all=True):
+    return ColdStartCollector(
+        namespace="ns",
+        selector="app=x",
+        output_path=Path(output),
+        timeout_sec=timeout_sec,
+        container_name="hpa-eval-app",
+        init_name="delay",
+        expect_pods=1,
+        first_request_timeout_sec=5,
+        capture_all_scale_out=capture_all,
+    )
+
+
+tmp = Path(tempfile.mkdtemp())
+out = tmp / "cold_start_events.jsonl"
+collector = make_collector(out)
+result = []
+
+
+def _write_under_lock():
+    with collector._lock:
+        result.append(collector._row_for_pod("new-pod", POD))
+
+
+thread = threading.Thread(target=_write_under_lock)
+thread.start()
+thread.join(timeout=2)
+if thread.is_alive():
+    raise SystemExit("ROW_FOR_POD_DEADLOCK")
+if not result:
+    raise SystemExit("ROW_FOR_POD_NO_RESULT")
+
+collector._pods["new-pod"] = POD
+collector._watch_rc["pod"] = -9
+collector._watch_rc["event"] = -9
+started = time.time()
+rows = collector.collect()
+elapsed = time.time() - started
+if elapsed > 2:
+    raise SystemExit(f"WATCH_DEATH_DID_NOT_EXIT elapsed={elapsed:.2f}")
+if collector.truncated_reason != "COLD_START_WATCHES_DIED":
+    raise SystemExit(f"truncated_reason={collector.truncated_reason}")
+if not out.is_file():
+    raise SystemExit("WATCH_DEATH_JSONL_MISSING")
+if len(rows) != 1:
+    raise SystemExit(f"WATCH_DEATH_ROWS={len(rows)}")
+
+empty_out = tmp / "empty.jsonl"
+empty = make_collector(empty_out, timeout_sec=1, capture_all=True)
+started = time.time()
+empty_rows = empty.collect()
+elapsed = time.time() - started
+if elapsed > 3:
+    raise SystemExit(f"CAPTURE_ALL_TIMEOUT_HUNG elapsed={elapsed:.2f}")
+if empty.truncated_reason is not None:
+    raise SystemExit(f"CAPTURE_ALL_TIMEOUT_TRUNCATED reason={empty.truncated_reason}")
+if not empty_out.is_file():
+    raise SystemExit("CAPTURE_ALL_TIMEOUT_JSONL_MISSING")
+if empty_rows:
+    raise SystemExit(f"CAPTURE_ALL_TIMEOUT_ROWS={len(empty_rows)}")
+
+print("COLDSTART_COLLECTOR_HANG_PYTHON_OK")
+PY
+
+  local tmp hung_pid t0 start_epoch elapsed
+  tmp="$(mktemp -d)"
+  : > "${tmp}/cold_start_events.jsonl"
+  sleep 0.1 &
+  hung_pid=$!
+  wait "${hung_pid}" 2>/dev/null || true
+  t0="$(iso_now)"
+  start_epoch="$(_iso_to_epoch "${t0}")"
+  COLD_START_COLLECTOR_GRACE_SEC=30 wait_cold_start_collector \
+    "${hung_pid}" "${t0}" 100 "${tmp}"
+  elapsed=$(( $(_iso_to_epoch "$(iso_now)") - start_epoch ))
+  if (( elapsed > 3 )); then
+    rm -rf "${tmp}"
+    die "coldstart-collector-hang reaped pid waited ${elapsed}s"
+  fi
+  if [[ -f "${tmp}/COLD_START_INCOMPLETE" ]]; then
+    rm -rf "${tmp}"
+    die "coldstart-collector-hang marked complete wait as incomplete"
+  fi
+  rm -rf "${tmp}"
+
+  tmp="$(mktemp -d)"
+  sleep 30 &
+  hung_pid=$!
+  t0="$(iso_now)"
+  start_epoch="$(_iso_to_epoch "${t0}")"
+  COLD_START_COLLECTOR_GRACE_SEC=2 wait_cold_start_collector \
+    "${hung_pid}" "${t0}" 0 "${tmp}"
+  elapsed=$(( $(_iso_to_epoch "$(iso_now)") - start_epoch ))
+  if kill -0 "${hung_pid}" 2>/dev/null; then
+    kill -9 "${hung_pid}" 2>/dev/null || true
+    wait "${hung_pid}" 2>/dev/null || true
+    rm -rf "${tmp}"
+    die "coldstart-collector-hang timeout did not kill pid=${hung_pid}"
+  fi
+  if (( elapsed > 8 )); then
+    rm -rf "${tmp}"
+    die "coldstart-collector-hang timeout waited ${elapsed}s"
+  fi
+  if [[ ! -f "${tmp}/COLD_START_INCOMPLETE" ]] \
+    || ! grep -q "COLD_START_COLLECTOR_TIMEOUT" "${tmp}/COLD_START_INCOMPLETE"; then
+    rm -rf "${tmp}"
+    die "coldstart-collector-hang missing COLD_START_COLLECTOR_TIMEOUT marker"
+  fi
+  rm -rf "${tmp}"
+  echo "COLDSTART_COLLECTOR_HANG_OK"
+}
+
 check_cold_start_association() {
   venv_python - <<PY
 import sys
@@ -2004,6 +2146,7 @@ PY
 }
 
 check_coldstart_collector() {
+  check_coldstart_collector_hang
   local jsonl="${REPO_ROOT}/docs/cold-start-calibration/cached.jsonl"
   local uncached="${REPO_ROOT}/docs/cold-start-calibration/uncached.jsonl"
   if [[ ! -s "${jsonl}" || ! -s "${uncached}" ]]; then
@@ -2077,6 +2220,7 @@ elif [[ -n "${CHECK}" ]]; then
     prometheus-deployment-variant) check_prometheus_deployment_variant ;;
     capacity-probe-derive) check_capacity_probe_derive ;;
     coldstart-collector) check_coldstart_collector ;;
+    coldstart-collector-hang) check_coldstart_collector_hang ;;
     *) die "unknown check: ${CHECK}" ;;
   esac
 else

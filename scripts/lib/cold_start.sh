@@ -8,6 +8,10 @@ set -euo pipefail
 COLD_START_PODS_POLL_INTERVAL="${COLD_START_PODS_POLL_INTERVAL:-2}"
 COLD_START_PODS_ZERO_TIMEOUT_SEC="${COLD_START_PODS_ZERO_TIMEOUT_SEC:-300}"
 COLD_START_READINESS_TIMEOUT_SEC="${COLD_START_READINESS_TIMEOUT_SEC:-180}"
+# Arm-side backstop: collector must not outlive t0 + run_time + this grace.
+# Internal collector timeout is run_time; this bound exists so a hung collector
+# cannot block Locust-complete arms (the ramp hang waited on wait $collector_pid).
+COLD_START_COLLECTOR_GRACE_SEC="${COLD_START_COLLECTOR_GRACE_SEC:-60}"
 
 deployment_declared_replicas() {
   local deployment="$1"
@@ -104,5 +108,73 @@ cold_start_arm() {
       echo "MANIFEST_T0_WRITTEN arm=${arm_label} path=${manifest_path}"
     fi
     echo "${t0}"
+  fi
+}
+
+_mark_cold_start_incomplete() {
+  local dir="$1"
+  local reason="$2"
+  mkdir -p "${dir}"
+  printf '%s\n' "${reason}" >> "${dir}/COLD_START_INCOMPLETE"
+  echo "COLD_START_INCOMPLETE reason=${reason}"
+}
+
+_kill_pid_and_children() {
+  local pid="$1"
+  local child children waited
+  children="$(pgrep -P "${pid}" 2>/dev/null || true)"
+  kill "${pid}" 2>/dev/null || true
+  for child in ${children}; do
+    kill "${child}" 2>/dev/null || true
+  done
+  waited=0
+  while (( waited < 2 )) && kill -0 "${pid}" 2>/dev/null; do
+    sleep 1
+    waited=$((waited + 1))
+  done
+  children="${children} $(pgrep -P "${pid}" 2>/dev/null || true)"
+  kill -9 "${pid}" 2>/dev/null || true
+  for child in ${children}; do
+    [[ -n "${child}" ]] || continue
+    kill -9 "${child}" 2>/dev/null || true
+  done
+}
+
+# Wait for the cold-start collector until t0 + run_secs + grace, then kill it
+# and proceed. Locust artifacts stay authoritative; missing/truncated jsonl is
+# recorded, never a reason to hold the arm.
+# Optional: log_file and jsonl_file override the arm defaults under dir/.
+wait_cold_start_collector() {
+  local pid="$1"
+  local t0_iso="$2"
+  local run_secs="$3"
+  local dir="$4"
+  local log_file="${5:-${dir}/collector.log}"
+  local jsonl_file="${6:-${dir}/cold_start_events.jsonl}"
+  local grace_sec="${COLD_START_COLLECTOR_GRACE_SEC:-60}"
+  local t0_epoch deadline now_epoch
+  t0_epoch="$(_iso_to_epoch "${t0_iso}")"
+  deadline=$((t0_epoch + run_secs + grace_sec))
+  echo "COLD_START_COLLECTOR_WAIT pid=${pid} t0=${t0_iso} run_time_sec=${run_secs} grace_sec=${grace_sec} deadline_epoch=${deadline}"
+
+  while kill -0 "${pid}" 2>/dev/null; do
+    now_epoch="$(_iso_to_epoch "$(iso_now)")"
+    if (( now_epoch >= deadline )); then
+      echo "ERROR: COLD_START_COLLECTOR_TIMEOUT pid=${pid} t0=${t0_iso} run_time_sec=${run_secs} grace_sec=${grace_sec}" >&2
+      _kill_pid_and_children "${pid}"
+      wait "${pid}" 2>/dev/null || true
+      _mark_cold_start_incomplete "${dir}" \
+        "COLD_START_COLLECTOR_TIMEOUT t0=${t0_iso} run_time_sec=${run_secs} grace_sec=${grace_sec}"
+      break
+    fi
+    sleep 1
+  done
+  wait "${pid}" 2>/dev/null || true
+
+  if [[ -f "${log_file}" ]] && grep -q "COLD_START_WATCHES_DIED" "${log_file}" 2>/dev/null; then
+    _mark_cold_start_incomplete "${dir}" "COLD_START_WATCHES_DIED"
+  fi
+  if [[ ! -f "${jsonl_file}" ]]; then
+    _mark_cold_start_incomplete "${dir}" "COLD_START_EVENTS_JSONL_MISSING"
   fi
 }

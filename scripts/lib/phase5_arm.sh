@@ -38,8 +38,9 @@ phase5_arm_wall_estimate_sec() {
   local load_sec=1080
   local locust_margin="${LOCUST_WALL_MARGIN_SEC:-60}"
   local collector_ready_sec=30
+  local collector_grace_sec="${COLD_START_COLLECTOR_GRACE_SEC:-60}"
   local overhead_sec=45
-  echo $((cold_start_sec + preroll_sec + warmup_sec + load_sec + locust_margin + collector_ready_sec + PHASE5_METRICS_COLLECT_BUDGET_SEC + overhead_sec))
+  echo $((cold_start_sec + preroll_sec + warmup_sec + load_sec + locust_margin + collector_ready_sec + collector_grace_sec + PHASE5_METRICS_COLLECT_BUDGET_SEC + overhead_sec))
 }
 
 phase5_format_wall_estimate() {
