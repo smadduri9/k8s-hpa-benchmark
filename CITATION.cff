@@ -1,0 +1,15 @@
+cff-version: 1.2.0
+message: If you use this benchmark, cite it using these metadata.
+type: software
+title: k8s-hpa-benchmark
+authors:
+  - family-names: Madduri
+    given-names: Sriram
+repository-code: https://github.com/smadduri9/k8s-hpa-benchmark
+url: https://smadduri9.github.io/k8s-hpa-benchmark/
+license: MIT
+date-released: "2026-09-10"
+keywords:
+  - kubernetes
+  - horizontal-pod-autoscaler
+  - benchmark
