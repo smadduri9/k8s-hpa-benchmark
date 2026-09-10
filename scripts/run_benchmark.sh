@@ -35,6 +35,9 @@ FIXED_HOST=""
 HPA_HOST=""
 SHAPE="hybrid"
 SHAPE_EXPLICIT=false
+# Capture caller override before the default assignment. Provenance stays
+# abort for burst shapes; a scoped n=1 amplitude check may export warn.
+HPA_NO_SCALE_POLICY_OVERRIDE="${HPA_NO_SCALE_POLICY:-}"
 HPA_NO_SCALE_POLICY="abort"
 PHASE5=false
 ONLY_ARM=""
@@ -108,6 +111,10 @@ export SHAPE_MEAN_USERS="${SHAPE_MEAN_USERS:-45}"
 # floor; aborting on that would discard the finding. Burst shapes must scale.
 if [[ "${SHAPE}" == "constant" || "${SHAPE}" == "wc98_constant" ]]; then
   HPA_NO_SCALE_POLICY="warn"
+fi
+if [[ -n "${HPA_NO_SCALE_POLICY_OVERRIDE}" ]]; then
+  HPA_NO_SCALE_POLICY="${HPA_NO_SCALE_POLICY_OVERRIDE}"
+  echo "HPA_NO_SCALE_POLICY_OVERRIDE=${HPA_NO_SCALE_POLICY} reason=caller_env_not_shape_default"
 fi
 
 # --smoke alone keeps the pre-existing 10-minute kind profile byte-compatible. An
@@ -259,25 +266,36 @@ collect_arm_metrics() {
     echo "HPA_NO_SCALE_POLICY=${HPA_NO_SCALE_POLICY} shape=${SHAPE}"
   fi
   args+=(--step 15)
-  local attempt
+  local attempt collect_rc=1 collect_log
+  collect_log="${rep_dir}/collect_metrics.log"
+  : >"${collect_log}"
   for attempt in 1 2; do
+    : >"${collect_log}"
     ensure_prometheus_port_forward
-    if "${args[@]}"; then
+    collect_rc=0
+    # run_phase5_arm is invoked under `if`, which disables set -e inside the
+    # function. A failing collect must be checked explicitly or PASS is stamped.
+    "${args[@]}" >>"${collect_log}" 2>&1 || collect_rc=$?
+    cat "${collect_log}" >&2
+    if [[ "${collect_rc}" -eq 0 ]]; then
       return 0
     fi
-    if [[ "${attempt}" -eq 1 ]] && grep -q 'PROMETHEUS_UNREACHABLE' "${rep_dir}/rep.log" 2>/dev/null; then
+    if [[ "${attempt}" -eq 1 ]] && grep -q 'PROMETHEUS_UNREACHABLE' "${collect_log}" 2>/dev/null; then
       echo "METRICS_COLLECTION_RETRY mode=${mode} reason=PROMETHEUS_UNREACHABLE" >&2
       continue
     fi
     break
   done
-  local err_line
-  err_line="$(grep -E '^(RuntimeError|ValueError|ImportError|OSError|KeyError):' "${rep_dir}/rep.log" 2>/dev/null | tail -1 || true)"
-  if [[ -n "${err_line}" ]]; then
-    echo "METRICS_COLLECTION_FAILED mode=${mode} ${err_line}" >&2
-  else
-    echo "METRICS_COLLECTION_FAILED mode=${mode} rc=$?" >&2
+  local reason
+  reason="$(
+    grep -oE 'HPA_NEVER_SCALED|REPLICA_BELOW_DECLARED|PROMETHEUS_UNREACHABLE' \
+      "${collect_log}" 2>/dev/null | tail -1 || true
+  )"
+  if [[ -z "${reason}" ]]; then
+    reason="METRICS_COLLECTION_FAILED"
   fi
+  printf '%s\n' "${reason}" >"${rep_dir}/collect_fail_reason"
+  echo "METRICS_COLLECTION_FAILED mode=${mode} reason=${reason} rc=${collect_rc}" >&2
   return 1
 }
 
@@ -507,8 +525,23 @@ PY
 
   local t1
   t1="$(iso_add_run_time "${t0}" "${RUN_TIME}")"
-  collect_arm_metrics "${mode}" "${t0}" "${t1}" "${dir}/${arm}_metrics.csv" \
-    "$(deployment_declared_replicas hpa-eval-fixed "${NAMESPACE}")"
+  local metrics_csv="${dir}/${arm}_metrics.csv"
+  local locust_stats="${dir}/locust_${arm}_stats.csv"
+  if ! collect_arm_metrics "${mode}" "${t0}" "${t1}" "${metrics_csv}" \
+    "$(deployment_declared_replicas hpa-eval-fixed "${NAMESPACE}")"; then
+    local fail_reason="METRICS_COLLECTION_FAILED"
+    if [[ -s "${dir}/collect_fail_reason" ]]; then
+      fail_reason="$(head -n 1 "${dir}/collect_fail_reason")"
+    fi
+    write_arm_status "${dir}" "FAILED" "${fail_reason}"
+    echo "PHASE5_ARM_FAIL arm=${arm} rep=${rep} reason=${fail_reason}"
+    return 1
+  fi
+  if [[ ! -s "${locust_stats}" || ! -s "${replica_series}" || ! -s "${metrics_csv}" ]]; then
+    write_arm_status "${dir}" "FAILED" "REQUIRED_ARTIFACT_MISSING"
+    echo "PHASE5_ARM_FAIL arm=${arm} rep=${rep} reason=REQUIRED_ARTIFACT_MISSING"
+    return 1
+  fi
   write_arm_status "${dir}" "PASS" "ok"
   echo "PHASE5_ARM_PASS arm=${arm} rep=${rep}"
   return 0

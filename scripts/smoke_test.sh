@@ -1813,11 +1813,17 @@ check_phase5_resume() {
   mkdir -p "${dir}"
   printf 'PASS\nok\n' > "${dir}/STATUS"
   echo t0 > "${dir}/t0.txt"
-  : > "${dir}/locust_hpa_tuned_stats.csv"
-  : > "${dir}/hpa_tuned_metrics.csv"
+  echo locust > "${dir}/locust_hpa_tuned_stats.csv"
+  echo metrics > "${dir}/hpa_tuned_metrics.csv"
+  echo series > "${dir}/replica_series_hpa.csv"
   if ! arm_is_complete "${dir}" hpa_tuned; then
     rm -rf "${tmp}"
     die "phase5-resume planted PASS arm not skipped"
+  fi
+  rm -f "${dir}/hpa_tuned_metrics.csv"
+  if arm_is_complete "${dir}" hpa_tuned; then
+    rm -rf "${tmp}"
+    die "phase5-resume PASS without metrics CSV treated as complete"
   fi
   echo "PHASE5_RESUME_SKIP_OK"
   rm -rf "${tmp}"

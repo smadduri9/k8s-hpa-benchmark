@@ -243,7 +243,8 @@ Guards enforced for this run (evidence in `rep.log` and collection output):
 - Do not describe this as the intended configuration. State the constraint and its effect.
 - **Estimated Phase 5 spend (not invoiced):** ~25 h cluster at 3× `e2-standard-4` (~$0.40/hr on-demand list) plus two LoadBalancers → ballpark **~$11–13**; runner VM stopped during the run. See Phase 5 plan cost section.
 - **P1 capacity probe stop rule:** unchanged by node count. The probe stops at the first step where median pod CPU (metrics-server, sampled during load) is ≥ 80% of the 1000m limit, or RPS-per-user falls by **>10%** vs the prior step after at least **three** steps and a prior median CPU ≥ **100m**. Sub-10% RPS swings between 45s windows are noise. RPS is the full-step Locust aggregate (includes ~1s spawn transient); CPU is sampled `PROBE_CPU_SAMPLE_LEAD_SEC` (default 5s) before the step ends.
-- **`SHAPE_MEAN_USERS`:** Derived by the P1 capacity probe (`bash scripts/run_capacity_probe.sh --env-file .env`), not assumed from the A7 Little's-law default of 45. The integer is written to `results/capacity_probe/derivation.json` after a live probe run. **No value is recorded here until that artifact exists.**
+- **`SHAPE_MEAN_USERS`:** Derived by the P1 capacity probe (`bash scripts/run_capacity_probe.sh --env-file .env`). Artifact `results/capacity_probe/derivation.json` records **69**. Do not raise it to force HPA scale-out on later shapes — the integer applies to all five shapes and changing it breaks comparability with the flash n=6 result.
+- **GKE e2 CPU-generation draw is not controllable.** The same cluster spec (`3 × e2-standard-4`, `us-central1-b`) produced materially different per-pod CPU for identical warm-up work (37 Locust users, 5 min, below the 60% HPA target). First cluster (`wc98_ramp` rep-1 `hpa_tuned`): **154m, 176m, 219m, 240m**. Current cluster (rep-2 `hpa_tuned`): **73m, 93m, 127m, 166m**. Medians **198m vs 110m**. The current-cluster median is **0.66×** the probe's expected 168m at 37 users (step 14: 150 users at 680m scaled linearly). That is why ramp scaled to `peak_spec=8` on the first cluster and stayed at 4 on the next. Any GKE result on e2 is hardware-draw-dependent; replica counts are not portable across deployments of the same machine type.
 
 ## Phase 5 measured — `wc98_flash` (`run-phase5-wc98_flash`, n=6)
 
@@ -267,6 +268,26 @@ Guards enforced for this run (evidence in `rep.log` and collection output):
 Both HPA arms beat fixed on latency at n=6. **hpa_tuned vs hpa_stock** (the stock-vs-tuned finding this tier exists for) is **not significant** at α=0.05 on p95 or p99. Direction: stock slower on p95 in 1/6 reps.
 
 **Cold-start collection: WITHDRAWN.** `results/runs/run-phase5-wc98_flash/**/cold_start_events.jsonl` from the first harvest (12 rows, one per HPA arm) is **not published**. Five rows had causally impossible `hpa_decision` ordering; seven passed timestamp ordering but were not replica-slot verified; association could pick decisions from a **previous arm's** event stream. Latency, throughput, cost, and `replica_series_*.csv` from this tier are **unaffected** — the collector was a passive passenger and did not drive load or scaling. Re-harvest with the fixed collector (`--capture-all-scale-out`, per-pod scale-out association) is required before any cold-start claim from Phase 5.
+
+## Phase 5 n=1 remaining shapes — prediction (recorded before the run)
+
+n=3 on `wc98_ramp`, `wc98_constant`, `wc98_periodic`, `rr_periodic` is **not run**. At `SHAPE_MEAN_USERS=69` on the current cluster, three of those four are predicted not to leave `minReplicas=4`, so the three arms would be identical floor configurations. Instead: **n=1 per shape** (three arms each) to observe whether `peak_spec` leaves 4. Flash n=6 is already collected and is not repeated.
+
+**`HPA_NO_SCALE_POLICY=warn` for this run only**, including ramp / periodic / `rr_periodic` whose provenance default is `abort`. The measurement is whether they scale, so aborting on `HPA_NEVER_SCALED` would discard the outcome. This override is a caller env var (`HPA_NO_SCALE_POLICY=warn`); provenance JSON and the shape-default in `run_benchmark.sh` stay `abort` for burst shapes at amplitudes that should scale. Do not copy this override into a higher-amplitude run.
+
+**Linear model** (probe `rps_per_user=0.4307`, `cpu_per_rps=0.04210` cores/rps; peak users = `round(peak_to_mean × 69)`; % of 500m request if that peak stayed on 4 pods). Flash calibration: model `est_replicas=8.4` vs observed peak_spec **10–12**. Same factor vs ramp rep-1 observed peak_spec **8** (model 6.35 × 11/8.4 ≈ 8.3).
+
+**This-cluster factor 0.66** — current-cluster ramp warm-up median 110m vs probe-expected 168m at 37 users. Applied to the % and `est_replicas` columns.
+
+| Shape | peak_to_mean | peak users @69 | % of 500m on 4 pods (probe) | ×0.66 this cluster | est_replicas ×0.66 | prediction |
+|-------|-------------:|---------------:|----------------------------:|-------------------:|-------------------:|------------|
+| `wc98_flash` (already measured) | 2.015 | 139 | 126.0% | 83% | 5.5 | would still scale; not to 10–12 |
+| `wc98_periodic` | 1.588 | 110 | 99.7% | 65% | 4.4 | **marginal** |
+| `wc98_ramp` | 1.521 | 105 | 95.2% | 63% | 4.2 | **marginal** (rep-2 on this cluster already stayed at 4) |
+| `rr_periodic` | 1.509 | 104 | 94.3% | 62% | 4.1 | **marginal / likely no scale** |
+| `wc98_constant` | 1.051 | 72 | 65.3% | 43% | 2.9 | **never** (`warn` by design) |
+
+If a shape's HPA arms stay at `peak_spec=4`, that is the finding: 69 does not exercise the autoscaler on this hardware. Do not raise `SHAPE_MEAN_USERS` afterward to force a scale-out.
 
 ## Trace-derived load shapes (Phase 4)
 

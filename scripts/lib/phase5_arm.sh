@@ -156,11 +156,19 @@ arm_is_complete() {
   local dir="$1"
   local arm="$2"
   local status="${dir}/STATUS"
+  local mode series
   [[ -f "${status}" ]] || return 1
   [[ "$(head -n 1 "${status}")" == "PASS" ]] || return 1
   [[ -f "${dir}/t0.txt" ]] || return 1
-  [[ -f "${dir}/locust_${arm}_stats.csv" ]] || return 1
-  [[ -f "${dir}/${arm}_metrics.csv" ]] || return 1
+  [[ -s "${dir}/locust_${arm}_stats.csv" ]] || return 1
+  [[ -s "${dir}/${arm}_metrics.csv" ]] || return 1
+  mode="$(collect_mode "${arm}")"
+  if [[ "${mode}" == "fixed" ]]; then
+    series="${dir}/replica_series_fixed.csv"
+  else
+    series="${dir}/replica_series_hpa.csv"
+  fi
+  [[ -s "${series}" ]] || return 1
   return 0
 }
 

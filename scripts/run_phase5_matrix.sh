@@ -125,6 +125,9 @@ if [[ "${MAX_REPS_SET}" == "true" ]]; then
   max_reps_log="${MAX_REPS}"
 fi
 
+if [[ -n "${HPA_NO_SCALE_POLICY:-}" ]]; then
+  echo "HPA_NO_SCALE_POLICY_OVERRIDE=${HPA_NO_SCALE_POLICY} reason=scoped_run_not_provenance"
+fi
 echo "PHASE5_MATRIX_START SHAPE_MEAN_USERS=${SHAPE_MEAN_USERS} resume=${RESUME} shapes=${shapes_human} max_reps=${max_reps_log}"
 echo "PHASE5_MATRIX_PLAN shapes=${shapes_human} shape_count=${#SELECTED_SHAPES[@]} arms_per_rep=${arms_per_rep} arms_total=${total_arms} wall_estimate_sec=${total_wall_sec} wall_estimate=${wall_human} arm_wall_budget_sec=${arm_wall_sec} shape_reps=${shape_plan_csv}"
 echo "PHASE5_MATRIX_PLAN_NOTE wall_estimate uses cold_start_timeout+warmup+18m_load+metrics_budget; actual may be shorter"
