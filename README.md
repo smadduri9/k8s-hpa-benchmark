@@ -156,6 +156,6 @@ The verifier checks package integrity and recomputes medians, paired tests, read
 
 ## Citation / release
 
-Use [CITATION.cff](CITATION.cff) for citation metadata. It remains the v1.0.0 citation record; the v1.1 evidence directory does not imply a published release or a new DOI. [Release history](https://github.com/smadduri9/k8s-hpa-benchmark/releases)
+**Release version: v1.1.0.** Use [CITATION.cff](CITATION.cff) for citation metadata. The [Zenodo concept DOI](https://doi.org/10.5281/zenodo.22697396) identifies all versions; it is not a version-specific v1.1.0 DOI. [Release history](https://github.com/smadduri9/k8s-hpa-benchmark/releases)
 
 Code is [MIT licensed](LICENSE). Trace derivatives retain their [source terms](artifacts/v1.1/SOURCE_NOTICES.md), including CC BY-NC-SA 4.0 for RetailRocket-derived material.

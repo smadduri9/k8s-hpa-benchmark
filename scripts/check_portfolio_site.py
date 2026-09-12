@@ -31,7 +31,7 @@ STATIC_NUMBERS = {
     "51.7", "0.97",  # Explicitly withdrawn historical claim.
     "1.35", "4.0",  # Attributed dataset size and third-party license version.
     "1", "5",  # Excluded rep-1 and historical Phase 5 identifier.
-    "1.1", "1.0.0", "10.5281", "22697397",  # Evidence version and existing DOI.
+    "1.1", "1.1.0",  # Evidence directory and current release version.
 }
 
 

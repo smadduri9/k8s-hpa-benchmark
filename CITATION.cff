@@ -8,7 +8,9 @@ authors:
 repository-code: https://github.com/smadduri9/k8s-hpa-benchmark
 url: https://smadduri9.github.io/k8s-hpa-benchmark/
 license: MIT
-date-released: "2026-09-10"
+version: "1.1.0"
+date-released: "2026-09-12"
+doi: "10.5281/zenodo.22697396"
 keywords:
   - kubernetes
   - horizontal-pod-autoscaler
