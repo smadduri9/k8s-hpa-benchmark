@@ -1,4 +1,6 @@
-# RESULTS
+# Current technical results
+
+The current measurement of record is the [v1.1 publication package](artifacts/v1.1/README.md). [README.md](README.md) provides the project overview; [POSTMORTEM.md](POSTMORTEM.md) explains the withdrawn original comparison. Historical tables are isolated in the [archive](docs/archive/SUPERSEDED_RESULTS.md).
 
 ## Phase 5 findings (measurement of record)
 
@@ -57,13 +59,14 @@ Flash measured request counts span 33,508–34,187 across its completed arms. En
 
 ## Reproducibility
 
-From the repository root, after installing the pinned tooling dependencies:
+Use [REPRODUCE.md](REPRODUCE.md) for environment setup, pytest and the separate cloud rerun path. From the repository root with the pinned tooling installed:
 
 ```bash
-".venv/bin/python" -B artifacts/v1.1/verify.py
-".venv/bin/python" -B -m unittest discover -s tests -p test_publication.py
-".venv/bin/python" -B scripts/generate_publication_text.py --check
-".venv/bin/python" -B scripts/generate_public_figures.py
+export REPO_ROOT="$PWD"
+"${REPO_ROOT}/.venv/bin/python" -B artifacts/v1.1/verify.py
+"${REPO_ROOT}/.venv/bin/python" -B -m unittest discover -s tests -p test_publication.py
+"${REPO_ROOT}/.venv/bin/python" -B scripts/generate_publication_text.py --check
+"${REPO_ROOT}/.venv/bin/python" -B scripts/generate_public_figures.py
 ```
 
 The verifier reads only `artifacts/v1.1/` and also runs when that directory is copied out of the repository. It uses the standard library and has no network or cluster dependency. The general `analysis/aggregate_runs.py` remains unchanged; it does not apply this publication's exclusions and is not the v1.1 authority.
@@ -86,13 +89,13 @@ Replica peaks use the inclusive `t0` to `t0 + 1080 seconds` window, even for the
 
 Calibration uses the last pre-saturation step's request rate and recorded median pod millicores in a linear model. It searches integer amplitudes for which the constant minimum is below, and the flash peak above, the declared HPA target. The largest feasible integer is selected. One sweep is retained; repeatability of this model calibration has not been demonstrated. Individual per-pod CPU readings underlying the recorded probe medians are `MISSING`.
 
-## Trace-derived load shapes (Phase 4)
+## Trace-derived load shapes
 
 [Selection rule](docs/SHAPE_SELECTION.md) and [source notices](artifacts/v1.1/SOURCE_NOTICES.md) describe attribution and transformations. The bundle reproduces normalized plateaus from the five retained aggregate windows. It does not reproduce the full candidate search over the original datasets. Source Hurst estimates are selection context, not measurements of delivered arrivals.
 
 These are closed-loop Locust user-count envelopes. Periodic source windows span 24 hours and are compressed into an 18-minute benchmark. Individual source requests and their arrival process are not replayed. Current runs use trace-derived shapes; historical synthetic shapes remain separate.
 
-## Latency — two metrics, never merged
+## Latency measurement scopes
 
 Locust's `Aggregated` percentiles describe client-observed response time across mixed `/` and `/cpu` requests, including failures. Each reported p95 median is the median of run-level percentile estimates, not a pooled percentile across all requests. `/health` and `/metrics` are not workload requests.
 
@@ -117,16 +120,10 @@ Canonical SVGs and 2x PNG fallbacks are generated solely from publication summar
 - [Ready-pod hours](docs/assets/figures/ready_pod_hours.svg)
 - [Replica scaling](docs/assets/figures/replica_scaling.svg)
 
-A measurement-guard diagram is deferred to the website phase. The minimal bundle does not substantiate every collector guard's run-level outcome.
+The [measurement-guards diagram](docs/assets/figures/measurement_guards.svg) and [implementation map](docs/MEASUREMENT_GUARDS.md) distinguish collector gates from offline publication validation. The minimal bundle does not substantiate every collector guard's run-level outcome.
 
-## Calibrated results (minReplicas=3 both arms), superseded
+## Historical / superseded work
 
-Historical Phase 1 synthetic results are preserved in the [pinned prior write-up](https://github.com/smadduri9/k8s-hpa-benchmark/blob/b8cf7cb2d22a53f82b1a4a9c61cbeabdf4bad0f7/RESULTS.md#calibrated-results-minreplicas3-both-arms-superseded) and the README's explicitly superseded tables. Their raw evidence is not part of this package. That old write-up contains superseded claims and private paths; it is a historical record, not current verification authority.
+Earlier synthetic comparisons, unequal-floor runs and cost-model tables are preserved in [SUPERSEDED_RESULTS.md](docs/archive/SUPERSEDED_RESULTS.md). They are not current evidence. The [postmortem](POSTMORTEM.md) records the withdrawal and subsequent measurement changes.
 
-## SLO and error budget (calibrated runs)
-
-Historical percentile brackets and model calculations remain in that pinned write-up. The current publication does not establish a 30-day compliance series or actual error-budget consumption. The [policy](docs/error-budget-policy.md) distinguishes a proposed client SLO from short benchmark samples and server-side histograms.
-
-## Superseded — run-20260904T230444Z
-
-This comparison had unequal declared starting capacity. See the [postmortem](POSTMORTEM.md). Its tracked figures remain in [docs/figures/run-20260904T230444Z/](docs/figures/run-20260904T230444Z/). They are historical; raw run inputs are not bundled for public regeneration.
+The [error-budget policy](docs/error-budget-policy.md) is a proposed client SLO policy. This publication does not establish a 30-day compliance series or actual error-budget consumption.

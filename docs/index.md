@@ -44,4 +44,4 @@ Flash has six completed repetitions, ramp two, and each other workload one. The 
 
 ## Also recorded
 
-No Phase 5 cold-start distribution is published. See the [measurement limitations](https://github.com/smadduri9/k8s-hpa-benchmark/blob/main/RESULTS.md#measurement-limitations). Historical Phase 1 write-ups remain accessible through the pinned history links in RESULTS.md.
+No Phase 5 cold-start distribution is published. See the [measurement limitations](https://github.com/smadduri9/k8s-hpa-benchmark/blob/main/RESULTS.md#measurement-limitations). Historical write-ups remain accessible in the [results archive](https://github.com/smadduri9/k8s-hpa-benchmark/blob/main/docs/archive/SUPERSEDED_RESULTS.md).

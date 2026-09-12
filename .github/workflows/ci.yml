@@ -33,3 +33,5 @@ jobs:
         run: '"${GITHUB_WORKSPACE}/.venv/bin/python" -B -m unittest discover -s tests -p test_publication.py'
       - name: Publication text matches canonical summaries
         run: '"${GITHUB_WORKSPACE}/.venv/bin/python" -B scripts/generate_publication_text.py --check'
+      - name: Public documentation links, diagrams and privacy
+        run: '"${GITHUB_WORKSPACE}/.venv/bin/python" -B scripts/check_public_docs.py'

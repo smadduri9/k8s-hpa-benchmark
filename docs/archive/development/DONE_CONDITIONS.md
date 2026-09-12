@@ -1,3 +1,5 @@
+> Archived development history. Commands and claims describe an earlier state and are not the current runbook. Local paths, temporary-log references and account identifiers have been sanitized; measurements have not been changed. See [REPRODUCE.md](../../../REPRODUCE.md).
+
 # DONE CONDITIONS (Tier 1)
 
 Completion policy: no Tier 1 item is marked done unless (1) the exact command in this file is run and (2) the actual command output is pasted into `PROGRESS.md`.

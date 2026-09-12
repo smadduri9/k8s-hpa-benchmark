@@ -86,12 +86,47 @@ def render(prefix, detailed=False):
     return "\n".join([*lines, "", END])
 
 
+def render_overview(section):
+    h = json.loads((BUNDLE / "summary/headline.json").read_text())
+    f, t = h["flash"], h["ready_pod_time"]
+    if section == "FINDINGS":
+        lines = [f"**Flash workload · {f['repetitions']} paired repetitions · median client p95**", "",
+                 "| Fixed capacity | Tuned HPA | Stock HPA |", "|---:|---:|---:|",
+                 f"| **{f['fixed_p95_median_ms']:g} ms** | **{f['tuned_p95_median_ms']:g} ms** | **{f['stock_p95_median_ms']:g} ms** |", "",
+                 f"Tuned HPA beat fixed in **{f['tuned_better_than_fixed_reps']}/{f['repetitions']}** repetitions. "
+                 f"Stock HPA beat fixed in **{f['stock_better_than_fixed_reps']}/{f['repetitions']}** repetitions."]
+    elif section == "RESOURCES":
+        lines = ["| Policy | Median ready-pod time | Repetitions | Ratio of medians vs fixed |",
+                 "|---|---:|---:|---:|",
+                 f"| Fixed | {t['fixed_median_pod_hours']:.5f} pod-hours | {t['fixed_n']} | Reference |",
+                 f"| Tuned HPA | {t['tuned_median_pod_hours']:.5f} pod-hours | {t['tuned_n']} | +{t['tuned_vs_fixed_ratio_of_medians_pct']:.3f}% |",
+                 f"| Stock HPA | {t['stock_median_pod_hours']:.5f} pod-hours | {t['stock_n']} | +{t['stock_vs_fixed_ratio_of_medians_pct']:.3f}% |"]
+    elif section == "TESTS":
+        lines = ["| Flash comparison | Exact two-sided Wilcoxon p |", "|---|---:|",
+                 f"| Fixed vs tuned HPA | {f['tuned_vs_fixed_wilcoxon_p']:g} |",
+                 f"| Fixed vs stock HPA | {f['stock_vs_fixed_wilcoxon_p']:g} |",
+                 f"| Tuned vs stock HPA | {f['tuned_vs_stock_wilcoxon_p']:g} |"]
+    elif section == "SCALING":
+        lines = ["| Workload | Observed HPA peak replicas | Repetitions |", "|---|---:|---:|"]
+        for shape, label in (("wc98_constant", "Constant"), ("wc98_periodic", "WC98 periodic"),
+                             ("rr_periodic", "RetailRocket periodic"), ("wc98_ramp", "Ramp"),
+                             ("wc98_flash", "Flash")):
+            data = h["replica_scaling"]["workloads"][shape]
+            values = data["hpa_tuned"] + data["hpa_stock"]
+            low, high = min(values), max(values)
+            peak = str(low) if low == high else f"{low}–{high}"
+            lines.append(f"| {label} | {peak} | {len(data['repetitions'])} |")
+    else:
+        raise ValueError(f"UNKNOWN_OVERVIEW_SECTION {section}")
+    return "\n".join([f"<!-- BEGIN V1.1 GENERATED {section} -->", "", *lines, "",
+                      f"<!-- END V1.1 GENERATED {section} -->"])
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--check", action="store_true")
     args = parser.parse_args()
     for filename, prefix, detailed in (
-        ("README.md", "artifacts/v1.1/", False),
         ("RESULTS.md", "artifacts/v1.1/", True),
         ("docs/index.md", "https://github.com/smadduri9/k8s-hpa-benchmark/blob/main/artifacts/v1.1/", False),
     ):
@@ -107,6 +142,22 @@ def main():
                 raise ValueError(f"PUBLICATION_TEXT_MISMATCH {filename}")
         else:
             path.write_text(expected)
+    path = ROOT / "README.md"
+    text = path.read_text()
+    expected = text
+    for section in ("FINDINGS", "SCALING", "RESOURCES", "TESTS"):
+        begin = f"<!-- BEGIN V1.1 GENERATED {section} -->"
+        end = f"<!-- END V1.1 GENERATED {section} -->"
+        if expected.count(begin) != 1 or expected.count(end) != 1:
+            raise ValueError(f"PUBLICATION_MARKERS_INVALID README.md {section}")
+        before, rest = expected.split(begin)
+        _, after = rest.split(end)
+        expected = before + render_overview(section) + after
+    if args.check:
+        if expected != text:
+            raise ValueError("PUBLICATION_TEXT_MISMATCH README.md")
+    else:
+        path.write_text(expected)
     print("PUBLICATION_TEXT_PASS documents=3")
 
 

@@ -1,3 +1,5 @@
+> Archived development history. Commands and claims describe an earlier state and are not the current runbook. Local paths, temporary-log references and account identifiers have been sanitized; measurements have not been changed. See [REPRODUCE.md](../../../REPRODUCE.md).
+
 # PROGRESS (append-only)
 
 Before starting any item, re-read this file and `DONE_CONDITIONS.md`.
@@ -171,7 +173,7 @@ NEGATIVE_FIXED_REPLICA_ASSERT_PASS
 - **Negative 2 (empty required column blocks publication):**
 
 ```
-ASSERTION FAILED: required column error_rate has zero populated rows in /tmp/t1-b-empty-col-fixed.csv
+ASSERTION FAILED: required column error_rate has zero populated rows in LOCAL_TEMP/t1-b-empty-col-fixed.csv
 NEGATIVE_EMPTY_METRICS_COLUMN_PASS
 ```
 
@@ -196,7 +198,7 @@ NEGATIVE_MISSING_LOCUST_HPA_PASS
 
 ```
 repo_path_whitespace_audit=PASS
-venv_python_path=/Users/srirammadduri/Documents/Personal Projects/k8s-hpa-benchmark/.venv/bin/python
+venv_python_path=REPO_ROOT/.venv/bin/python
 venv_python_version=Python 3.14.7
 venv_locust_path_check=PASS
 kubectl_client=v1.35.7-dispatcher
@@ -237,7 +239,7 @@ NEGATIVE_HPA_NEVER_SCALED_PASS
 - **Actual output:**
 
 ```
-repo_path_whitespace_audit=ACTIVE path="/Users/srirammadduri/Documents/Personal Projects/k8s-hpa-benchmark"
+repo_path_whitespace_audit=ACTIVE path="REPO_ROOT"
 repo_path_whitespace_audit=PASS
 kubectl_minor_skew=2
 kubectl_skew_check=WARN
@@ -245,9 +247,9 @@ PREFLIGHT_PASS
 ```
 
 ```
-PROJECT_ID=hpa-benchmark-2026
+PROJECT_ID=REDACTED_PROJECT_ID
 GKE_ACTIVE_ACCOUNT=smadduri290@gmail.com
-GKE_PROJECT_ACCESS=PASS project=hpa-benchmark-2026
+GKE_PROJECT_ACCESS=PASS project=REDACTED_PROJECT_ID
 GKE_API_ENABLED=container.googleapis.com
 GKE_API_ENABLED=artifactregistry.googleapis.com
 GKE_ARTIFACT_REGISTRY_REPO=PASS repo=hpa-eval region=us-central1
@@ -329,25 +331,25 @@ TEARDOWN_POLICY cluster=on-failure-only port_forwards=always background_pids=alw
 PREFLIGHT_TABLE_BEGIN
 os=Darwin
 arch=arm64
-repo_root="/Users/srirammadduri/Documents/Personal Projects/k8s-hpa-benchmark"
-repo_path_whitespace_audit=ACTIVE path="/Users/srirammadduri/Documents/Personal Projects/k8s-hpa-benchmark"
+repo_root="REPO_ROOT"
+repo_path_whitespace_audit=ACTIVE path="REPO_ROOT"
 repo_path_whitespace_audit=PASS
 sed=BSD
 date=BSD
 gcloud=Google Cloud SDK 583.0.0
 docker=Docker version 28.5.1, build e180ab8
 kubectl=Client Version: v1.35.7-dispatcher
-venv_python_path=/Users/srirammadduri/Documents/Personal Projects/k8s-hpa-benchmark/.venv/bin/python
+venv_python_path=REPO_ROOT/.venv/bin/python
 venv_python_version=Python 3.14.7
-venv_locust_version=locust 2.46.4 from /Users/srirammadduri/Documents/Personal Projects/k8s-hpa-benchmark/.venv/lib/python3.14/site-packages/locust (Python 3.14.7)
-venv_locust_path_check=PASS from=/Users/srirammadduri/Documents/Personal Projects/k8s-hpa-benchmark/.venv/lib/python3.14/site-packages/locust (Python 3.14.7)
+venv_locust_version=locust 2.46.4 from REPO_ROOT/.venv/lib/python3.14/site-packages/locust (Python 3.14.7)
+venv_locust_path_check=PASS from=REPO_ROOT/.venv/lib/python3.14/site-packages/locust (Python 3.14.7)
 kubectl_client=v1.35.7-dispatcher
 kubectl_server=v1.37.0
 kubectl_minor_skew=2
 WARNING: kubectl version skew 2 exceeds recommended max of 1 minor version; client=v1.35.7-dispatcher server=v1.37.0
 REMEDIATION: align kubectl client with cluster (e.g. gcloud components install kubectl, then ensure gcloud bin precedes brew on PATH)
 kubectl_skew_check=WARN
-docker_platform_check=PASS build_script=/Users/srirammadduri/Documents/Personal Projects/k8s-hpa-benchmark/scripts/deploy_gke.sh platform=linux/amd64
+docker_platform_check=PASS build_script=REPO_ROOT/scripts/deploy_gke.sh platform=linux/amd64
 python_version=PASS 3.14.7
 analysis_import=PASS module=collect_metrics
 analysis_import=PASS module=ingest_locust
@@ -355,7 +357,7 @@ analysis_import=PASS module=analyze_results
 analysis_import=PASS module=fill_results
 python_package=PASS package=numpy version=2.5.2
 python_package=PASS package=matplotlib version=3.11.1
-analyze_plotting=PASS figures=4 fixture_dir=/Users/srirammadduri/Documents/Personal Projects/k8s-hpa-benchmark/scripts/lib/fixtures
+analyze_plotting=PASS figures=4 fixture_dir=REPO_ROOT/scripts/lib/fixtures
 PREFLIGHT_PASS
 PREFLIGHT_TABLE_END
 deployment.apps/prometheus condition met
@@ -393,8 +395,8 @@ TRAP_CLEANUP_IDEMPOTENT
 ERROR: cluster mismatch: expected hpa-eval-benchmark, got wrong-cluster-name-deliberate
 NEGATIVE_CLUSTER_VERIFICATION_PASS
 [2026-09-03T18:56:27Z] PROJECT_CLUSTER_VERIFICATION_REQUIRED
-[2026-09-03T18:56:27Z] Verified target project=hpa-benchmark-2026 cluster=hpa-eval-benchmark region=us-central1 context=kind-hpa-eval-smoke
-[2026-09-03T18:56:27Z] DESTRUCTIVE_GKE_TEARDOWN_AUTHORIZED project=hpa-benchmark-2026 cluster=hpa-eval-benchmark
+[2026-09-03T18:56:27Z] Verified target project=REDACTED_PROJECT_ID cluster=hpa-eval-benchmark region=us-central1 context=kind-hpa-eval-smoke
+[2026-09-03T18:56:27Z] DESTRUCTIVE_GKE_TEARDOWN_AUTHORIZED project=REDACTED_PROJECT_ID cluster=hpa-eval-benchmark
 PROJECT_CLUSTER_VERIFICATION_REQUIRED
 TRAP_CLEANUP_VERIFIED
 EXIT_RC=0
@@ -472,7 +474,7 @@ LOCUST_BOTH_ARMS_INGESTED
 - **ps evidence (live locust during fixed arm, captured 2026-09-03T17:12:08Z):**
 
 ```
-srirammadduri    60090  19.1  0.1 435287680  35216   ??  U    10:12AM   0:00.13 .../.venv/bin/locust -f .../locust/locustfile_smoke.py --host http://127.0.0.1:30080 --headless --run-time 4m --csv .../locust_fixed --csv-full-history ...
+LOCAL_ACCOUNT    60090  19.1  0.1 435287680  35216   ??  U    10:12AM   0:00.13 .../.venv/bin/locust -f .../locust/locustfile_smoke.py --host http://127.0.0.1:30080 --headless --run-time 4m --csv .../locust_fixed --csv-full-history ...
 60090 /opt/homebrew/.../Python .../.venv/bin/locust -f .../locust/locustfile_smoke.py --host http://127.0.0.1:30080 --headless --run-time 4m ...
 ```
 
@@ -501,7 +503,7 @@ Manifest t0 is **after** run start and **after** locust confirmed running (not b
 - **Actual output (tail):**
 
 ```
-All figures saved to /Users/srirammadduri/Documents/Personal Projects/k8s-hpa-benchmark/results/runs/smoke-locust/rep-1/figures/
+All figures saved to REPO_ROOT/results/runs/smoke-locust/rep-1/figures/
 SUMMARY attempted=1 passed=1
 LOCUST_FIXED_STATS_FOUND
 LOCUST_HPA_STATS_FOUND
@@ -538,7 +540,7 @@ all repetitions passed
 ```
 FIXED_METRICS_REQUIRED_COLUMNS_POPULATED rows=7
 ERROR_RATE_COLUMN_POPULATED rows=7/7 non_zero=0 missing=0
-Wrote 7 rows to /tmp/t1-c-fixed-metrics.csv
+Wrote 7 rows to LOCAL_TEMP/t1-c-fixed-metrics.csv
 FIXED_METRICS_REQUIRED_COLUMNS_POPULATED
 ERROR_RATE_COLUMN_POPULATED
 FIXED_EXIT=0
@@ -553,7 +555,7 @@ Traffic: alternating `curl …/cpu?intensity=low` (200) and `curl …/fail` (404
 ```
 FIXED_METRICS_REQUIRED_COLUMNS_POPULATED rows=7
 ERROR_RATE_COLUMN_POPULATED rows=7/7 non_zero=4 missing=0
-Wrote 7 rows to /tmp/t1-c-error-rate-positive.csv
+Wrote 7 rows to LOCAL_TEMP/t1-c-error-rate-positive.csv
 ERROR_RATE_NONZERO_VERIFIED
 POSITIVE_EXIT=0
 ```
@@ -567,7 +569,7 @@ Sample CSV rows with non-zero `error_rate` (50% failure rate when both streams a
 2026-09-03T19:03:24+00:00,...,0.8889,0.5
 ```
 
-(3 rows at `0.0`, 4 rows at `0.5` in `/tmp/t1-c-error-rate-positive.csv`.)
+(3 rows at `0.0`, 4 rows at `0.5` in `LOCAL_TEMP/t1-c-error-rate-positive.csv`.)
 
 ### State 3 — query unavailable (`error_rate` = literal `MISSING`)
 
@@ -734,7 +736,7 @@ Waiting for deployment "hpa-eval-fixed" rollout to finish: 1 of 2 updated replic
 deployment "hpa-eval-fixed" successfully rolled out
 READY_REPLICAS_MATCH_DECLARED deployment=hpa-eval-fixed declared=2 ready=2
 LOAD_START t0=2026-09-03T23:58:12Z
-MANIFEST_T0_WRITTEN arm=fixed path=/Users/srirammadduri/Documents/Personal Projects/k8s-hpa-benchmark/results/runs/t1-a-coldstart-verify/manifest.json
+MANIFEST_T0_WRITTEN arm=fixed path=REPO_ROOT/results/runs/t1-a-coldstart-verify/manifest.json
 2026-09-03T23:58:12Z
 {
   "run_id": "t1-a-coldstart-verify",
@@ -760,7 +762,7 @@ Querying error_rate components: sum(rate(app_requests_total{experiment="fixed"}[
 Querying error_rate components: sum(rate(app_requests_total{experiment="fixed",status_code!="200"}[1m]))
 FIXED_METRICS_REQUIRED_COLUMNS_POPULATED rows=7
 ERROR_RATE_COLUMN_POPULATED rows=7/7 non_zero=0 missing=0
-Wrote 7 rows to /tmp/t1-b-positive-fixed.csv
+Wrote 7 rows to LOCAL_TEMP/t1-b-positive-fixed.csv
 ASSERTIONS_PASS declared=2 observed_matches_declared=true
 scripts/smoke_test.sh: line 51: 69166 Terminated: 15          kubectl port-forward svc/prometheus 9090:9090 -n "${NAMESPACE}" > /dev/null 2>&1
 KIND_CLUSTER_READY
@@ -871,8 +873,8 @@ Querying error_rate components: sum(rate(app_requests_total{experiment="fixed"}[
 Querying error_rate components: sum(rate(app_requests_total{experiment="fixed",status_code!="200"}[1m]))
 FIXED_METRICS_REQUIRED_COLUMNS_POPULATED rows=7
 ERROR_RATE_COLUMN_POPULATED rows=7/7 non_zero=0 missing=0
-Wrote 7 rows to /tmp/t1-c-fixed-metrics.csv
-/Users/srirammadduri/Documents/Personal Projects/k8s-hpa-benchmark/scripts/lib/common.sh: line 31: 69335 Terminated: 15          kubectl port-forward svc/prometheus 9090:9090 -n "${NAMESPACE}" > /dev/null 2>&1
+Wrote 7 rows to LOCAL_TEMP/t1-c-fixed-metrics.csv
+REPO_ROOT/scripts/lib/common.sh: line 31: 69335 Terminated: 15          kubectl port-forward svc/prometheus 9090:9090 -n "${NAMESPACE}" > /dev/null 2>&1
 FIXED_METRICS_REQUIRED_COLUMNS_POPULATED
 ERROR_RATE_COLUMN_POPULATED
 #0 building with "desktop-linux" instance using docker driver
@@ -943,7 +945,7 @@ Querying error_rate components: sum(rate(app_requests_total{experiment="fixed"}[
 Querying error_rate components: sum(rate(app_requests_total{experiment="fixed",status_code!="200"}[1m]))
 FIXED_METRICS_REQUIRED_COLUMNS_POPULATED rows=7
 ERROR_RATE_COLUMN_POPULATED rows=7/7 non_zero=4 missing=0
-Wrote 7 rows to /tmp/t1-c-error-rate-positive.csv
+Wrote 7 rows to LOCAL_TEMP/t1-c-error-rate-positive.csv
 ERROR_RATE_NONZERO_VERIFIED
 deployment.apps/hpa-eval-fixed condition met
 deployment.apps/hpa-eval-hpa condition met
@@ -961,7 +963,7 @@ Querying error_rate components: sum(rate(app_requests_total{experiment="fixed"}[
 Querying error_rate components: sum(rate(app_requests_total{experiment="fixed",status_code!="200"}[1m]))
 FIXED_METRICS_REQUIRED_COLUMNS_POPULATED rows=7
 ERROR_RATE_COLUMN_POPULATED rows=7/7 non_zero=6 missing=0
-Wrote 7 rows to /tmp/label_isolation.csv
+Wrote 7 rows to LOCAL_TEMP/label_isolation.csv
 scripts/smoke_test.sh: line 280: 69716 Terminated: 15          kubectl port-forward svc/prometheus 9090:9090 -n "${NAMESPACE}" > /dev/null 2>&1
 LOCUST_FIXED_STATS_FOUND
 LOCUST_HPA_STATS_FOUND
@@ -972,25 +974,25 @@ TEARDOWN_POLICY cluster=on-failure-only port_forwards=always background_pids=alw
 PREFLIGHT_TABLE_BEGIN
 os=Darwin
 arch=arm64
-repo_root="/Users/srirammadduri/Documents/Personal Projects/k8s-hpa-benchmark"
-repo_path_whitespace_audit=ACTIVE path="/Users/srirammadduri/Documents/Personal Projects/k8s-hpa-benchmark"
+repo_root="REPO_ROOT"
+repo_path_whitespace_audit=ACTIVE path="REPO_ROOT"
 repo_path_whitespace_audit=PASS
 sed=BSD
 date=BSD
 gcloud=Google Cloud SDK 583.0.0
 docker=Docker version 28.5.1, build e180ab8
 kubectl=Client Version: v1.35.7-dispatcher
-venv_python_path=/Users/srirammadduri/Documents/Personal Projects/k8s-hpa-benchmark/.venv/bin/python
+venv_python_path=REPO_ROOT/.venv/bin/python
 venv_python_version=Python 3.14.7
-venv_locust_version=locust 2.46.4 from /Users/srirammadduri/Documents/Personal Projects/k8s-hpa-benchmark/.venv/lib/python3.14/site-packages/locust (Python 3.14.7)
-venv_locust_path_check=PASS from=/Users/srirammadduri/Documents/Personal Projects/k8s-hpa-benchmark/.venv/lib/python3.14/site-packages/locust (Python 3.14.7)
+venv_locust_version=locust 2.46.4 from REPO_ROOT/.venv/lib/python3.14/site-packages/locust (Python 3.14.7)
+venv_locust_path_check=PASS from=REPO_ROOT/.venv/lib/python3.14/site-packages/locust (Python 3.14.7)
 kubectl_client=v1.35.7-dispatcher
 kubectl_server=v1.37.0
 kubectl_minor_skew=2
 WARNING: kubectl version skew 2 exceeds recommended max of 1 minor version; client=v1.35.7-dispatcher server=v1.37.0
 REMEDIATION: align kubectl client with cluster (e.g. gcloud components install kubectl, then ensure gcloud bin precedes brew on PATH)
 kubectl_skew_check=WARN
-docker_platform_check=PASS build_script=/Users/srirammadduri/Documents/Personal Projects/k8s-hpa-benchmark/scripts/deploy_gke.sh platform=linux/amd64
+docker_platform_check=PASS build_script=REPO_ROOT/scripts/deploy_gke.sh platform=linux/amd64
 python_version=PASS 3.14.7
 analysis_import=PASS module=collect_metrics
 analysis_import=PASS module=ingest_locust
@@ -998,29 +1000,29 @@ analysis_import=PASS module=analyze_results
 analysis_import=PASS module=fill_results
 python_package=PASS package=numpy version=2.5.2
 python_package=PASS package=matplotlib version=3.11.1
-/Users/srirammadduri/Documents/Personal Projects/k8s-hpa-benchmark/analysis/analyze_results.py:154: UserWarning: Tight layout not applied. The left and right margins cannot be made large enough to accommodate all Axes decorations.
+REPO_ROOT/analysis/analyze_results.py:154: UserWarning: Tight layout not applied. The left and right margins cannot be made large enough to accommodate all Axes decorations.
   plt.tight_layout()
-/Users/srirammadduri/Documents/Personal Projects/k8s-hpa-benchmark/analysis/analyze_results.py:185: UserWarning: Tight layout not applied. The left and right margins cannot be made large enough to accommodate all Axes decorations.
+REPO_ROOT/analysis/analyze_results.py:185: UserWarning: Tight layout not applied. The left and right margins cannot be made large enough to accommodate all Axes decorations.
   plt.tight_layout()
-/Users/srirammadduri/Documents/Personal Projects/k8s-hpa-benchmark/analysis/analyze_results.py:224: UserWarning: Tight layout not applied. The left and right margins cannot be made large enough to accommodate all Axes decorations.
+REPO_ROOT/analysis/analyze_results.py:224: UserWarning: Tight layout not applied. The left and right margins cannot be made large enough to accommodate all Axes decorations.
   plt.tight_layout()
-  Saved /var/folders/l6/dk2zrhl54g7d688zrpdrynjw0000gn/T/preflight-analyze-figures-bbgsqihk/latency_comparison.png
-  Saved /var/folders/l6/dk2zrhl54g7d688zrpdrynjw0000gn/T/preflight-analyze-figures-bbgsqihk/throughput_comparison.png
-  Saved /var/folders/l6/dk2zrhl54g7d688zrpdrynjw0000gn/T/preflight-analyze-figures-bbgsqihk/cpu_replicas.png
-  Saved /var/folders/l6/dk2zrhl54g7d688zrpdrynjw0000gn/T/preflight-analyze-figures-bbgsqihk/cost_performance.png
-analyze_plotting=PASS figures=4 fixture_dir=/Users/srirammadduri/Documents/Personal Projects/k8s-hpa-benchmark/scripts/lib/fixtures
+  Saved LOCAL_TEMP/preflight-analyze-figures-bbgsqihk/latency_comparison.png
+  Saved LOCAL_TEMP/preflight-analyze-figures-bbgsqihk/throughput_comparison.png
+  Saved LOCAL_TEMP/preflight-analyze-figures-bbgsqihk/cpu_replicas.png
+  Saved LOCAL_TEMP/preflight-analyze-figures-bbgsqihk/cost_performance.png
+analyze_plotting=PASS figures=4 fixture_dir=REPO_ROOT/scripts/lib/fixtures
 PREFLIGHT_PASS
 PREFLIGHT_TABLE_END
 deployment.apps/prometheus condition met
 [2026-09-04T00:02:02Z] HEARTBEAT trap-verify
 PS_BEFORE mode=normal pf_pid=69862 hb_pid=69863
 69862 69848 00:00 kubectl port-forward svc/prometheus 19102:9090 -n hpa-eval --context kind-hpa-eval-smoke
-69863 69848 00:00 bash /Users/srirammadduri/Documents/Personal Projects/k8s-hpa-benchmark/scripts/lib/trap_test_runner.sh normal /tmp/trap-test-normal-69007.log hpa-eval hpa-eval-smoke 19102
+69863 69848 00:00 bash REPO_ROOT/scripts/lib/trap_test_runner.sh normal LOCAL_TEMP/trap-test-normal-69007.log hpa-eval hpa-eval-smoke 19102
 PS_SNAPSHOT_BEFORE_BEGIN
 [2026-09-04T00:02:02Z] HEARTBEAT trap-verify
 69862 69848 00:00 kubectl port-forward svc/prometheus 19102:9090 -n hpa-eval --context kind-hpa-eval-smoke
-69863 69848 00:00 bash /Users/srirammadduri/Documents/Personal Projects/k8s-hpa-benchmark/scripts/lib/trap_test_runner.sh normal /tmp/trap-test-normal-69007.log hpa-eval hpa-eval-smoke 19102
-srirammadduri    69862   0.0  0.1 411385328  26560   ??  R     5:02PM   0:00.01 kubectl port-forward svc/prometheus 19102:9090 -n hpa-eval --context kind-hpa-eval-smoke
+69863 69848 00:00 bash REPO_ROOT/scripts/lib/trap_test_runner.sh normal LOCAL_TEMP/trap-test-normal-69007.log hpa-eval hpa-eval-smoke 19102
+LOCAL_ACCOUNT    69862   0.0  0.1 411385328  26560   ??  R     5:02PM   0:00.01 kubectl port-forward svc/prometheus 19102:9090 -n hpa-eval --context kind-hpa-eval-smoke
 PS_SNAPSHOT_BEFORE_END
 pf_pid=69862
 pf_port=19102
@@ -1028,8 +1030,8 @@ hb_pid=69863
 PS_SNAPSHOT_BEFORE_BEGIN
 [2026-09-04T00:02:02Z] HEARTBEAT trap-verify
 69862 69848 00:00 kubectl port-forward svc/prometheus 19102:9090 -n hpa-eval --context kind-hpa-eval-smoke
-69863 69848 00:00 bash /Users/srirammadduri/Documents/Personal Projects/k8s-hpa-benchmark/scripts/lib/trap_test_runner.sh normal /tmp/trap-test-normal-69007.log hpa-eval hpa-eval-smoke 19102
-srirammadduri    69862   0.0  0.1 411385328  26560   ??  R     5:02PM   0:00.01 kubectl port-forward svc/prometheus 19102:9090 -n hpa-eval --context kind-hpa-eval-smoke
+69863 69848 00:00 bash REPO_ROOT/scripts/lib/trap_test_runner.sh normal LOCAL_TEMP/trap-test-normal-69007.log hpa-eval hpa-eval-smoke 19102
+LOCAL_ACCOUNT    69862   0.0  0.1 411385328  26560   ??  R     5:02PM   0:00.01 kubectl port-forward svc/prometheus 19102:9090 -n hpa-eval --context kind-hpa-eval-smoke
 PS_SNAPSHOT_BEFORE_END
 TRAP_FIRED reason=EXIT
 PS_AFTER mode=normal pf_pid=69862 hb_pid=69863
@@ -1040,12 +1042,12 @@ TRAP_SCENARIO_PASS mode=normal
 [2026-09-04T00:02:04Z] HEARTBEAT trap-verify
 PS_BEFORE mode=error pf_pid=69905 hb_pid=69906
 69905 69891 00:00 kubectl port-forward svc/prometheus 19263:9090 -n hpa-eval --context kind-hpa-eval-smoke
-69906 69891 00:00 bash /Users/srirammadduri/Documents/Personal Projects/k8s-hpa-benchmark/scripts/lib/trap_test_runner.sh error /tmp/trap-test-error-69007.log hpa-eval hpa-eval-smoke 19263
+69906 69891 00:00 bash REPO_ROOT/scripts/lib/trap_test_runner.sh error LOCAL_TEMP/trap-test-error-69007.log hpa-eval hpa-eval-smoke 19263
 PS_SNAPSHOT_BEFORE_BEGIN
 69905 69891 00:00 kubectl port-forward svc/prometheus 19263:9090 -n hpa-eval --context kind-hpa-eval-smoke
 [2026-09-04T00:02:04Z] HEARTBEAT trap-verify
-69906 69891 00:00 bash /Users/srirammadduri/Documents/Personal Projects/k8s-hpa-benchmark/scripts/lib/trap_test_runner.sh error /tmp/trap-test-error-69007.log hpa-eval hpa-eval-smoke 19263
-srirammadduri    69905   0.0  0.1 411384816  20928   ??  R     5:02PM   0:00.01 kubectl port-forward svc/prometheus 19263:9090 -n hpa-eval --context kind-hpa-eval-smoke
+69906 69891 00:00 bash REPO_ROOT/scripts/lib/trap_test_runner.sh error LOCAL_TEMP/trap-test-error-69007.log hpa-eval hpa-eval-smoke 19263
+LOCAL_ACCOUNT    69905   0.0  0.1 411384816  20928   ??  R     5:02PM   0:00.01 kubectl port-forward svc/prometheus 19263:9090 -n hpa-eval --context kind-hpa-eval-smoke
 PS_SNAPSHOT_BEFORE_END
 pf_pid=69905
 pf_port=19263
@@ -1053,8 +1055,8 @@ hb_pid=69906
 PS_SNAPSHOT_BEFORE_BEGIN
 69905 69891 00:00 kubectl port-forward svc/prometheus 19263:9090 -n hpa-eval --context kind-hpa-eval-smoke
 [2026-09-04T00:02:04Z] HEARTBEAT trap-verify
-69906 69891 00:00 bash /Users/srirammadduri/Documents/Personal Projects/k8s-hpa-benchmark/scripts/lib/trap_test_runner.sh error /tmp/trap-test-error-69007.log hpa-eval hpa-eval-smoke 19263
-srirammadduri    69905   0.0  0.1 411384816  20928   ??  R     5:02PM   0:00.01 kubectl port-forward svc/prometheus 19263:9090 -n hpa-eval --context kind-hpa-eval-smoke
+69906 69891 00:00 bash REPO_ROOT/scripts/lib/trap_test_runner.sh error LOCAL_TEMP/trap-test-error-69007.log hpa-eval hpa-eval-smoke 19263
+LOCAL_ACCOUNT    69905   0.0  0.1 411384816  20928   ??  R     5:02PM   0:00.01 kubectl port-forward svc/prometheus 19263:9090 -n hpa-eval --context kind-hpa-eval-smoke
 PS_SNAPSHOT_BEFORE_END
 TRAP_FIRED reason=EXIT
 PS_AFTER mode=error pf_pid=69905 hb_pid=69906
@@ -1065,12 +1067,12 @@ TRAP_SCENARIO_PASS mode=error
 [2026-09-04T00:02:06Z] HEARTBEAT trap-verify
 PS_BEFORE mode=sigint pf_pid=69951 hb_pid=69952
 69951 69937 00:00 kubectl port-forward svc/prometheus 19330:9090 -n hpa-eval --context kind-hpa-eval-smoke
-69952 69937 00:00 bash /Users/srirammadduri/Documents/Personal Projects/k8s-hpa-benchmark/scripts/lib/trap_test_runner.sh sigint /tmp/trap-test-sigint-69007.log hpa-eval hpa-eval-smoke 19330
+69952 69937 00:00 bash REPO_ROOT/scripts/lib/trap_test_runner.sh sigint LOCAL_TEMP/trap-test-sigint-69007.log hpa-eval hpa-eval-smoke 19330
 PS_SNAPSHOT_BEFORE_BEGIN
 69951 69937 00:00 kubectl port-forward svc/prometheus 19330:9090 -n hpa-eval --context kind-hpa-eval-smoke
 [2026-09-04T00:02:06Z] HEARTBEAT trap-verify
-69952 69937 00:00 bash /Users/srirammadduri/Documents/Personal Projects/k8s-hpa-benchmark/scripts/lib/trap_test_runner.sh sigint /tmp/trap-test-sigint-69007.log hpa-eval hpa-eval-smoke 19330
-srirammadduri    69951   0.0  0.1 411384816  22688   ??  R     5:02PM   0:00.01 kubectl port-forward svc/prometheus 19330:9090 -n hpa-eval --context kind-hpa-eval-smoke
+69952 69937 00:00 bash REPO_ROOT/scripts/lib/trap_test_runner.sh sigint LOCAL_TEMP/trap-test-sigint-69007.log hpa-eval hpa-eval-smoke 19330
+LOCAL_ACCOUNT    69951   0.0  0.1 411384816  22688   ??  R     5:02PM   0:00.01 kubectl port-forward svc/prometheus 19330:9090 -n hpa-eval --context kind-hpa-eval-smoke
 PS_SNAPSHOT_BEFORE_END
 pf_pid=69951
 pf_port=19330
@@ -1078,8 +1080,8 @@ hb_pid=69952
 PS_SNAPSHOT_BEFORE_BEGIN
 69951 69937 00:00 kubectl port-forward svc/prometheus 19330:9090 -n hpa-eval --context kind-hpa-eval-smoke
 [2026-09-04T00:02:06Z] HEARTBEAT trap-verify
-69952 69937 00:00 bash /Users/srirammadduri/Documents/Personal Projects/k8s-hpa-benchmark/scripts/lib/trap_test_runner.sh sigint /tmp/trap-test-sigint-69007.log hpa-eval hpa-eval-smoke 19330
-srirammadduri    69951   0.0  0.1 411384816  22688   ??  R     5:02PM   0:00.01 kubectl port-forward svc/prometheus 19330:9090 -n hpa-eval --context kind-hpa-eval-smoke
+69952 69937 00:00 bash REPO_ROOT/scripts/lib/trap_test_runner.sh sigint LOCAL_TEMP/trap-test-sigint-69007.log hpa-eval hpa-eval-smoke 19330
+LOCAL_ACCOUNT    69951   0.0  0.1 411384816  22688   ??  R     5:02PM   0:00.01 kubectl port-forward svc/prometheus 19330:9090 -n hpa-eval --context kind-hpa-eval-smoke
 PS_SNAPSHOT_BEFORE_END
 TRAP_FIRED reason=TERM
 TRAP_FIRED reason=TERM
@@ -1107,16 +1109,16 @@ Querying rps: sum(rate(app_requests_total{experiment="fixed",status_code="200"}[
 Querying error_rate components: sum(rate(app_requests_total{experiment="fixed"}[1m]))
 Querying error_rate components: sum(rate(app_requests_total{experiment="fixed",status_code!="200"}[1m]))
 Traceback (most recent call last):
-  File "/Users/srirammadduri/Documents/Personal Projects/k8s-hpa-benchmark/analysis/collect_metrics.py", line 452, in <module>
+  File "REPO_ROOT/analysis/collect_metrics.py", line 452, in <module>
     main()
     ~~~~^^
-  File "/Users/srirammadduri/Documents/Personal Projects/k8s-hpa-benchmark/analysis/collect_metrics.py", line 413, in main
+  File "REPO_ROOT/analysis/collect_metrics.py", line 413, in main
     rows = collect(
         mode=args.mode,
     ...<10 lines>...
         run_label_isolation_check=not args.skip_label_isolation,
     )
-  File "/Users/srirammadduri/Documents/Personal Projects/k8s-hpa-benchmark/analysis/collect_metrics.py", line 343, in collect
+  File "REPO_ROOT/analysis/collect_metrics.py", line 343, in collect
     raise RuntimeError(msg)
 RuntimeError: ASSERTION FAILED: fixed arm expected 2 replicas, observed 1
 deployment.apps/hpa-eval-fixed scaled
@@ -1124,7 +1126,7 @@ scripts/smoke_test.sh: line 512: 70011 Terminated: 15          kubectl port-forw
 Waiting for deployment "hpa-eval-fixed" rollout to finish: 1 of 2 updated replicas are available...
 deployment "hpa-eval-fixed" successfully rolled out
 NEGATIVE_FIXED_REPLICA_ASSERT_PASS
-ASSERTION FAILED: required column rps has zero populated rows in /tmp/t1-b-empty-col-fixed.csv
+ASSERTION FAILED: required column rps has zero populated rows in LOCAL_TEMP/t1-b-empty-col-fixed.csv
 NEGATIVE_EMPTY_METRICS_COLUMN_PASS
 ASSERTION FAILED: publication blocked; locust_hpa_stats.csv is absent
 NEGATIVE_MISSING_LOCUST_HPA_PASS
@@ -1137,16 +1139,16 @@ deployment "hpa-eval-hpa" successfully rolled out
 HPA_NEVER_SCALED peak_observed=1 minReplicas=1
 ANCHOR_WINDOW_ENFORCED start=2026-09-04T00:01:20+00:00 end=2026-09-04T00:02:50+00:00
 Traceback (most recent call last):
-  File "/Users/srirammadduri/Documents/Personal Projects/k8s-hpa-benchmark/analysis/collect_metrics.py", line 452, in <module>
+  File "REPO_ROOT/analysis/collect_metrics.py", line 452, in <module>
     main()
     ~~~~^^
-  File "/Users/srirammadduri/Documents/Personal Projects/k8s-hpa-benchmark/analysis/collect_metrics.py", line 413, in main
+  File "REPO_ROOT/analysis/collect_metrics.py", line 413, in main
     rows = collect(
         mode=args.mode,
     ...<10 lines>...
         run_label_isolation_check=not args.skip_label_isolation,
     )
-  File "/Users/srirammadduri/Documents/Personal Projects/k8s-hpa-benchmark/analysis/collect_metrics.py", line 292, in collect
+  File "REPO_ROOT/analysis/collect_metrics.py", line 292, in collect
     raise RuntimeError(msg)
 RuntimeError: HPA_NEVER_SCALED peak_observed=1 minReplicas=1
 scripts/smoke_test.sh: line 659: 70089 Terminated: 15          kubectl port-forward svc/prometheus 9090:9090 -n "${NAMESPACE}" > /dev/null 2>&1
@@ -1154,13 +1156,13 @@ NEGATIVE_HPA_NEVER_SCALED_PASS
 deployment.apps/hpa-eval-fixed condition met
 deployment.apps/hpa-eval-hpa condition met
 Traceback (most recent call last):
-  File "/Users/srirammadduri/Documents/Personal Projects/k8s-hpa-benchmark/analysis/collect_metrics.py", line 452, in <module>
+  File "REPO_ROOT/analysis/collect_metrics.py", line 452, in <module>
     main()
     ~~~~^^
-  File "/Users/srirammadduri/Documents/Personal Projects/k8s-hpa-benchmark/analysis/collect_metrics.py", line 411, in main
+  File "REPO_ROOT/analysis/collect_metrics.py", line 411, in main
     assert_label_isolation(args.prometheus_url, args.mode, start_ts, end_ts)
     ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/srirammadduri/Documents/Personal Projects/k8s-hpa-benchmark/analysis/collect_metrics.py", line 222, in assert_label_isolation
+  File "REPO_ROOT/analysis/collect_metrics.py", line 222, in assert_label_isolation
     raise RuntimeError(
         f"LABEL_ISOLATION_FAILED no request increase for experiment={mode} in {window_sec}s window"
     )
@@ -1213,7 +1215,7 @@ PROJECT_CLUSTER_VERIFICATION_REQUIRED
 SMOKE_SUITE_PASS
 ```
 
-Full log: `/tmp/t1-f-full-honest-verify.log` (691 lines).
+Full log: `LOCAL_TEMP/t1-f-full-honest-verify.log` (691 lines).
 
 - **Surprises:** Prior `--full` without `--env-file` skipped GKE guards and reused locust artifacts (ingest-only). Empty histogram on cold pods caused `verify_metric_contract` to fail silently at `grep app_request_latency_seconds_bucket` (set -e), truncating the suite before locust.
 
@@ -1226,7 +1228,7 @@ Full log: `/tmp/t1-f-full-honest-verify.log` (691 lines).
 - **Issue 2 — coverage threshold:** Added `MIN_COLUMN_COVERAGE_RATIO=0.95` in `analysis/metrics_contract.py`; collectors and `analyze_results.py` print `METRICS_COLUMN_COVERAGE` per column and abort with `METRICS_COVERAGE_BELOW_THRESHOLD`. Benchmark collection window anchored `t0+60s` → `t0+RUN_TIME` (no trailing `iso_now` bucket). Negative test `low-metrics-coverage` (50% CSV) added to `--full`.
 - **App resources (`deployment-hpa.yaml`):** CPU request `100m`, limit `200m`; memory request `128Mi`, limit `256Mi`.
 - **Verification command:** `bash scripts/smoke_test.sh --full --env-file .env`
-- **Elapsed time:** ~15.6 min (938s; log `/tmp/t1-gke-prep-full11.log`)
+- **Elapsed time:** ~15.6 min (938s; log `LOCAL_TEMP/t1-gke-prep-full11.log`)
 - **Exit code:** 0 (`SMOKE_SUITE_PASS`)
 
 ### Coverage lines (representative from full run)
@@ -1256,8 +1258,8 @@ SMOKE_SUITE_PASS
 - **Issue 2 — Prometheus state leak:** `reset_prometheus_deployment` + `wait_prometheus_scrape_ready` at `--full` suite start and after `check_error_rate_positive`; no operator restart instruction required.
 - **Smoke shape:** `locustfile_smoke.py` extended to 10m with sustained low load after burst (removed early `runner.quit()` that stopped traffic at 4m while `RUN_TIME=10m`).
 - **Verification commands:**
-  - `bash scripts/smoke_test.sh --check fixed-metrics` — 41/41 columns at 1.0000 (`/tmp/t1-burst-coverage-test.log`)
-  - `bash scripts/smoke_test.sh --check locust-authority` — `SUMMARY attempted=1 passed=1` (`/tmp/t1-burst-locust.log`, ~22.6 min)
+  - `bash scripts/smoke_test.sh --check fixed-metrics` — 41/41 columns at 1.0000 (`LOCAL_TEMP/t1-burst-coverage-test.log`)
+  - `bash scripts/smoke_test.sh --check locust-authority` — `SUMMARY attempted=1 passed=1` (`LOCAL_TEMP/t1-burst-locust.log`, ~22.6 min)
 - **`--full` wall clock:** Exceeds 45 min with 600s metric windows (stopped at locust on first attempt before smoke-shape fix). Individual checks above pass the anchor and coverage gates.
 
 ### Anchor + coverage (locust-authority, fixed arm)
@@ -1400,7 +1402,7 @@ Failure share                        12.07%                   0.30%
 ========================================================================
 
 All figures saved to docs/figures/run-20260904T230444Z/
-MANIFEST_ALLOW_PARTIAL_COVERAGE path=/Users/srirammadduri/Documents/Personal Projects/k8s-hpa-benchmark/results/runs/run-20260904T230444Z/manifest.json
+MANIFEST_ALLOW_PARTIAL_COVERAGE path=REPO_ROOT/results/runs/run-20260904T230444Z/manifest.json
 ```
 
 **Latency PNG dimensions (sips):** `latency_client_run_level.png` 1500×750; `latency_client_window.png` 2100×750; `latency_comparison.png` 2100×750.

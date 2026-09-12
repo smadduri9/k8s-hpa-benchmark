@@ -33,7 +33,7 @@ usage() {
   cat <<'EOF'
 Usage:
   bash scripts/smoke_test.sh --check harness
-  bash scripts/smoke_test.sh --check coldstart|assertions|fixed-metrics|label-isolation|locust-authority|locust-warmup-validate|aggregate-runs|cold-start-association|preflight-traps|handoff-docs|error-rate-positive|event-loop-not-blocked|endpoints-never-empty|readiness-sweep|shape-curve|shape-wiring|bucket-fieldnames|phase5-resume|phase5-matrix-scope|hpa-stock|coldstart-collector|coldstart-collector-hang
+  bash scripts/smoke_test.sh --check coldstart|assertions|fixed-metrics|label-isolation|locust-authority|locust-warmup-validate|aggregate-runs|cold-start-association|preflight-traps|reproduce-docs|handoff-docs|error-rate-positive|event-loop-not-blocked|endpoints-never-empty|readiness-sweep|shape-curve|shape-wiring|bucket-fieldnames|phase5-resume|phase5-matrix-scope|hpa-stock|coldstart-collector|coldstart-collector-hang
   bash scripts/smoke_test.sh --check shape-curve --shape NAME
   bash scripts/smoke_test.sh --negative-test fixed-replica-assert|empty-metrics-column|low-metrics-coverage|missing-locust-hpa|missing-locust-fixed|hpa-never-scaled|label-isolation|coldstart-readiness|liveness-restarts-hung
   bash scripts/smoke_test.sh --full --env-file .env [--reuse-artifacts]
@@ -538,7 +538,7 @@ print(f"ENDPOINTS_MIN_OBSERVED min={min_ready} samples={samples} duration_sec={d
 }
 
 check_endpoints_never_empty() {
-  # Cascade detector only: kind in-container load cannot tune probes (see PROGRESS.md).
+  # Cascade detector only: kind load cannot tune probes (see docs/archive/development/PROGRESS.md).
   smoke_endpoints_prepare_cluster
 
   local threads health_max_ms chosen_threads=0 target_pod sample_ms output
@@ -585,7 +585,7 @@ print((time.perf_counter() - start) * 1000.0)' 2>/dev/null || echo "0")"
 }
 
 check_readiness_sweep() {
-  # Cascade detector only: kind in-container load cannot tune probes (see PROGRESS.md).
+  # Cascade detector only: kind load cannot tune probes (see docs/archive/development/PROGRESS.md).
   smoke_endpoints_prepare_cluster
 
   local -a sweep_configs=("1:3" "2:3" "2:6" "3:3" "3:6")
@@ -1199,13 +1199,12 @@ check_preflight_traps() {
   echo "TRAP_CLEANUP_VERIFIED"
 }
 
-check_handoff_docs() {
-  test -f "${REPO_ROOT}/HANDOFF.md"
-  grep -q "run_benchmark.sh" "${REPO_ROOT}/HANDOFF.md"
-  grep -q "smoke" "${REPO_ROOT}/HANDOFF.md"
-  echo "HANDOFF_MD_PRESENT"
-  echo "HANDOFF_COMMAND_ORDER_VALIDATED"
-  echo "HANDOFF_TRUST_CHECKS_PRESENT"
+check_reproduce_docs() {
+  test -f "${REPO_ROOT}/REPRODUCE.md"
+  grep -q "run_phase5_matrix.sh" "${REPO_ROOT}/REPRODUCE.md"
+  grep -q "smoke" "${REPO_ROOT}/REPRODUCE.md"
+  echo "REPRODUCE_MD_PRESENT"
+  echo "REPRODUCE_WORKFLOW_REFERENCES_PRESENT"
 }
 
 smoke_warm_fixed_traffic() {
@@ -2365,7 +2364,7 @@ elif [[ -n "${CHECK}" ]]; then
     readiness-sweep) check_readiness_sweep ;;
     readiness-repeat-control) check_readiness_repeat_control ;;
     assertions) check_assertions ;;
-    handoff-docs) check_handoff_docs ;;
+    reproduce-docs|handoff-docs) check_reproduce_docs ;;
     shape-curve) check_shape_curve ;;
     shape-wiring) check_shape_wiring ;;
     bucket-fieldnames) check_bucket_fieldnames ;;

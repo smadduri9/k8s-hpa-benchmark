@@ -53,9 +53,8 @@ HURST_NOTE = (
 ENVELOPE_CLAIM = (
     "These shapes derive the load ENVELOPE from a production trace. They do not "
     "replay its arrival process. Locust generates requests from N concurrent users "
-    "with wait_time uniform(1,3)s; the superposition of independent renewal "
-    "processes is approximately Poisson (Palm-Khintchine), so delivered traffic is "
-    "near-Poisson within each plateau irrespective of the source. hurst_native is "
+    "with wait_time uniform(1,3)s. Delivered arrival statistics were not "
+    "established by the retained artifacts. hurst_native is "
     "reported as a property of the SOURCE TRACE and is not a property of the "
     "generated load."
 )

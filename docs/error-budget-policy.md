@@ -39,11 +39,11 @@ The proposed client SLO is not adjudicated by the Phase 5 bundle. Stored server 
 
 ## What this policy does not cover
 
-- **Multi-window burn-rate alerting** (e.g. 14.4× tiers for a 99.9% SLO over 30 days). An 18-minute benchmark has no compliance period; those constants do not apply. See [`RESULTS.md`](https://github.com/smadduri9/k8s-hpa-benchmark/blob/main/RESULTS.md#slo-and-error-budget-calibrated-runs). **No alert rules are committed.**
+- **Multi-window burn-rate alerting** (e.g. 14.4× tiers for a 99.9% SLO over 30 days). An 18-minute benchmark has no compliance period; those constants do not apply. See [`RESULTS.md`](../RESULTS.md#historical--superseded-work). **No alert rules are committed.**
 - **Locust failure rate** (availability errors). That is a separate metric from latency-SLO misses; see per-arm request and failure counts in the v1.1 raw Locust CSVs.
 
 ## Related documents
 
-- [`RESULTS.md`](https://github.com/smadduri9/k8s-hpa-benchmark/blob/main/RESULTS.md#slo-and-error-budget-calibrated-runs) — current findings and historical scope
+- [`RESULTS.md`](../RESULTS.md#historical--superseded-work) — current findings and historical scope
 - [`POSTMORTEM.md`](https://github.com/smadduri9/k8s-hpa-benchmark/blob/main/POSTMORTEM.md) — unequal `minReplicas` confound and detection
 - [`docs/phase5-bucket-schema.md`](https://github.com/smadduri9/k8s-hpa-benchmark/blob/main/docs/phase5-bucket-schema.md) — implemented server bucket schema and aggregation limitations

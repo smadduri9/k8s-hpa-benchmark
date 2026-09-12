@@ -1,6 +1,8 @@
+> Archived development history. Commands and claims describe an earlier state and are not the current runbook. Local paths, temporary-log references and account identifiers have been sanitized; measurements have not been changed. See [REPRODUCE.md](../../../REPRODUCE.md).
+
 # HANDOFF — completed experiments and publication v1.1
 
-The cluster is gone. Use the [public evidence package](artifacts/v1.1/README.md) to verify current findings without cloud resources.
+The cluster is gone. Use the [public evidence package](../../../artifacts/v1.1/README.md) to verify current findings without cloud resources.
 
 ```bash
 ".venv/bin/python" -B artifacts/v1.1/verify.py

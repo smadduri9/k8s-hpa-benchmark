@@ -1,3 +1,5 @@
+> Archived development plan. Historical tasks and commands are not active instructions. See [REPRODUCE.md](../../../REPRODUCE.md).
+
 ---
 name: Phase 5 measurement run
 overview: Preflight from Mac (global CPUS_ALL_REGIONS + runner stopped). Allocatable gate, P1 probe, flash-first 54-arm matrix from Mac in tiers with caffeinate. Cluster is 3×e2-standard-4 (global CPUS 12; increase declined).
@@ -53,7 +55,7 @@ Plan only. No cluster until every free gate below is green. Do not guess `SHAPE_
 
 Warm-up (settled): real Locust traffic at each shape’s **minimum plateau** for 5 minutes; `t0` after warm-up **and** after `spec_replicas == minReplicas`; published window is the following **18 minutes only**. If that assertion fails, abort the repetition (`WARMUP_TRIGGERED_SCALE`). Record end-of-warm-up CPU in the manifest.
 
-**Approved corrections (C1–C3):** preflight from Mac before cluster create (`CPUS_ALL_REGIONS` + runner VM stopped); name the `FIRST_REQUEST_SERVED` image break; arm-level resume with **flash first**. **Cluster sizing:** `GKE_NUM_NODES=3`, `GKE_MACHINE_TYPE=e2-standard-4` (global **CPUS_ALL_REGIONS=12**; Google declined increase on usage-history grounds despite paid billing). Runner VM cannot run concurrently. Matrix runs from the **Mac** in tiers. **Throughput:** ~10.5 usable cores at ~0.1 core-seconds/request caps sustained load near **105 RPS**; realistic target **60–80 RPS** — below SLO-Scaler's 120–280 range (no parity claim). See [`RESULTS.md`](RESULTS.md) § Cluster sizing constraint.
+**Approved corrections (C1–C3):** preflight from Mac before cluster create (`CPUS_ALL_REGIONS` + runner VM stopped); name the `FIRST_REQUEST_SERVED` image break; arm-level resume with **flash first**. **Cluster sizing:** `GKE_NUM_NODES=3`, `GKE_MACHINE_TYPE=e2-standard-4` (global **CPUS_ALL_REGIONS=12**; Google declined increase on usage-history grounds despite paid billing). Runner VM cannot run concurrently. Matrix runs from the **Mac** in tiers. **Throughput:** ~10.5 usable cores at ~0.1 core-seconds/request caps sustained load near **105 RPS**; realistic target **60–80 RPS** — below SLO-Scaler's 120–280 range (no parity claim). See [`RESULTS.md`](../../../RESULTS.md) § Cluster sizing constraint.
 
 ---
 
@@ -72,7 +74,7 @@ require_env CLUSTER_NAME
 require_env ARTIFACT_REGISTRY_REPO
 ```
 
-Also read after `load_env_file` (defaults live in [`scripts/lib/gke_shape.sh`](scripts/lib/gke_shape.sh), overridable from `.env`): `NAMESPACE` (default `hpa-eval`), `GKE_MACHINE_TYPE`, `GKE_NUM_NODES`, `NODE_DISK_SIZE_GB`.
+Also read after `load_env_file` (defaults live in [`scripts/lib/gke_shape.sh`](../../../scripts/lib/gke_shape.sh), overridable from `.env`): `NAMESPACE` (default `hpa-eval`), `GKE_MACHINE_TYPE`, `GKE_NUM_NODES`, `NODE_DISK_SIZE_GB`.
 
 Create invocation:
 
@@ -87,9 +89,9 @@ Create invocation:
         --release-channel=regular
 ```
 
-[`.env.example`](.env.example) documents only: `PROJECT_ID`, `REGION`, `ZONE`, `CLUSTER_NAME`, `ARTIFACT_REGISTRY_REPO`.
+[`.env.example`](../../../.env.example) documents only: `PROJECT_ID`, `REGION`, `ZONE`, `CLUSTER_NAME`, `ARTIFACT_REGISTRY_REPO`.
 
-[`scripts/lib/gke_shape.sh`](scripts/lib/gke_shape.sh) defaults today:
+[`scripts/lib/gke_shape.sh`](../../../scripts/lib/gke_shape.sh) defaults today:
 
 ```6:14:scripts/lib/gke_shape.sh
 GKE_NUM_NODES="${GKE_NUM_NODES:-3}"
@@ -102,7 +104,7 @@ GKE_CPUS_PER_NODE=4
 
 ### 2. Deployments — resources and probes
 
-Both [`k8s/deployment-fixed.yaml`](k8s/deployment-fixed.yaml) and [`k8s/deployment-hpa.yaml`](k8s/deployment-hpa.yaml) currently:
+Both [`k8s/deployment-fixed.yaml`](../../../k8s/deployment-fixed.yaml) and [`k8s/deployment-hpa.yaml`](../../../k8s/deployment-hpa.yaml) currently:
 
 - resources: request `cpu: "100m"` / `memory: "128Mi"`; limit `cpu: "200m"` / `memory: "256Mi"`
 - `replicas: 3` (fixed), `replicas: 1` (hpa; HPA `minReplicas` is 3)
@@ -134,7 +136,7 @@ Both [`k8s/deployment-fixed.yaml`](k8s/deployment-fixed.yaml) and [`k8s/deployme
             timeoutSeconds: 1
 ```
 
-### 3. [`k8s/hpa.yaml`](k8s/hpa.yaml) in full
+### 3. [`k8s/hpa.yaml`](../../../k8s/hpa.yaml) in full
 
 ```1:40:k8s/hpa.yaml
 apiVersion: autoscaling/v2
@@ -178,9 +180,9 @@ spec:
       selectPolicy: Max
 ```
 
-This `behavior:` block is the tuned arm. Kubernetes defaults (when `behavior` is omitted) are **scaleDown stabilization 300s**, **scaleUp policy periodSeconds 15**. That deviation is disclosed in [`RESULTS.md`](RESULTS.md) and unmeasured — the stock arm exists to measure it.
+This `behavior:` block is the tuned arm. Kubernetes defaults (when `behavior` is omitted) are **scaleDown stabilization 300s**, **scaleUp policy periodSeconds 15**. That deviation is disclosed in [`RESULTS.md`](../../../RESULTS.md) and unmeasured — the stock arm exists to measure it.
 
-### 4. [`scripts/run_benchmark.sh`](scripts/run_benchmark.sh) — parsing, arm loop, `SHAPE_MEAN_USERS`
+### 4. [`scripts/run_benchmark.sh`](../../../scripts/run_benchmark.sh) — parsing, arm loop, `SHAPE_MEAN_USERS`
 
 Argument parsing: `--env-file`, `--smoke`, `--repetitions`, `--run-id`, `--fixed-host`, `--hpa-host`, `--cold-start-only`, `--arm`, `--shape`.
 
@@ -195,13 +197,13 @@ Arm loop today is **fixed then hpa**, sequential, inside `run_one_repetition` (c
 
 ### 5. Cold-start timing code
 
-**Experiment cold-start (exists):** [`scripts/lib/cold_start.sh`](scripts/lib/cold_start.sh) — scale to 0, wait pods gone, scale to declared, `rollout status` (default 180s), `READY_REPLICAS_MATCH_DECLARED`. This is **not** a per-event waterfall.
+**Experiment cold-start (exists):** [`scripts/lib/cold_start.sh`](../../../scripts/lib/cold_start.sh) — scale to 0, wait pods gone, scale to declared, `rollout status` (default 180s), `READY_REPLICAS_MATCH_DECLARED`. This is **not** a per-event waterfall.
 
 **Scale-out waterfall collector:** **NOT FOUND** (no watch of HPA decisions, pod conditions, Pulled-event message parse, or first-request-served).
 
-**First-request-served timestamp in the app:** **NOT FOUND**. [`app/main.py`](app/main.py) increments `app_requests_total` / `app_active_requests` but does not log a first-request ISO time.
+**First-request-served timestamp in the app:** **NOT FOUND**. [`app/main.py`](../../../app/main.py) increments `app_requests_total` / `app_active_requests` but does not log a first-request ISO time.
 
-**Scrape pre-roll (not Locust warm-up):** `METRICS_RATE_PREROLL_SEC` default **60** in [`scripts/lib/common.sh`](scripts/lib/common.sh). Idle scrape does not move `app_requests_total`; `rate()` at `t0` can still be empty.
+**Scrape pre-roll (not Locust warm-up):** `METRICS_RATE_PREROLL_SEC` default **60** in [`scripts/lib/common.sh`](../../../scripts/lib/common.sh). Idle scrape does not move `app_requests_total`; `rate()` at `t0` can still be empty.
 
 ### 6. [`HANDOFF.md`](HANDOFF.md) — runner VM and orphan cleanup
 
@@ -225,13 +227,13 @@ HANDOFF cluster shape (`3 × e2-standard-2`, 100m/200m, maxReplicas 10) is **sta
 
 ### Other facts used below
 
-- Threadpool **40**: documented in [`RESULTS.md`](RESULTS.md); do **not** change it. `active_requests` cannot show queueing past 40 in-flight `/cpu` calls per pod. Treat **40** as the saturation ceiling for that series.
-- Histogram bucket columns: specified in [`docs/phase5-bucket-schema.md`](docs/phase5-bucket-schema.md), **NOT IMPLEMENTED**.
+- Threadpool **40**: documented in [`RESULTS.md`](../../../RESULTS.md); do **not** change it. `active_requests` cannot show queueing past 40 in-flight `/cpu` calls per pod. Treat **40** as the saturation ceiling for that series.
+- Histogram bucket columns: specified in [`docs/phase5-bucket-schema.md`](../../../docs/phase5-bucket-schema.md), **NOT IMPLEMENTED**.
 - Prometheus GKE: PVC exists; `--storage.tsdb.retention.time=2h` still. Per-arm collection immediately after Locust is why 2h worked; keep collecting immediately after each arm.
 - Locustfiles already expose `min_users()` = `min(_scaled_plateau_users())`.
-- No `kubernetes` package in [`requirements-tooling.txt`](requirements-tooling.txt). Collector uses `kubectl ... --watch-only`, not a new dependency.
-- Quota math: [`scripts/lib/preflight_gke_quota.py`](scripts/lib/preflight_gke_quota.py) checks **regional** SSD/CPUS/INSTANCES and **global** `CPUS_ALL_REGIONS`. Regional: `GKE_NUM_NODES * NODE_DISK_SIZE_GB` SSD, `GKE_NUM_NODES * GKE_CPUS_PER_NODE` CPUS. Global: cluster CPUs **plus any running VM CPUs** must fit `CPUS_ALL_REGIONS` (limit **12**). The Phase 3 runner VM (`hpa-bench-runner`, 4 vCPU) must be **STOPPED** before cluster create — preflight fails `RUNNER_VM_MUST_BE_STOPPED` if it is running. Google declined CPUS_ALL_REGIONS increase on usage-history grounds (billed spend $0 despite credits). Do not contact Sales or try another region.
-- Resume today: **NOT FOUND**. [`scripts/run_benchmark.sh`](scripts/run_benchmark.sh) `main()` loops `rep=1..REPETITIONS` with no skip of completed `rep-*` dirs. A crash redoes work unless Phase 5 adds arm-level markers (Step 4 / Step 14).
+- No `kubernetes` package in [`requirements-tooling.txt`](../../../requirements-tooling.txt). Collector uses `kubectl ... --watch-only`, not a new dependency.
+- Quota math: [`scripts/lib/preflight_gke_quota.py`](../../../scripts/lib/preflight_gke_quota.py) checks **regional** SSD/CPUS/INSTANCES and **global** `CPUS_ALL_REGIONS`. Regional: `GKE_NUM_NODES * NODE_DISK_SIZE_GB` SSD, `GKE_NUM_NODES * GKE_CPUS_PER_NODE` CPUS. Global: cluster CPUs **plus any running VM CPUs** must fit `CPUS_ALL_REGIONS` (limit **12**). The Phase 3 runner VM (`hpa-bench-runner`, 4 vCPU) must be **STOPPED** before cluster create — preflight fails `RUNNER_VM_MUST_BE_STOPPED` if it is running. Google declined CPUS_ALL_REGIONS increase on usage-history grounds (billed spend $0 despite credits). Do not contact Sales or try another region.
+- Resume today: **NOT FOUND**. [`scripts/run_benchmark.sh`](../../../scripts/run_benchmark.sh) `main()` loops `rep=1..REPETITIONS` with no skip of completed `rep-*` dirs. A crash redoes work unless Phase 5 adds arm-level markers (Step 4 / Step 14).
 
 Minimum unit-mean plateaus (from provenance JSON; warmup users = `max(1, round(min_unit * SHAPE_MEAN_USERS))` **after** P1):
 
@@ -269,21 +271,21 @@ flowchart TD
 
 ### Step 1 — Vendor Phase 5 workload manifests
 
-**Files:** [`k8s/deployment-fixed.yaml`](k8s/deployment-fixed.yaml), [`k8s/deployment-hpa.yaml`](k8s/deployment-hpa.yaml), [`k8s/hpa.yaml`](k8s/hpa.yaml), new [`k8s/hpa-stock.yaml`](k8s/hpa-stock.yaml).
+**Files:** [`k8s/deployment-fixed.yaml`](../../../k8s/deployment-fixed.yaml), [`k8s/deployment-hpa.yaml`](../../../k8s/deployment-hpa.yaml), [`k8s/hpa.yaml`](../../../k8s/hpa.yaml), new [`k8s/hpa-stock.yaml`](../../../k8s/hpa-stock.yaml).
 
 - Pod CPU/memory: request **500m / 128Mi** wait — user said **500m/1000m pods**. Interpret as CPU request **500m**, CPU limit **1000m**. Memory: **do not invent**. Keep current memory **128Mi / 256Mi** unless a later probe shows OOMKilled (then raise from evidence).
 - Fixed `replicas: 4`. HPA deployment `replicas: 4` (match minReplicas so cold-start restores 4).
-- [`k8s/hpa.yaml`](k8s/hpa.yaml): `minReplicas: 4`, `maxReplicas: 20`, keep existing `behavior:` (this **is** `hpa_tuned`).
-- [`k8s/hpa-stock.yaml`](k8s/hpa-stock.yaml): **full vendored copy** of the same HPA **without** the `behavior:` key (Kubernetes defaults). Same `metadata.name: hpa-eval-hpa` so `kubectl apply` swaps tuned↔stock between arms. Do **not** patch a live object’s spec piecemeal.
+- [`k8s/hpa.yaml`](../../../k8s/hpa.yaml): `minReplicas: 4`, `maxReplicas: 20`, keep existing `behavior:` (this **is** `hpa_tuned`).
+- [`k8s/hpa-stock.yaml`](../../../k8s/hpa-stock.yaml): **full vendored copy** of the same HPA **without** the `behavior:` key (Kubernetes defaults). Same `metadata.name: hpa-eval-hpa` so `kubectl apply` swaps tuned↔stock between arms. Do **not** patch a live object’s spec piecemeal.
 - Do not change probe blocks unless calibration proves they hide stages.
 
 **Verify:** `kubectl diff` / yaml: CPU 500m/1000m; HPA 4–20; stock file has no `behavior:`. **needs-review. GCP: no.**
 
 ### Step 2 — P2 cold-start collector + kind calibration (must pass before GKE)
 
-**Files:** new [`scripts/lib/cold_start_events.py`](scripts/lib/cold_start_events.py) (watch consumer), new [`scripts/calibrate_cold_start_collector.sh`](scripts/calibrate_cold_start_collector.sh), new kind overlay with **initContainer `sleep 8`** (above the 1s condition floor), one log line in [`app/main.py`](app/main.py). No new pip dependency.
+**Files:** new [`scripts/lib/cold_start_events.py`](../../../scripts/lib/cold_start_events.py) (watch consumer), new [`scripts/calibrate_cold_start_collector.sh`](../../../scripts/calibrate_cold_start_collector.sh), new kind overlay with **initContainer `sleep 8`** (above the 1s condition floor), one log line in [`app/main.py`](../../../app/main.py). No new pip dependency.
 
-**Comparability break (name it, do not shrug it):** adding `FIRST_REQUEST_SERVED` changes the application under test. Phase 5 GKE image tag is `git rev-parse --short HEAD` at deploy ([`scripts/deploy_gke.sh`](scripts/deploy_gke.sh)). Prior published runs used a different short SHA (read from each run’s `results/gke-deploy-manifest.json` / deploy logs — do not invent). Record both tags in [`RESULTS.md`](RESULTS.md) measurement limitations (Step 6 / Step 16). The effect is one log line once per process; the project still names the break.
+**Comparability break (name it, do not shrug it):** adding `FIRST_REQUEST_SERVED` changes the application under test. Phase 5 GKE image tag is `git rev-parse --short HEAD` at deploy ([`scripts/deploy_gke.sh`](../../../scripts/deploy_gke.sh)). Prior published runs used a different short SHA (read from each run’s `results/gke-deploy-manifest.json` / deploy logs — do not invent). Record both tags in [`RESULTS.md`](../../../RESULTS.md) measurement limitations (Step 6 / Step 16). The effect is one log line once per process; the project still names the break.
 
 **Once per process, not per request, not on the hot path:** module-level flag (or `threading.Event`), default unset. On the **first** HTTP request that enters the process (prefer the ASGI/Starlette middleware or `/` handler — **not** inside `compute_primes`, **not** after `ACTIVE_REQUESTS.inc()` on `/cpu`), emit one line to stderr (`FIRST_REQUEST_SERVED ts=... pod=...`) and set the flag. Every later request sees a true flag and does **no I/O**. A per-request log is a defect.
 
@@ -303,20 +305,20 @@ One JSONL row per scale-out (replica increase). Schema fields: hpa_decision, pod
 
 ### Step 3 — Histogram bucket columns (specified, unimplemented)
 
-**Files:** [`analysis/collect_metrics.py`](analysis/collect_metrics.py), [`analysis/metrics_contract.py`](analysis/metrics_contract.py) — follow [`docs/phase5-bucket-schema.md`](docs/phase5-bucket-schema.md) exactly. Register seven `latency_le_*_count` columns as rate-derived. `MISSING` when Prom is empty. Extend `--mode` later in Step 4 if stock needs a distinct Prometheus label; sequential stock/tuned on `experiment=hpa` can keep `--mode hpa` with different output filenames.
+**Files:** [`analysis/collect_metrics.py`](../../../analysis/collect_metrics.py), [`analysis/metrics_contract.py`](../../../analysis/metrics_contract.py) — follow [`docs/phase5-bucket-schema.md`](../../../docs/phase5-bucket-schema.md) exactly. Register seven `latency_le_*_count` columns as rate-derived. `MISSING` when Prom is empty. Extend `--mode` later in Step 4 if stock needs a distinct Prometheus label; sequential stock/tuned on `experiment=hpa` can keep `--mode hpa` with different output filenames.
 
 **Verify:** unit/smoke: serving row with Prom data gets integers; UNAVAILABLE rows `TARGET_UNAVAILABLE`; no fabricated zeros. **needs-review. GCP: no.**
 
 ### Step 4 — Three-arm runner, warm-up, t0 assertion
 
-**Files:** [`scripts/run_benchmark.sh`](scripts/run_benchmark.sh), new [`scripts/run_phase5_matrix.sh`](scripts/run_phase5_matrix.sh), [`scripts/lib/locust_run.sh`](scripts/lib/locust_run.sh). Prefer **two Locust invocations** so `LoadTestShape` 18m plateaus stay byte-comparable to Phase 4 curves: (1) 5m at `min_users()`, (2) 18m full shape. Do not fold 5m into the shape vector.
+**Files:** [`scripts/run_benchmark.sh`](../../../scripts/run_benchmark.sh), new [`scripts/run_phase5_matrix.sh`](../../../scripts/run_phase5_matrix.sh), [`scripts/lib/locust_run.sh`](../../../scripts/lib/locust_run.sh). Prefer **two Locust invocations** so `LoadTestShape` 18m plateaus stay byte-comparable to Phase 4 curves: (1) 5m at `min_users()`, (2) 18m full shape. Do not fold 5m into the shape vector.
 
 **Resume unit = arm** (not shape, not mid-Locust). Complete means `rep-<n>/<arm>/STATUS` is `PASS` **and** required CSVs exist (`locust_*_stats.csv`, `*_metrics.csv`, `t0_*.txt`). In-progress or FAIL arm: do not reuse partial CSVs; delete that arm directory and rerun that arm only. `run_benchmark.sh` today has no skip (quoted above); this step adds skip-if-PASS. A shape is complete when all planned reps × three arms are PASS. The matrix driver walks shapes in the flash-first order (Step 14) and skips complete arms.
 
 Per repetition, order:
 
-1. `hpa_tuned`: apply [`k8s/hpa.yaml`](k8s/hpa.yaml); cold-start HPA deploy; scrape pre-roll; **warm-up Locust**; read `spec_replicas` and `cpu_utilization_pct` (or `kubectl top` / Prom); **if `spec_replicas != minReplicas` → `WARMUP_TRIGGERED_SCALE` abort**; write `warmup_cpu_utilization_pct` into manifest; set `t0`; start collector watch; 18m Locust; collect `hpa_tuned_metrics.csv`.
-2. `hpa_stock`: apply [`k8s/hpa-stock.yaml`](k8s/hpa-stock.yaml); same sequence; `hpa_stock_metrics.csv`.
+1. `hpa_tuned`: apply [`k8s/hpa.yaml`](../../../k8s/hpa.yaml); cold-start HPA deploy; scrape pre-roll; **warm-up Locust**; read `spec_replicas` and `cpu_utilization_pct` (or `kubectl top` / Prom); **if `spec_replicas != minReplicas` → `WARMUP_TRIGGERED_SCALE` abort**; write `warmup_cpu_utilization_pct` into manifest; set `t0`; start collector watch; 18m Locust; collect `hpa_tuned_metrics.csv`.
+2. `hpa_stock`: apply [`k8s/hpa-stock.yaml`](../../../k8s/hpa-stock.yaml); same sequence; `hpa_stock_metrics.csv`.
 3. `fixed`: no HPA; same warm-up + assertion against declared replicas 4; `fixed_metrics.csv`.
 
 `HPA_NO_SCALE_POLICY`: `warn` for `wc98_constant`, `abort` otherwise — **during the 18m window**, not during warm-up. Warm-up scale is always abort (`WARMUP_TRIGGERED_SCALE`).
@@ -327,7 +329,7 @@ Assert `spec_replicas == minReplicas` at `t0` on HPA arms. Start the waterfall c
 
 ### Step 5 — Cluster shape constants (still free)
 
-**Files:** [`scripts/lib/gke_shape.sh`](scripts/lib/gke_shape.sh), comments in [`HANDOFF.md`](HANDOFF.md) expected-spend table (update numbers only after this phase’s shape is set).
+**Files:** [`scripts/lib/gke_shape.sh`](../../../scripts/lib/gke_shape.sh), comments in [`HANDOFF.md`](HANDOFF.md) expected-spend table (update numbers only after this phase’s shape is set).
 
 Set defaults: `GKE_NUM_NODES=3`, `GKE_MACHINE_TYPE=e2-standard-4`, `GKE_CPUS_PER_NODE=4`, keep `NODE_DISK_SIZE_GB=50`.
 
@@ -335,7 +337,7 @@ Set defaults: `GKE_NUM_NODES=3`, `GKE_MACHINE_TYPE=e2-standard-4`, `GKE_CPUS_PER
 
 ### Step 6 — Document threadpool 40 and the Phase 5 image break
 
-**Files:** [`RESULTS.md`](RESULTS.md) measurement-limitations only. No AnyIO code change.
+**Files:** [`RESULTS.md`](../../../RESULTS.md) measurement-limitations only. No AnyIO code change.
 
 - Threadpool limiter remains **40**; that is the `active_requests` saturation ceiling.
 - **Comparability:** Phase 5 runs an app image with one added `FIRST_REQUEST_SERVED` log line (once per process, off the `/cpu` hot path). Prior calibrated runs do not. Quote **image_tag** for Phase 5 from `results/gke-deploy-manifest.json` after deploy; quote prior tags from existing deploy manifests / run artifacts (`PROGRESS.md` notes that file records `image_tag`). If a prior tag file is absent, write `MISSING`, do not guess.
@@ -344,7 +346,7 @@ Set defaults: `GKE_NUM_NODES=3`, `GKE_MACHINE_TYPE=e2-standard-4`, `GKE_CPUS_PER
 
 ### Step 7 — Kind wiring smoke (harness, not 18m×54)
 
-**Files:** [`scripts/smoke_test.sh`](scripts/smoke_test.sh) — new checks: collector calibration (Step 2), `hpa-stock.yaml` apply/revert, `WARMUP_TRIGGERED_SCALE` negative test if feasible, `--resume` skips a planted PASS arm.
+**Files:** [`scripts/smoke_test.sh`](../../../scripts/smoke_test.sh) — new checks: collector calibration (Step 2), `hpa-stock.yaml` apply/revert, `WARMUP_TRIGGERED_SCALE` negative test if feasible, `--resume` skips a planted PASS arm.
 
 **Verify:** `--check` list includes the new names; `--full` still passes. **needs-review. GCP: no.**
 
@@ -395,7 +397,7 @@ Peak **requests** if fixed (4) and HPA (20) overlap: `20 × 500m + Prometheus 10
 
 ### Step 12 — P1 capacity probe (sets `SHAPE_MEAN_USERS`; not a benchmark)
 
-**Implemented:** [`scripts/run_capacity_probe.sh`](scripts/run_capacity_probe.sh), [`scripts/lib/capacity_probe_derive.py`](scripts/lib/capacity_probe_derive.py). Smoke: `bash scripts/smoke_test.sh --check capacity-probe-derive`. Matrix requires `results/capacity_probe/derivation.json` (see C2 in P1 plan).
+**Implemented:** [`scripts/run_capacity_probe.sh`](../../../scripts/run_capacity_probe.sh), [`scripts/lib/capacity_probe_derive.py`](../../../scripts/lib/capacity_probe_derive.py). Smoke: `bash scripts/smoke_test.sh --check capacity-probe-derive`. Matrix requires `results/capacity_probe/derivation.json` (see C2 in P1 plan).
 
 **GCP: yes.** First load on the new cluster. **Fixed arm only**, 4 replicas, 500m/1000m. No HPA.
 
@@ -451,7 +453,7 @@ caffeinate -i bash scripts/run_phase5_matrix.sh --env-file .env --resume
 
 **Partial matrix is analysable.** Publish whatever PASS arms exist. If flash n=6 all three arms are COMPLETE, Wilcoxon/medians for flash may be published while other shapes are `MISSING` or PARTIAL.
 
-**Resume unit = arm.** Marker: `results/runs/<run_id>/rep-<n>/<arm>/STATUS` (`PASS` only if CSVs present). Driver: [`scripts/run_phase5_matrix.sh`](scripts/run_phase5_matrix.sh) `--resume` skips PASS arms, reruns the first incomplete arm, then continues the flash-first sequence.
+**Resume unit = arm.** Marker: `results/runs/<run_id>/rep-<n>/<arm>/STATUS` (`PASS` only if CSVs present). Driver: [`scripts/run_phase5_matrix.sh`](../../../scripts/run_phase5_matrix.sh) `--resume` skips PASS arms, reruns the first incomplete arm, then continues the flash-first sequence.
 
 **Operator returning after a drop:**
 
@@ -482,7 +484,7 @@ Collector JSONL per arm. `image_cached` on every event.
 
 ### Step 15 — RESULTS
 
-**Files:** [`RESULTS.md`](RESULTS.md). No fabricated cells. `MISSING` stays `MISSING`. Cold-start table uses `<1s` / `MISSING` / parsed ms. Three-arm comparison is the `behavior:` confound measurement. Threadpool 40. Capacity-probe artifact for `SHAPE_MEAN_USERS`. Named image-tag comparability break (Step 6). Partial-matrix rule: flash n=6 may stand alone.
+**Files:** [`RESULTS.md`](../../../RESULTS.md). No fabricated cells. `MISSING` stays `MISSING`. Cold-start table uses `<1s` / `MISSING` / parsed ms. Three-arm comparison is the `behavior:` confound measurement. Threadpool 40. Capacity-probe artifact for `SHAPE_MEAN_USERS`. Named image-tag comparability break (Step 6). Partial-matrix rule: flash n=6 may stand alone.
 
 **needs-review. GCP: no.**
 
@@ -500,7 +502,7 @@ Compute: **e2-standard-4 ~$0.134/node-hr** (2× e2-standard-2 ~$0.067/hr, us-cen
 
 ## Non-steps
 
-- Do not edit frozen [`locust/locustfile.py`](locust/locustfile.py) / synthetic constant/flash locustfiles.
+- Do not edit frozen [`locust/locustfile.py`](../../../locust/locustfile.py) / synthetic constant/flash locustfiles.
 - Do not raise AnyIO 40.
 - Do not interpolate sub-second pod conditions.
 - Do not guess `SHAPE_MEAN_USERS` in git before Step 12.
