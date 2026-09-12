@@ -2,42 +2,46 @@
 
 Phase 5 measured Kubernetes CPU-target HPA against a fixed replica floor on trace-derived load. Three arms: `fixed`, `hpa_tuned`, `hpa_stock`. `SHAPE_MEAN_USERS=69`, `minReplicas=4`, `maxReplicas=12`.
 
-Sources: [RESULTS.md](https://github.com/smadduri9/k8s-hpa-benchmark/blob/main/RESULTS.md), [repository](https://github.com/smadduri9/k8s-hpa-benchmark). Related: [POSTMORTEM.md](https://github.com/smadduri9/k8s-hpa-benchmark/blob/main/POSTMORTEM.md), [error-budget-policy.md](error-budget-policy.md), [SHAPE_SELECTION.md](SHAPE_SELECTION.md).
+Sources: [RESULTS.md](https://github.com/smadduri9/k8s-hpa-benchmark/blob/main/RESULTS.md), [repository](https://github.com/smadduri9/k8s-hpa-benchmark). Related: [POSTMORTEM.md](https://github.com/smadduri9/k8s-hpa-benchmark/blob/main/POSTMORTEM.md), [error-budget-policy.md](https://github.com/smadduri9/k8s-hpa-benchmark/blob/main/docs/error-budget-policy.md), [SHAPE_SELECTION.md](https://github.com/smadduri9/k8s-hpa-benchmark/blob/main/docs/SHAPE_SELECTION.md).
 
-## Finding 1. Flash n=6 latency
+<!-- BEGIN V1.1 GENERATED FINDINGS -->
 
-`wc98_flash`, `results/runs/run-phase5-wc98_flash/`. Client p95 medians from Locust Aggregated `95%`, aggregated by `analysis/aggregate_runs.py`.
+Evidence and offline commands: [v1.1 package](https://github.com/smadduri9/k8s-hpa-benchmark/blob/main/artifacts/v1.1/README.md). Authority: [verify.py](https://github.com/smadduri9/k8s-hpa-benchmark/blob/main/artifacts/v1.1/verify.py) and [headline.json](https://github.com/smadduri9/k8s-hpa-benchmark/blob/main/artifacts/v1.1/summary/headline.json); the historical general aggregator does not apply the publication exclusions.
 
-| Arm | client p95 (ms) | n |
-|-----|----------------:|--:|
-| fixed | 510 | 6 |
-| hpa_tuned | 400 | 6 |
-| hpa_stock | 380 | 6 |
+Trace-derived WorldCup98 and RetailRocket load; three arms (`fixed`, `hpa_tuned`, `hpa_stock`). `SHAPE_MEAN_USERS=69` is a model-derived calibration parameter, not measured maximum capacity. Declared HPA floor: 4 replicas.
 
-Both HPA arms beat fixed at p=0.031250, the n=6 Wilcoxon floor, in 6 of 6 reps. hpa_tuned vs hpa_stock p=0.093750. Tuning the `behavior:` block made no detectable difference to latency. That is a null result. The project had previously only disclosed the confound.
+### Finding 1. Flash latency and ready-pod time
 
-Pod-hours: fixed 1.18556 (n=6), hpa_tuned 1.78361 (n=5), hpa_stock 2.23514 (n=6). Tuned n=5 because `rep-1/hpa_tuned/replica_series_hpa.csv` is a leaked 21-hour sampler (full-file pod-hours 96.64138888888888). Locust latency for that arm is intact.
+Client p95 medians: fixed **510 ms**, tuned **400 ms**, stock **380 ms**, across **6 paired repetitions**. Tuned p95 was lower than fixed in 6/6; stock was lower in 6/6.
 
-## Finding 2. Workload coverage
+Exact two-sided Wilcoxon: fixed/tuned **p=0.031250**, fixed/stock **p=0.031250**, tuned/stock **p=0.093750**. These are unadjusted tests. The tuned/stock comparison does not establish equivalence or a benefit from tuning. Arm order was not randomized.
 
-Observed peak `spec_replicas` at `SHAPE_MEAN_USERS=69`.
+Median ready-pod hours: fixed **1.18556 (n=6)**, tuned **1.78361 (n=5)**, stock **2.23514 (n=6)**. Ratios of unrounded medians are **+50.445173%** tuned/fixed and **+88.530928%** stock/fixed. Ready-pod time measures ready replicas integrated over sampled time; it does not measure consumed CPU or billing.
 
-| Shape | peak_to_mean | peak spec_replicas |
-|-------|-------------:|--------------------|
-| wc98_flash | 2.015377 | 10–12 |
-| wc98_ramp | 1.520607 | 8, then 4–5 |
-| wc98_periodic | 1.588318 | 5 |
-| rr_periodic | 1.509042 | 5 |
-| wc98_constant | 1.05071 | 4 |
+[Exclusions policy](https://github.com/smadduri9/k8s-hpa-benchmark/blob/main/artifacts/v1.1/exclusions.csv): tuned flash rep-1 retains its latency measurement but is excluded from ready-pod time because its replica series spans beyond the benchmark window. The contaminated file is preserved unchanged; its historical process origin is not independently evidenced. See [per-repetition results](https://github.com/smadduri9/k8s-hpa-benchmark/blob/main/artifacts/v1.1/summary/flash_repetitions.csv) and [paired tests](https://github.com/smadduri9/k8s-hpa-benchmark/blob/main/artifacts/v1.1/summary/statistical_tests.csv).
 
-Peak-to-mean ratio determines whether CPU-target HPA engages. Only flash-crowd bursts move it off its floor. Predicted in commit `514048c` before the n=1 runs. The prediction matched.
+### Finding 2. Workload coverage
 
-## Finding 3. Reproducibility
+Observed in-window peak `spec_replicas`, listed in repetition order:
 
-`wc98_ramp`, same shape and config. Locust Aggregated requests: 34283 (`rep-1/hpa_tuned`) vs 33835 (`rep-2/hpa_tuned`). Peak spec_replicas: 8 on the first cluster, 4–5 on the second. Warm-up CPU for the same 37-user hold: 154–240 millicores vs 73–166. GKE e2 machines span CPU generations. The draw is not selectable. A marginal shape can change behaviour between deployments of the same spec. Marginal-shape results are reported at n=1.
+| Workload | Repetitions | Tuned HPA | Stock HPA |
+|---|---:|---|---|
+| `wc98_flash` | 6 | 12, 11, 11, 11, 10, 11 | 11, 12, 12, 11, 11, 11 |
+| `wc98_ramp` | 2 | 8, 4 | 8, 5 |
+| `wc98_constant` | 1 | 4 | 4 |
+| `wc98_periodic` | 1 | 5 | 5 |
+| `rr_periodic` | 1 | 5 | 5 |
+
+Fixed-arm peaks were 4 throughout this completed scope. Flash, ramp and both periodic workloads showed scale-out above the floor in at least one retained arm/repetition. Constant did not. These observations do not establish peak-to-mean ratio as a sufficient predictor of HPA engagement. Source: [replica peaks and request counts](https://github.com/smadduri9/k8s-hpa-benchmark/blob/main/artifacts/v1.1/summary/replica_peaks.csv).
+
+### Finding 3. Ramp run/deployment sensitivity
+
+Two ramp repetitions produced similar measured request counts (34,283 and 33,835 in the tuned arm) but different scale-out: tuned peaked at 8 replicas in one repetition and 4 in the other. The retained evidence does not establish a hardware-level cause. This is evidence of run/deployment sensitivity, not a causal CPU-platform finding. Paired warm-up CPU vectors and hardware inventories are `MISSING`.
+
+Flash has six completed repetitions, ramp two, and each other workload one. The originally defined three-repetition scope for the non-flash workloads was not completed. Incomplete ramp rep-3 is excluded. The non-flash observations are descriptive, not a workload ranking.
+
+<!-- END V1.1 GENERATED FINDINGS -->
 
 ## Also recorded
 
-Cold-start collection is dropped after five attempts with no usable rows. The collector was a passive observer. Benchmark Locust, replica, and metrics results are unaffected. Scaling from live `spec.replicas` (`declared_replicas=5`) is a known issue.
-
-Phase 1 calibrated tables (synthetic shapes, minReplicas=3) stay in RESULTS.md, marked superseded.
+No Phase 5 cold-start distribution is published. See the [measurement limitations](https://github.com/smadduri9/k8s-hpa-benchmark/blob/main/RESULTS.md#measurement-limitations). Historical Phase 1 write-ups remain accessible through the pinned history links in RESULTS.md.

@@ -1,104 +1,31 @@
-# HANDOFF — Reproducibility Remediation Tier 1
+# HANDOFF — completed experiments and publication v1.1
 
-## What changed
-- Added strict control files: `DONE_CONDITIONS.md`, `AGENTS.md`, `PROGRESS.md`.
-- Added kind smoke harness (`scripts/smoke_test.sh`, `k8s/smoke/`, `locust/locustfile_smoke.py`).
-- Added cold-start runner (`scripts/run_benchmark.sh`) with anchored metric collection.
-- Rewrote `analysis/collect_metrics.py` for experiment-label isolation and kubectl replica sampling.
-- Added `analysis/ingest_locust.py` as authoritative request/failure source.
-- Superseded prior committed artifacts under `superseded/sample_data-2026-03/`.
+The cluster is gone. Use the [public evidence package](artifacts/v1.1/README.md) to verify current findings without cloud resources.
 
-## Verified on kind vs not verified
-| Capability | kind smoke | GKE production |
-|---|---|---|
-| Cold-start scale-to-zero | yes | not yet |
-| HPA utilization % | yes (reduced topology) | not yet |
-| Label isolation | yes | not yet |
-| 18-minute load shape | no (10-minute smoke only; production 18m not yet on GKE) | not yet |
-| Cost/SLO modules | deferred Tier 2/3 | not yet |
+```bash
+".venv/bin/python" -B artifacts/v1.1/verify.py
+".venv/bin/python" -B -m unittest discover -s tests -p test_publication.py
+".venv/bin/python" -B scripts/generate_publication_text.py --check
+".venv/bin/python" -B scripts/generate_public_figures.py
+```
 
-## Expected GKE spend (zonal cluster, fixed node pool)
+The publication verifier is the v1.1 authority. The historical general aggregator does not apply its sampler exclusion. `scripts/build_public_evidence.py` is a separate maintainer curation step that needs retained private inputs; external verification does not.
 
-Cluster shape from `scripts/deploy_gke.sh` (no cluster autoscaler — fixed node count only):
+## Declared Phase 5 configuration
 
-| Item | Value |
-|------|--------|
-| Topology | **Zonal** (`ZONE=us-central1-a`), not regional |
-| Machine type | `e2-standard-4` (4 vCPU, 16 GB RAM per node) — Phase 5 default in `scripts/lib/gke_shape.sh` |
-| Node count | **3** fixed (`GKE_NUM_NODES=3`; no `--enable-autoscaling`) |
-| Boot disk | **50 GB** balanced PD per node (`NODE_DISK_SIZE_GB=50`; 3×50 = **150 GB** cluster SSD) |
-| Global CPU quota | **`CPUS_ALL_REGIONS=12`** (project-wide). Cluster needs **12 vCPU** (3×4). No headroom — see quota section below. |
-| Control-plane fee | **Waived** for the first zonal cluster per GCP project |
+The repository manifests declare fixed **4** replicas, HPA **4–12** at **60%** CPU, **500m** CPU request and **1000m** CPU limit per application pod. Tuned behavior is in `k8s/hpa.yaml`; stock is in `k8s/hpa-stock.yaml`. The model-derived amplitude is **69**, not measured maximum capacity. Complete per-arm deployed configuration and hardware snapshots are not retained.
 
-### App resources (`k8s/deployment-hpa.yaml`)
+GKE defaults describe three `e2-standard-4` nodes and 50 GB boot disks. Quota and allocatable checks must use the target project and live resources before any future run. Old cost estimates and small-pod sizing calculations are superseded; they do not describe Phase 5. The [historical Tier 1 handoff](https://github.com/smadduri9/k8s-hpa-benchmark/blob/b8cf7cb2d22a53f82b1a4a9c61cbeabdf4bad0f7/HANDOFF.md) remains in Git history.
 
-| | CPU | Memory |
-|---|-----|--------|
-| **request** | `100m` | `128Mi` |
-| **limit** | `200m` | `256Mi` |
+## Operator runbook for future experiments
 
-(`deployment-fixed.yaml` uses the same requests/limits; `replicas: 3` static.)
-
-HPA `maxReplicas: 10` (`k8s/hpa.yaml`).
-
-### Node-count arithmetic
-
-GKE allocatable per `e2-standard-2` node (kube+system reserve): **~1930m CPU**, **~6172Mi** memory. Daemonsets per node: **~250m CPU**, **~400Mi** memory → **~1680m CPU** and **~5772Mi** schedulable per node.
-
-Peak concurrent pod **requests** (worst case: HPA at maxReplicas while fixed arm still running):
-
-| Workload | CPU request | Memory request |
-|----------|-------------|----------------|
-| HPA app × 10 | 1000m | 1280Mi |
-| Fixed app × 3 | 300m | 384Mi |
-| Prometheus × 1 | 100m | 256Mi |
-| **Total** | **1400m** | **1920Mi** |
-
-Solve for fixed nodes `N` (allocatable 1930m/node, daemonset overhead 250m/node):
-
-`N × 1930m ≥ 1400m + N × 250m` → `N ≥ 1400 / (1930 − 250) ≈ 0.83` → **1 node suffices for requests**.
-
-Limits at peak (`10×200m + 3×200m + 500m` Prometheus = **3100m**) exceed a single node's allocatable CPU; spreading across nodes reduces kubelet contention during HPA bursts.
-
-**Chosen `N = 3`:** schedulable CPU `3 × 1680m = 5040m` vs demand `1400m + 3×250m = 2150m` (**~57% headroom** on requests). Memory headroom is ample (`1920Mi` vs `3 × 5772Mi`).
-
-Cluster autoscaler was removed so node provisioning latency is not folded into HPA scaling measurements and both arms see the same fixed node baseline.
-
-**Rough 3-hour unattended session estimate** (us-central1, on-demand, excludes egress):
-
-| Component | Estimate |
-|-----------|----------|
-| 3× `e2-standard-2` compute (~$0.067/hr each) | ~$0.60 |
-| 3× 50 GB balanced PD boot disks (~$0.10/GB-mo prorated; negligible for ≤3 hr) | ~$0.02 |
-| 2× `LoadBalancer` Services (see below, ~$0.025/hr each) | ~$0.15 |
-| **Total ballpark** | **~$0.75–$1.00** |
-
-Default GKE boot disks are 100 GB balanced PD (300 GB total for 3 nodes), which exceeds this project's regional **`SSD_TOTAL_GB`** quota. `deploy_gke.sh` sets `--disk-size=50` explicitly.
-
-### Quota preflight (`bash scripts/preflight.sh --env-file .env --require-gke`)
-
-Preflight queries live quotas before cluster create. Expected Phase 5 rows:
-
-| Metric | Scope | Required | Typical limit |
-|--------|-------|----------|---------------|
-| `CPUS` | Regional (`us-central1`) | 12 (3×4) | 32 |
-| `SSD_TOTAL_GB` | Regional | 150 (3×50) | 250 |
-| `INSTANCES` | Regional | 3 | 8 |
-| **`CPUS_ALL_REGIONS`** | **Global (project)** | **12** | **12** |
-
-**`CPUS_ALL_REGIONS` is the binding constraint.** Google declined a quota increase on usage-history grounds (billed spend $0 despite credits). Preflight fails with `QUOTA_INSUFFICIENT_CPUS_ALL_REGIONS` if cluster CPUs plus any **running** VM exceed 12.
-
-When required equals the limit (`GKE_QUOTA_CPUS_ALL_REGIONS_NO_HEADROOM`), preflight still **PASS**es but emits a **WARN**: any transient usage or starting another instance will break cluster create.
-
-Regional checks fail with `QUOTA_INSUFFICIENT_SSD`, `QUOTA_INSUFFICIENT_CPUS`, or `QUOTA_INSUFFICIENT_INSTANCES` when headroom is insufficient.
-
-Autoscale above 3 nodes is disabled (fixed pool). Leaving load balancers/disks after teardown increases cost. Regional topology would have been ~3× node cost plus a non-waived management fee — the deploy script uses zonal explicitly to avoid that.
+The following commands create new local output or operate cloud resources. `results/` paths below are output destinations and private operator inputs, not published evidence links. Re-running experiments is separate from reproducing the publication calculations. No current cold-start distribution or billing result is claimed.
 
 ## Service type on GKE
 
 `k8s/service.yaml` declares **`type: LoadBalancer`** for both `hpa-eval-fixed-svc` and `hpa-eval-hpa-svc`. On GKE each Service provisions a cloud load balancer.
 
-**Keep LoadBalancer (do not switch to NodePort + port-forward).** `kubectl port-forward` is a single TCP tunnel through the API server. At 80 concurrent users for 18 minutes it becomes the bottleneck and the benchmark would measure the tunnel, not the HPA. The ~$0.15/session load-balancer cost is the correct trade for externally reachable endpoints.
+**Keep LoadBalancer (do not switch to NodePort + port-forward).** `kubectl port-forward` is a single TCP tunnel through the API server. It can introduce an additional load-generator bottleneck; the benchmark uses externally reachable service endpoints instead. No load-balancer cost is estimated here.
 
 `run_benchmark.sh` waits for both Services to receive an external IP and pass `GET /health` before cold-start begins (`LOADBALANCER_GATE_*` log markers). On timeout it exits with **`LOADBALANCER_NOT_READY`** so LB provisioning time is never folded into `t0`.
 
@@ -205,27 +132,15 @@ tail -f results/runs/<run_id>/rep-1/rep.log
 
 Run after **every** GKE session and **after every cluster teardown**. GKE deletes load balancer forwarding rules when the cluster is deleted, but **persistent disks**, **static IPs**, and **firewall rules** are often retained. Deleting a GKE cluster does **not** delete dynamically provisioned PersistentVolumes or their backing disks. Leftover forwarding rules and `k8s-*` firewall rules block VPC deletion.
 
-**Prometheus PVC (`prometheus-data`).** GKE deploy applies `k8s/prometheus/pvc.yaml` (1 Gi `standard-rwo`). On the first teardown with this PVC present, the backing **pd-balanced** disk survived `gcloud container clusters delete` — confirmed orphan: `pvc-991b2700-b081-4bad-8f74-c27740792a92`. This is **expected behaviour** for dynamically provisioned PVs (Retain/reclaim policy leaves the disk in the project); it is not a GKE bug. Delete it manually:
+**Prometheus PVC (`prometheus-data`).** GKE deploy applies `k8s/prometheus/pvc.yaml`. Inspect unused disks and other resources after teardown; do not assume cluster deletion removed every resource. Resource retention depends on reclaim policy and teardown behavior. Use explicit project and zone values supplied by the operator.
 
 ```bash
-gcloud compute disks delete pvc-991b2700-b081-4bad-8f74-c27740792a92 \
-  --zone="${ZONE}" --project="${PROJECT_ID}"
-```
-
-(Use the name from `gcloud compute disks list --filter="-users:*"` — the UUID changes per cluster.)
-
-Each orphaned Prometheus disk counts against regional **`SSD_TOTAL_GB`**. This project allocates 150 GB to the cluster (3×50 GB boot disks); with a 250 GB regional limit that leaves **~50 GB headroom**. A forgotten 1 Gi Prometheus disk is small but the pattern matters: repeated runs without cleanup erode quota and can block the next cluster create.
-
-Replace project id if yours differs:
-
-```bash
-gcloud container clusters list --project=hpa-benchmark-2026
-gcloud compute forwarding-rules list --project=hpa-benchmark-2026
-gcloud compute target-pools list --project=hpa-benchmark-2026
-gcloud compute firewall-rules list --project=hpa-benchmark-2026 \
-  --filter="name~'^k8s-'"
-gcloud compute disks list --filter="-users:*" --project=hpa-benchmark-2026
-gcloud compute addresses list --project=hpa-benchmark-2026
+gcloud container clusters list --project="${PROJECT_ID}"
+gcloud compute forwarding-rules list --project="${PROJECT_ID}"
+gcloud compute target-pools list --project="${PROJECT_ID}"
+gcloud compute firewall-rules list --project="${PROJECT_ID}" --filter="name~'^k8s-'"
+gcloud compute disks list --filter="-users:*" --project="${PROJECT_ID}"
+gcloud compute addresses list --project="${PROJECT_ID}"
 ```
 
 **Pass criteria:** clusters list empty (or only the cluster you expect); forwarding-rules, target-pools, `k8s-*` firewall rules, and unused disks/addresses empty or explicitly accounted for. Delete orphans before removing the VPC.
@@ -240,5 +155,5 @@ gcloud compute addresses list --project=hpa-benchmark-2026
 
 ## Notes
 - Default `--repetitions` is `1`; pass `--repetitions 3` explicitly for statistical runs.
-- Locust uses `--headless --csv <base> --csv-full-history` only; never pass `--users`, `--spawn-rate`, or `--processes`.
+- Measured Locust uses `--headless --csv <base> --csv-full-history --exit-code-on-error 0` with explicit `--run-time`; never pass `--users`, `--spawn-rate`, or `--processes`.
 - kind results are smoke-validation only and are not performance-comparable to GKE.

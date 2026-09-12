@@ -1,0 +1,126 @@
+{
+  "capacity": {
+    "basis": "model-derived calibration parameter",
+    "shape_mean_users": 69
+  },
+  "flash": {
+    "fixed_p95_median_ms": 510.0,
+    "repetitions": 6,
+    "stock_better_than_fixed_reps": 6,
+    "stock_p95_median_ms": 380.0,
+    "stock_vs_fixed_wilcoxon_p": 0.03125,
+    "tuned_better_than_fixed_reps": 6,
+    "tuned_p95_median_ms": 400.0,
+    "tuned_vs_fixed_wilcoxon_p": 0.03125,
+    "tuned_vs_stock_wilcoxon_p": 0.09375
+  },
+  "ready_pod_time": {
+    "fixed_median_pod_hours": 1.1855555555555555,
+    "fixed_n": 6,
+    "stock_median_pod_hours": 2.235138888888889,
+    "stock_n": 6,
+    "stock_vs_fixed_ratio_of_medians_pct": 88.53092783505154,
+    "tuned_median_pod_hours": 1.783611111111111,
+    "tuned_n": 5,
+    "tuned_vs_fixed_ratio_of_medians_pct": 50.44517338331771
+  },
+  "replica_scaling": {
+    "floor_replicas": 4,
+    "workloads": {
+      "rr_periodic": {
+        "fixed": [
+          4
+        ],
+        "hpa_stock": [
+          5
+        ],
+        "hpa_tuned": [
+          5
+        ],
+        "repetitions": [
+          1
+        ]
+      },
+      "wc98_constant": {
+        "fixed": [
+          4
+        ],
+        "hpa_stock": [
+          4
+        ],
+        "hpa_tuned": [
+          4
+        ],
+        "repetitions": [
+          1
+        ]
+      },
+      "wc98_flash": {
+        "fixed": [
+          4,
+          4,
+          4,
+          4,
+          4,
+          4
+        ],
+        "hpa_stock": [
+          11,
+          12,
+          12,
+          11,
+          11,
+          11
+        ],
+        "hpa_tuned": [
+          12,
+          11,
+          11,
+          11,
+          10,
+          11
+        ],
+        "repetitions": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6
+        ]
+      },
+      "wc98_periodic": {
+        "fixed": [
+          4
+        ],
+        "hpa_stock": [
+          5
+        ],
+        "hpa_tuned": [
+          5
+        ],
+        "repetitions": [
+          1
+        ]
+      },
+      "wc98_ramp": {
+        "fixed": [
+          4,
+          4
+        ],
+        "hpa_stock": [
+          8,
+          5
+        ],
+        "hpa_tuned": [
+          8,
+          4
+        ],
+        "repetitions": [
+          1,
+          2
+        ]
+      }
+    }
+  }
+}

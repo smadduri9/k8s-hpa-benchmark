@@ -1,0 +1,9 @@
+# Preserve source evidence bytes while retaining readable CSV diffs.
+# CRLF is intentional in these copied files; other whitespace errors still fail.
+artifacts/v1.1/runs/**/locust*_stats.csv -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+artifacts/v1.1/capacity/step-*/locust_stats.csv -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+artifacts/v1.1/workloads/candidates/*_top5.csv -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+
+# These copied series are LF today; prevent checkout-time EOL conversion too.
+artifacts/v1.1/runs/**/replica_series*.csv -text
+artifacts/v1.1/capacity/steps.csv -text

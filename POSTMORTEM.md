@@ -1,5 +1,7 @@
 # Postmortem: unfair HPA vs fixed comparison from unequal starting capacity
 
+**Scope:** historical Phase 1 incident, not a Phase 5 result. Raw historical run inputs are not bundled in v1.1. Current findings and limitations are in [RESULTS.md](RESULTS.md); the old narrative is retained in [pinned history](https://github.com/smadduri9/k8s-hpa-benchmark/blob/b8cf7cb2d22a53f82b1a4a9c61cbeabdf4bad0f7/POSTMORTEM.md).
+
 **Authors:** Sriram Madduri (sole maintainer)  
 **Status:** resolved  
 **Publication:** initial README claim in commit `951b89e` (2026-05-12)  
@@ -9,7 +11,7 @@
 
 The repository initially published an HPA-vs-fixed comparison that treated **51.7% failure (fixed) vs 0.97% (HPA)** from `sample_data/` as a fair headline (`951b89e` README). A later GKE run (`run-20260904T230444Z`) repeated the pattern at **12.07% vs 0.30%** and was promoted to the README front page. In both cases the HPA arm ran at **`minReplicas: 1`** while the fixed arm was declared at **3 replicas**, so the HPA arm started at one third the capacity and incurred scale-up queueing the fixed arm never paid. The harness did not assert equal starting capacity, and **`HPA_NEVER_SCALED` only verified that peak `spec_replicas` exceeded `minReplicas`** — so scaling from 1→10 still passed the guard while the comparison remained unfair.
 
-Resolution: `k8s/hpa.yaml` now sets **`minReplicas: 3`**; calibrated runs (hybrid n=6, constant n=3) compare both arms from equal floor capacity; the superseded run and README table are preserved with an explicit fairness disclaimer; SLO and error-budget analysis is in [`RESULTS.md`](RESULTS.md#slo-and-error-budget-calibrated-runs).
+Historical resolution raised the floor to **3**; current Phase 5 manifests declare **4** for both fixed and HPA minimum. Historical calibrated runs (hybrid n=6, constant n=3) compare both arms from equal floor capacity; the superseded run and README table are preserved with an explicit fairness disclaimer; historical SLO analysis is linked from [`RESULTS.md`](RESULTS.md#slo-and-error-budget-calibrated-runs).
 
 ## Impact
 
@@ -22,13 +24,13 @@ Downstream effects in this repo:
 
 ## Root causes
 
-1. **Unequal declared floor capacity.** HPA `minReplicas: 1` vs fixed deployment at 3. Documented in [`RESULTS.md`](RESULTS.md#superseded--run-20260904t230444z) and [`k8s/hpa.yaml`](k8s/hpa.yaml) (now corrected to 3).
+1. **Unequal declared floor capacity.** HPA `minReplicas: 1` vs fixed deployment at 3. Documented in [`RESULTS.md`](RESULTS.md#superseded--run-20260904t230444z) and [`k8s/hpa.yaml`](k8s/hpa.yaml) (currently 4; the historical correction was 3).
 
 2. **No assertion that both arms start at equal declared capacity.** The runner records declared replicas for the fixed arm but did not require the HPA floor to match before treating results as comparable.
 
 3. **`HPA_NEVER_SCALED` guard is necessary but insufficient for fairness.** Collection aborts only when peak in-window `spec_replicas` never **exceeds** `minReplicas`:
 
-```435:442:analysis/collect_metrics.py
+```python
     if mode == "hpa" and min_replicas is not None:
         if peak_spec <= min_replicas:
             if hpa_no_scale_policy == HPA_NO_SCALE_ABORT:
@@ -73,8 +75,8 @@ Calibrated comparison shows HPA with lower client p50 medians but **neither arm 
 | Raise HPA `minReplicas` to match fixed floor (3) | Sriram Madduri | done (`2439a8d`) |
 | Publish calibrated results with superseded section preserved | Sriram Madduri | done (Phase 1) |
 | Document approximate `/cpu` SLI and error budget | Sriram Madduri | done (`RESULTS.md`) |
-| Phase 5: store raw histogram bucket counts for exact SLI | Sriram Madduri | planned (`docs/phase5-bucket-schema.md`) |
-| Add a Prometheus PersistentVolumeClaim before Phase 5 (GKE only; does not extend 2h retention) | Sriram Madduri | open |
+| Phase 5: collect server histogram bucket increases | Sriram Madduri | implemented; exact client SLI remains unestablished (`docs/phase5-bucket-schema.md`) |
+| Add a Prometheus PersistentVolumeClaim (GKE only; does not extend 2h retention) | Sriram Madduri | implemented in GKE manifests |
 
 ## Lessons learned
 
@@ -115,8 +117,7 @@ Calibrated comparison shows HPA with lower client p50 medians but **neither arm 
 
 - [`RESULTS.md`](RESULTS.md) — calibrated tables, superseded `run-20260904T230444Z`, SLO section
 - [`DATA_PROVENANCE.md`](DATA_PROVENANCE.md) — artifact lineage
-- [`k8s/hpa.yaml`](k8s/hpa.yaml) — current `minReplicas: 3`
-- `results/runs/run-20260904T230444Z/rep-1/replica_series_hpa.csv` — `HPA_SCALE_FLOOR_CHECK peak=10 minReplicas=1`
-- `results/runs/run-20260905T160157Z/rep-1/replica_series_hpa.csv` — minimum `spec_replicas` **1**
+- [`k8s/hpa.yaml`](k8s/hpa.yaml) — current `minReplicas: 4`
+- Historical raw replica series were local, gitignored evidence and are not public verification inputs. The pinned incident write-up above records their original references.
 - `analysis/collect_metrics.py` — `HPA_NEVER_SCALED` guard
 - `analysis/sli_locust_grid.py` — approximate `/cpu` SLI brackets

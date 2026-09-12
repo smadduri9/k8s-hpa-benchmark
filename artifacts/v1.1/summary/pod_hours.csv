@@ -1,0 +1,4 @@
+arm,median_ready_pod_hours,n
+fixed,1.1855555555555555,6
+hpa_tuned,1.783611111111111,5
+hpa_stock,2.235138888888889,6

@@ -1,0 +1,4 @@
+arm,client_p95_median_ms,n
+fixed,510.0,6
+hpa_tuned,400.0,6
+hpa_stock,380.0,6

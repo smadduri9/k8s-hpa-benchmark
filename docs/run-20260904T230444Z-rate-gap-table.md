@@ -1,5 +1,10 @@
 # Rate-gap investigation — run-20260904T230444Z (fixed arm)
 
+**Historical investigation, superseded.** This table is preserved context; its
+underlying replica, event and Prometheus inputs are private and are not included
+in the v1.1 package. The correlations below are not current Phase 5 findings or
+independently reproducible from the public bundle.
+
 Assessable serving rows with `latency_p50_ms=MISSING` after burst-onset exclusion (57-row coverage denominator). Cross-reference: `replica_series_fixed.csv` + `kubectl get events -n hpa-eval` for `hpa-eval-fixed-*` pods, window `2026-09-04T23:06:04Z`–`2026-09-04T23:24:04Z`.
 
 | timestamp (UTC) | ready | state | replica_transitions (prior 30s) | pod_restart (prior 30s) | verdict |

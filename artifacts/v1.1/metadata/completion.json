@@ -1,0 +1,332 @@
+[
+  {
+    "arm": "fixed",
+    "marker": "Shape test stopping",
+    "repetition": 1,
+    "shape": "wc98_flash",
+    "source_line": 3876,
+    "source_log_sha256": "ab050a9fe0a9e2e98dc2e6ccd992b79e689ad5ea361f0a079a5fc7c03bce3d3d",
+    "t0": "2026-09-09T07:01:17Z",
+    "transformation": "Only the completion message retained; logger hostname removed"
+  },
+  {
+    "arm": "hpa_tuned",
+    "marker": "Shape test stopping",
+    "repetition": 1,
+    "shape": "wc98_flash",
+    "source_line": 3883,
+    "source_log_sha256": "49b59ca878b68edc577e0ec4a1b797df015704c4c4aad06dd8233c7b92e0ac64",
+    "t0": "2026-09-09T06:12:17Z",
+    "transformation": "Only the completion message retained; logger hostname removed"
+  },
+  {
+    "arm": "hpa_stock",
+    "marker": "Shape test stopping",
+    "repetition": 1,
+    "shape": "wc98_flash",
+    "source_line": 3876,
+    "source_log_sha256": "807f697b2060b7299dec5d8f2a8d1181c041242a12cd89b7340144de09ee9206",
+    "t0": "2026-09-09T06:36:50Z",
+    "transformation": "Only the completion message retained; logger hostname removed"
+  },
+  {
+    "arm": "fixed",
+    "marker": "Shape test stopping",
+    "repetition": 2,
+    "shape": "wc98_flash",
+    "source_line": 3883,
+    "source_log_sha256": "181fa81b019c3e9ba41ce3b810eef832a94d6c16252bf8d677f298f1c422172c",
+    "t0": "2026-09-09T08:14:43Z",
+    "transformation": "Only the completion message retained; logger hostname removed"
+  },
+  {
+    "arm": "hpa_tuned",
+    "marker": "Shape test stopping",
+    "repetition": 2,
+    "shape": "wc98_flash",
+    "source_line": 3876,
+    "source_log_sha256": "304872efbade418e4651262869afb53cac5c88dfaa2be30495ff1275066204b8",
+    "t0": "2026-09-09T07:25:47Z",
+    "transformation": "Only the completion message retained; logger hostname removed"
+  },
+  {
+    "arm": "hpa_stock",
+    "marker": "Shape test stopping",
+    "repetition": 2,
+    "shape": "wc98_flash",
+    "source_line": 3883,
+    "source_log_sha256": "ebeb201debb615ca53081e686cd48b40aeb578c7d4f5536c5d4d714b22fd9a89",
+    "t0": "2026-09-09T07:50:16Z",
+    "transformation": "Only the completion message retained; logger hostname removed"
+  },
+  {
+    "arm": "fixed",
+    "marker": "Shape test stopping",
+    "repetition": 3,
+    "shape": "wc98_flash",
+    "source_line": 3883,
+    "source_log_sha256": "01afb1514c7286c3d3bb5634f89ed9c8d7244dd9182fc7ff1edc2e88365f0f01",
+    "t0": "2026-09-09T09:28:17Z",
+    "transformation": "Only the completion message retained; logger hostname removed"
+  },
+  {
+    "arm": "hpa_tuned",
+    "marker": "Shape test stopping",
+    "repetition": 3,
+    "shape": "wc98_flash",
+    "source_line": 3876,
+    "source_log_sha256": "ba27288337bc8300222384892e41c94928cd98fa6479e078a64c495abdefdb83",
+    "t0": "2026-09-09T08:39:16Z",
+    "transformation": "Only the completion message retained; logger hostname removed"
+  },
+  {
+    "arm": "hpa_stock",
+    "marker": "Shape test stopping",
+    "repetition": 3,
+    "shape": "wc98_flash",
+    "source_line": 3876,
+    "source_log_sha256": "cc7534e181b184222f6ce2070275fec3709fe9d0d100532f731fe71908a919bd",
+    "t0": "2026-09-09T09:03:47Z",
+    "transformation": "Only the completion message retained; logger hostname removed"
+  },
+  {
+    "arm": "fixed",
+    "marker": "Shape test stopping",
+    "repetition": 4,
+    "shape": "wc98_flash",
+    "source_line": 3876,
+    "source_log_sha256": "7f02669fa298ce667142de9a4f680472e80d3a13c0e0383e638fb9b63da2e5d2",
+    "t0": "2026-09-09T10:41:49Z",
+    "transformation": "Only the completion message retained; logger hostname removed"
+  },
+  {
+    "arm": "hpa_tuned",
+    "marker": "Shape test stopping",
+    "repetition": 4,
+    "shape": "wc98_flash",
+    "source_line": 3883,
+    "source_log_sha256": "fca842a0a1f18f11c2e480f26c0419386eb1601239df265919862ec2dc7415d0",
+    "t0": "2026-09-09T09:52:49Z",
+    "transformation": "Only the completion message retained; logger hostname removed"
+  },
+  {
+    "arm": "hpa_stock",
+    "marker": "Shape test stopping",
+    "repetition": 4,
+    "shape": "wc98_flash",
+    "source_line": 3876,
+    "source_log_sha256": "7ca611ab3c62c281638569d37d6979f75b7318f59b17f2a4a196646b6c1c0bea",
+    "t0": "2026-09-09T10:17:18Z",
+    "transformation": "Only the completion message retained; logger hostname removed"
+  },
+  {
+    "arm": "fixed",
+    "marker": "Shape test stopping",
+    "repetition": 5,
+    "shape": "wc98_flash",
+    "source_line": 3876,
+    "source_log_sha256": "643dbf219351654452962e445e8e8d2093c79dfa08b663e1965f6c6a97ea6e98",
+    "t0": "2026-09-09T11:55:20Z",
+    "transformation": "Only the completion message retained; logger hostname removed"
+  },
+  {
+    "arm": "hpa_tuned",
+    "marker": "Shape test stopping",
+    "repetition": 5,
+    "shape": "wc98_flash",
+    "source_line": 3876,
+    "source_log_sha256": "eaf36d03ddf544da09dc9e14bbb3d98c3685d756738090571d460d0f89ac7403",
+    "t0": "2026-09-09T11:06:20Z",
+    "transformation": "Only the completion message retained; logger hostname removed"
+  },
+  {
+    "arm": "hpa_stock",
+    "marker": "Shape test stopping",
+    "repetition": 5,
+    "shape": "wc98_flash",
+    "source_line": 3883,
+    "source_log_sha256": "fc01003493e255a3a7584d355912129e846b4b324da988ad34653d189c7b2992",
+    "t0": "2026-09-09T11:30:53Z",
+    "transformation": "Only the completion message retained; logger hostname removed"
+  },
+  {
+    "arm": "fixed",
+    "marker": "Shape test stopping",
+    "repetition": 6,
+    "shape": "wc98_flash",
+    "source_line": 3876,
+    "source_log_sha256": "604afec7c7e0bbd2ab6b484bb68d7b61838c80dfbfac2fd2ba6a7e83acea6054",
+    "t0": "2026-09-09T13:08:59Z",
+    "transformation": "Only the completion message retained; logger hostname removed"
+  },
+  {
+    "arm": "hpa_tuned",
+    "marker": "Shape test stopping",
+    "repetition": 6,
+    "shape": "wc98_flash",
+    "source_line": 3883,
+    "source_log_sha256": "eaf677f82576cf55e0c620aa32bf7ef90995c71b2ea2bf437e09c536120539ad",
+    "t0": "2026-09-09T12:19:54Z",
+    "transformation": "Only the completion message retained; logger hostname removed"
+  },
+  {
+    "arm": "hpa_stock",
+    "marker": "Shape test stopping",
+    "repetition": 6,
+    "shape": "wc98_flash",
+    "source_line": 3876,
+    "source_log_sha256": "1b9bdb50d4ec7d19e24c978cb24c995b6ffd59d5ea8fccf6de7df19ca935aeed",
+    "t0": "2026-09-09T12:44:28Z",
+    "transformation": "Only the completion message retained; logger hostname removed"
+  },
+  {
+    "arm": "fixed",
+    "marker": "Shape test stopping",
+    "repetition": 1,
+    "shape": "wc98_ramp",
+    "source_line": 3883,
+    "source_log_sha256": "0c475b46b54675b8c89bfff4d3134547a95ee41a7e2dc1002a08cd0e4e1d0411",
+    "t0": "2026-09-10T04:24:45Z",
+    "transformation": "Only the completion message retained; logger hostname removed"
+  },
+  {
+    "arm": "hpa_tuned",
+    "marker": "Shape test stopping",
+    "repetition": 1,
+    "shape": "wc98_ramp",
+    "source_line": 3883,
+    "source_log_sha256": "3941a31008bf22b9f9a1fbd177c349021fd4c9eb3bea3e30fb3372738e7db49b",
+    "t0": "2026-09-10T03:35:40Z",
+    "transformation": "Only the completion message retained; logger hostname removed"
+  },
+  {
+    "arm": "hpa_stock",
+    "marker": "Shape test stopping",
+    "repetition": 1,
+    "shape": "wc98_ramp",
+    "source_line": 3883,
+    "source_log_sha256": "ee1b9bbeecb2227ea76f0ef370697dcb06bbd62ce19fa570ae7b26213885643f",
+    "t0": "2026-09-10T04:00:13Z",
+    "transformation": "Only the completion message retained; logger hostname removed"
+  },
+  {
+    "arm": "fixed",
+    "marker": "Shape test stopping",
+    "repetition": 2,
+    "shape": "wc98_ramp",
+    "source_line": 3883,
+    "source_log_sha256": "a43ab01fd902b0ec271823692beea86bca72a2e4bb2d7f81027464c2a06f2853",
+    "t0": "2026-09-10T07:18:51Z",
+    "transformation": "Only the completion message retained; logger hostname removed"
+  },
+  {
+    "arm": "hpa_tuned",
+    "marker": "Shape test stopping",
+    "repetition": 2,
+    "shape": "wc98_ramp",
+    "source_line": 3876,
+    "source_log_sha256": "d3be4a928c834c396f0204c41febf820e410d86cf7696e17dac8ee4767774608",
+    "t0": "2026-09-10T08:29:08Z",
+    "transformation": "Only the completion message retained; logger hostname removed"
+  },
+  {
+    "arm": "hpa_stock",
+    "marker": "Shape test stopping",
+    "repetition": 2,
+    "shape": "wc98_ramp",
+    "source_line": 3883,
+    "source_log_sha256": "276c09552a32a7d09e0b77bae091579b1c58a0bcd36cb9ee18aacd5480b71018",
+    "t0": "2026-09-10T08:53:45Z",
+    "transformation": "Only the completion message retained; logger hostname removed"
+  },
+  {
+    "arm": "fixed",
+    "marker": "Shape test stopping",
+    "repetition": 1,
+    "shape": "wc98_constant",
+    "source_line": 3880,
+    "source_log_sha256": "81e77825db1cc0324d4ddc8753517e4632f65327f11223d79ed40587917647b1",
+    "t0": "2026-09-10T10:07:11Z",
+    "transformation": "Only the completion message retained; logger hostname removed"
+  },
+  {
+    "arm": "hpa_tuned",
+    "marker": "Shape test stopping",
+    "repetition": 1,
+    "shape": "wc98_constant",
+    "source_line": 3880,
+    "source_log_sha256": "2380da22e8f8852c72f7af27fa073ffa1dc8d7fa9682737091a533010b55f174",
+    "t0": "2026-09-10T09:18:14Z",
+    "transformation": "Only the completion message retained; logger hostname removed"
+  },
+  {
+    "arm": "hpa_stock",
+    "marker": "Shape test stopping",
+    "repetition": 1,
+    "shape": "wc98_constant",
+    "source_line": 3880,
+    "source_log_sha256": "6f5d11af222ae5ef8a98bfc4f4f912151ffdc1e5a77424579120674f0053becd",
+    "t0": "2026-09-10T09:42:42Z",
+    "transformation": "Only the completion message retained; logger hostname removed"
+  },
+  {
+    "arm": "fixed",
+    "marker": "Shape test stopping",
+    "repetition": 1,
+    "shape": "wc98_periodic",
+    "source_line": 3889,
+    "source_log_sha256": "11e76910fcfd8cbcfc3316fa460fbcc9f207582d61ea9821776836362e292d4c",
+    "t0": "2026-09-10T11:20:45Z",
+    "transformation": "Only the completion message retained; logger hostname removed"
+  },
+  {
+    "arm": "hpa_tuned",
+    "marker": "Shape test stopping",
+    "repetition": 1,
+    "shape": "wc98_periodic",
+    "source_line": 3882,
+    "source_log_sha256": "6bc8f798899ae80c2892147e3250aa37b2f640d780db0e18e389767c8b6b66d8",
+    "t0": "2026-09-10T10:31:41Z",
+    "transformation": "Only the completion message retained; logger hostname removed"
+  },
+  {
+    "arm": "hpa_stock",
+    "marker": "Shape test stopping",
+    "repetition": 1,
+    "shape": "wc98_periodic",
+    "source_line": 3882,
+    "source_log_sha256": "7b1321cf202aa565291a90e2ac432ef5f8f376e18fdcc620bb5ce80062a7f215",
+    "t0": "2026-09-10T10:56:10Z",
+    "transformation": "Only the completion message retained; logger hostname removed"
+  },
+  {
+    "arm": "fixed",
+    "marker": "Shape test stopping",
+    "repetition": 1,
+    "shape": "rr_periodic",
+    "source_line": 3886,
+    "source_log_sha256": "6e7284666c004bd87daa676ec2d3256ef9e42b4e0953409b86ff3ef9374f5300",
+    "t0": "2026-09-10T12:34:19Z",
+    "transformation": "Only the completion message retained; logger hostname removed"
+  },
+  {
+    "arm": "hpa_tuned",
+    "marker": "Shape test stopping",
+    "repetition": 1,
+    "shape": "rr_periodic",
+    "source_line": 3879,
+    "source_log_sha256": "267993ccd4e6b5e8226266020ebef2eaadad321af389faf21ccf755569d8fae2",
+    "t0": "2026-09-10T11:45:12Z",
+    "transformation": "Only the completion message retained; logger hostname removed"
+  },
+  {
+    "arm": "hpa_stock",
+    "marker": "Shape test stopping",
+    "repetition": 1,
+    "shape": "rr_periodic",
+    "source_line": 3879,
+    "source_log_sha256": "1dfb329aad26511de5fe4638ba389bd581a96ce2df496a0bb1a5118bef0423ef",
+    "t0": "2026-09-10T12:09:45Z",
+    "transformation": "Only the completion message retained; logger hostname removed"
+  }
+]

@@ -6,23 +6,53 @@ Personal benchmark project that evaluates Kubernetes Horizontal Pod Autoscaler (
 
 Published page: [smadduri9.github.io/k8s-hpa-benchmark](https://smadduri9.github.io/k8s-hpa-benchmark/). Full write-up and per-rep tables: [RESULTS.md](RESULTS.md#phase-5-findings-measurement-of-record).
 
-Trace-derived WorldCup98 `wc98_flash`, n=6, three arms (`fixed`, `hpa_tuned`, `hpa_stock`), `SHAPE_MEAN_USERS=69`, HPA 4–12.
+<!-- BEGIN V1.1 GENERATED FINDINGS -->
 
-**Finding 1.** Client p95 medians: fixed 510 ms, hpa_tuned 400 ms, hpa_stock 380 ms (`analysis/aggregate_runs.py` on `results/runs/run-phase5-wc98_flash`). Both HPA arms beat fixed at p=0.031250, the n=6 Wilcoxon floor, in 6 of 6 reps. hpa_tuned vs hpa_stock p=0.093750. Tuning the `behavior:` block made no detectable difference to latency. That is a null result that closes a confound the project had previously only disclosed. Tuned pod-hours use n=5 (1.78361) because `rep-1/hpa_tuned/replica_series_hpa.csv` is a leaked sampler (96.64138888888888 pod-hours over 21 hours). Fixed 1.18556 and stock 2.23514 remain n=6.
+Evidence and offline commands: [v1.1 package](artifacts/v1.1/README.md). Authority: [verify.py](artifacts/v1.1/verify.py) and [headline.json](artifacts/v1.1/summary/headline.json); the historical general aggregator does not apply the publication exclusions.
 
-**Finding 2.** At `SHAPE_MEAN_USERS=69`, peak `spec_replicas` was 10–12 for flash, 8 then 4–5 for ramp, 5 for periodic, 5 for `rr_periodic`, and 4 for constant. Peak-to-mean ratio determines whether CPU-target HPA engages. Only flash-crowd bursts move it off its floor. Predicted in `514048c` before those runs. The prediction matched.
+Trace-derived WorldCup98 and RetailRocket load; three arms (`fixed`, `hpa_tuned`, `hpa_stock`). `SHAPE_MEAN_USERS=69` is a model-derived calibration parameter, not measured maximum capacity. Declared HPA floor: 4 replicas.
 
-**Finding 3.** Identical `wc98_ramp` config produced peak `spec_replicas` 8 on one GKE cluster and 4–5 on the next. Locust request counts were 34283 vs 33835. Warm-up CPU for the same 37-user hold was 154–240 millicores vs 73–166. GKE e2 CPU generation is not selectable. A marginal shape can change behaviour between deployments of the same spec. Marginal-shape results are therefore n=1.
+### Finding 1. Flash latency and ready-pod time
 
-Cold-start collection was dropped after five attempts with no usable rows. The collector was a passive observer. Locust, replica, and metrics results are unaffected. `declared_replicas=5` from live spec is a known issue.
+Client p95 medians: fixed **510 ms**, tuned **400 ms**, stock **380 ms**, across **6 paired repetitions**. Tuned p95 was lower than fixed in 6/6; stock was lower in 6/6.
 
-CI on GitHub Actions runs unit-level checks only (Wilcoxon self-test, metrics contract on fixtures, repo-path quoting audit, analysis imports). Shape validation and the benchmark itself require a cluster.
+Exact two-sided Wilcoxon: fixed/tuned **p=0.031250**, fixed/stock **p=0.031250**, tuned/stock **p=0.093750**. These are unadjusted tests. The tuned/stock comparison does not establish equivalence or a benefit from tuning. Arm order was not randomized.
+
+Median ready-pod hours: fixed **1.18556 (n=6)**, tuned **1.78361 (n=5)**, stock **2.23514 (n=6)**. Ratios of unrounded medians are **+50.445173%** tuned/fixed and **+88.530928%** stock/fixed. Ready-pod time measures ready replicas integrated over sampled time; it does not measure consumed CPU or billing.
+
+[Exclusions policy](artifacts/v1.1/exclusions.csv): tuned flash rep-1 retains its latency measurement but is excluded from ready-pod time because its replica series spans beyond the benchmark window. The contaminated file is preserved unchanged; its historical process origin is not independently evidenced. See [per-repetition results](artifacts/v1.1/summary/flash_repetitions.csv) and [paired tests](artifacts/v1.1/summary/statistical_tests.csv).
+
+### Finding 2. Workload coverage
+
+Observed in-window peak `spec_replicas`, listed in repetition order:
+
+| Workload | Repetitions | Tuned HPA | Stock HPA |
+|---|---:|---|---|
+| `wc98_flash` | 6 | 12, 11, 11, 11, 10, 11 | 11, 12, 12, 11, 11, 11 |
+| `wc98_ramp` | 2 | 8, 4 | 8, 5 |
+| `wc98_constant` | 1 | 4 | 4 |
+| `wc98_periodic` | 1 | 5 | 5 |
+| `rr_periodic` | 1 | 5 | 5 |
+
+Fixed-arm peaks were 4 throughout this completed scope. Flash, ramp and both periodic workloads showed scale-out above the floor in at least one retained arm/repetition. Constant did not. These observations do not establish peak-to-mean ratio as a sufficient predictor of HPA engagement. Source: [replica peaks and request counts](artifacts/v1.1/summary/replica_peaks.csv).
+
+### Finding 3. Ramp run/deployment sensitivity
+
+Two ramp repetitions produced similar measured request counts (34,283 and 33,835 in the tuned arm) but different scale-out: tuned peaked at 8 replicas in one repetition and 4 in the other. The retained evidence does not establish a hardware-level cause. This is evidence of run/deployment sensitivity, not a causal CPU-platform finding. Paired warm-up CPU vectors and hardware inventories are `MISSING`.
+
+Flash has six completed repetitions, ramp two, and each other workload one. The originally defined three-repetition scope for the non-flash workloads was not completed. Incomplete ramp rep-3 is excluded. The non-flash observations are descriptive, not a workload ranking.
+
+<!-- END V1.1 GENERATED FINDINGS -->
+
+No Phase 5 cold-start distribution is published; retained cold-start output is insufficient. See [limitations](RESULTS.md#measurement-limitations).
+
+CI on GitHub Actions runs offline checks, including v1.1 verification, publication tests, generated-text consistency, Wilcoxon self-tests, metrics fixtures, quoting checks and analysis imports. Shape validation and the benchmark itself require a cluster.
 
 Cite via [CITATION.cff](CITATION.cff). A Zenodo DOI is minted from a GitHub release. Steps are in [CONTRIBUTING.md](CONTRIBUTING.md#zenodo-archive-doi). GitHub Pages is the `docs/` directory on `main`. Enable it under Settings, Pages, Deploy from a branch, `main`, `/docs`.
 
 ## Calibrated results (minReplicas=3 both arms), superseded
 
-**Superseded by Phase 5** (synthetic shapes, two arms, `minReplicas=3`). Tables below are preserved in place. Full write-up: [RESULTS.md](RESULTS.md#calibrated-results-minreplicas3-both-arms-superseded). SLO and error-budget analysis: [RESULTS.md § SLO](RESULTS.md#slo-and-error-budget-calibrated-runs); incident write-up: [POSTMORTEM.md](POSTMORTEM.md); policy: [docs/error-budget-policy.md](docs/error-budget-policy.md).
+**Superseded by Phase 5** (synthetic shapes, two arms, `minReplicas=3`). Tables below are historical and are not covered by the v1.1 verifier; their raw run evidence is not bundled for public verification. Full write-up: [RESULTS.md](RESULTS.md#calibrated-results-minreplicas3-both-arms-superseded). SLO and error-budget analysis: [RESULTS.md § SLO](RESULTS.md#slo-and-error-budget-calibrated-runs); incident write-up: [POSTMORTEM.md](POSTMORTEM.md); policy: [docs/error-budget-policy.md](docs/error-budget-policy.md).
 
 ### hybrid — `run-20260905T220046Z-hybrid` (n=6)
 
@@ -56,7 +86,7 @@ Cite via [CITATION.cff](CITATION.cff). A Zenodo DOI is minted from a GitHub rele
 
 ## Superseded — run-20260904T230444Z
 
-This was the published headline. It is not a fair comparison: HPA ran at `minReplicas=1` while the fixed arm was declared at 3. Superseded by the calibrated minReplicas=3 runs above. Table and figures preserved verbatim.
+This was the published headline. It is not a fair comparison: HPA ran at `minReplicas=1` while the fixed arm was declared at 3. Superseded by the calibrated minReplicas=3 runs above. The historical table and figures remain for context; their raw run evidence is not bundled for public verification.
 
 **Status: PARTIAL** — fixed arm collapsed under burst; metrics gaps are measured, not hidden.
 
@@ -93,7 +123,7 @@ Fixed availability (73 rows): **14 UNAVAILABLE** / **40 DEGRADED** / **19 AVAILA
 
 ![Cost performance](docs/figures/run-20260904T230444Z/cost_performance.png)
 
-Paths above are relative to repo root. Run artifacts live under `results/runs/run-20260904T230444Z/rep-1/` (gitignored locally).
+These tracked historical figures are viewable, but their underlying run artifacts are private, gitignored inputs. They cannot be regenerated from the v1.1 package.
 
 ---
 
@@ -123,7 +153,7 @@ This project compares deployment strategies for the same FastAPI workload.
 
 **Phase 1 calibrated runs (superseded):** static **3** replicas vs HPA **3–10**, synthetic shapes.
 
-The benchmark measures reliability, latency, throughput, scaling behavior, and cost efficiency.
+The current publication reports client latency, ready-pod time and replica scaling. Historical cost-model outputs are superseded and are not billing measurements.
 
 ## Stack
 
@@ -140,6 +170,7 @@ The benchmark measures reliability, latency, throughput, scaling behavior, and c
 - `k8s/` namespace, deployments, services, HPA, Prometheus manifests
 - `locust/` workload generator with phased traffic shape
 - `analysis/` metric collection and report plotting scripts
+- `artifacts/v1.1/` self-contained Phase 5 evidence, exclusions and offline verifier
 - `docs/` published figures and investigation tables for completed runs
 - `scripts/` local and GKE deployment + experiment orchestration
 

@@ -1,0 +1,6 @@
+server_or_series_id,local_date,window_offset_sec,RMSE,noise_floor_rmse,FIT_BELOW_NOISE_FLOOR,peak_to_mean,N_windows_total,N_windows_eligible,INELIGIBLE_SERVER_ABSENT,rule
+3,1998-06-09,64560,0.326223,0.093004,false,2.015377,2352219,1553634,1251,shape_selection_rule_v2
+2,1998-06-09,64560,0.328533,0.091756,false,1.961646,2352219,1553634,1251,shape_selection_rule_v2
+5,1998-06-09,64500,0.345120,0.092003,false,2.090759,2352219,1553634,1251,shape_selection_rule_v2
+99,1998-05-18,82380,0.346521,0.066782,false,2.470763,2352219,1553634,1251,shape_selection_rule_v2
+98,1998-07-15,36900,0.347628,0.066397,false,2.288024,2352219,1553634,1251,shape_selection_rule_v2
