@@ -41,6 +41,15 @@ README, RESULTS, and Pages. CI runs generation freshness, structural/link checks
 and regression/rejection tests in addition to the existing publication and
 documentation/privacy checks.
 
+## Theme palette
+
+The theme uses light lavender (`#f0ebf2`) for the page, light purple (`#c7bcd6`)
+for explanatory bands, muted purple (`#beb1cf`) for borders, light blue
+(`#a3c5e8`) for callouts, and medium blue (`#8dbae7`) for primary buttons.
+Darker complementary text colors preserve contrast on the pastel surfaces.
+Dark mode uses deep purple surfaces with the same pastel accents. The existing
+published figures retain their original colors.
+
 ## Links and accessibility
 
 Local image and stylesheet URLs are relative to the Pages home, so the repository
