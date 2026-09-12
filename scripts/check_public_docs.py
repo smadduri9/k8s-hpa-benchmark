@@ -18,7 +18,7 @@ ACTIVE = (
     "README.md", "RESULTS.md", "POSTMORTEM.md", "DATA_PROVENANCE.md",
     "REPRODUCE.md", "CONTRIBUTING.md", "docs/README.md",
     "docs/MEASUREMENT_GUARDS.md", "docs/COLD_START.md", "docs/SHAPE_SELECTION.md",
-    "docs/error-budget-policy.md", "docs/phase5-bucket-schema.md", "docs/index.md",
+    "docs/error-budget-policy.md", "docs/phase5-bucket-schema.md", "docs/site/README.md",
 )
 REPOSITORY = "https://github.com/smadduri9/k8s-hpa-benchmark/blob/main/"
 SVG_NS = "{http://www.w3.org/2000/svg}"

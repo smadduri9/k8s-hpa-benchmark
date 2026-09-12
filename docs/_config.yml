@@ -1,5 +1,9 @@
 title: k8s-hpa-benchmark
-description: Phase 5 Kubernetes HPA benchmark results
+description: An engineering case study in Kubernetes autoscaling and measurement
+url: https://smadduri9.github.io
+baseurl: /k8s-hpa-benchmark
+exclude:
+  - site
 markdown: kramdown
 kramdown:
   hard_wrap: false

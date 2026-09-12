@@ -13,4 +13,4 @@ Start with the [project overview](../README.md), [current technical report](../R
 | [Error-budget policy](error-budget-policy.md) | Proposed policy; no published compliance result |
 | [Archive](archive/README.md) | Superseded results and development history |
 
-[index.md](index.md) is the existing GitHub Pages source. Its website design is maintained separately from the repository overview.
+[index.html](index.html) is the generated GitHub Pages case study. Edit the [site template](site/index.template.html), then use the [site generation and validation commands](site/README.md). Methodology and archive documents remain separate from the portfolio home.

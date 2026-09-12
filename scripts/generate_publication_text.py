@@ -9,6 +9,8 @@ import csv
 import json
 from pathlib import Path
 
+from generate_portfolio_site import generate as generate_portfolio
+
 ROOT = Path(__file__).resolve().parents[1]
 BUNDLE = ROOT / "artifacts/v1.1"
 BEGIN = "<!-- BEGIN V1.1 GENERATED FINDINGS -->"
@@ -128,7 +130,6 @@ def main():
     args = parser.parse_args()
     for filename, prefix, detailed in (
         ("RESULTS.md", "artifacts/v1.1/", True),
-        ("docs/index.md", "https://github.com/smadduri9/k8s-hpa-benchmark/blob/main/artifacts/v1.1/", False),
     ):
         path = ROOT / filename
         text = path.read_text()
@@ -158,6 +159,7 @@ def main():
             raise ValueError("PUBLICATION_TEXT_MISMATCH README.md")
     else:
         path.write_text(expected)
+    generate_portfolio(args.check)
     print("PUBLICATION_TEXT_PASS documents=3")
 
 

@@ -35,3 +35,7 @@ jobs:
         run: '"${GITHUB_WORKSPACE}/.venv/bin/python" -B scripts/generate_publication_text.py --check'
       - name: Public documentation links, diagrams and privacy
         run: '"${GITHUB_WORKSPACE}/.venv/bin/python" -B scripts/check_public_docs.py'
+      - name: Portfolio generation, links, assets and accessibility structure
+        run: '"${GITHUB_WORKSPACE}/.venv/bin/python" -B scripts/check_portfolio_site.py'
+      - name: Portfolio generation and rejection tests
+        run: '"${GITHUB_WORKSPACE}/.venv/bin/python" -B -m unittest discover -s tests -p test_portfolio_site.py'
