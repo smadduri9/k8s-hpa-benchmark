@@ -1,23 +1,23 @@
 # Contributing
 
-This repository is a completed personal benchmark. There is no cluster to re-run against. Open an issue before sending a pull request.
+This is a completed personal benchmark with a retained public evidence package. The original cluster has been deleted. Open an issue to discuss a proposed change before sending a pull request.
 
-CI on GitHub Actions covers unit-level checks only: Wilcoxon self-test, the metrics contract against fixture CSVs, the repo-path quoting audit, and analysis module imports. Shape validation and the benchmark itself require a cluster and are not in CI.
+## Validate a change
 
-## Zenodo archive (DOI)
+Follow [REPRODUCE.md](REPRODUCE.md#verify-published-results) to set up Python 3.14 and the repository virtualenv. Run the offline verifier, publication tests and documentation checks before submitting changes. CI also runs the Wilcoxon self-test, metric-contract fixtures, path-quoting checks and analysis imports.
 
-The GitHub repository is the working copy. A Zenodo archive supplies a DOI for citation. `CITATION.cff` holds the metadata Zenodo will import.
+Keep current findings in [RESULTS.md](RESULTS.md), the overview in [README.md](README.md), and historical material in [docs/archive/](docs/archive/README.md). Never fill missing measurements with estimates. Use the literal `MISSING` and explain exclusions.
 
-Click-by-click, once, from an account that can administer `smadduri9/k8s-hpa-benchmark`:
+## Evidence and figures
 
-1. Sign in at [https://zenodo.org](https://zenodo.org) with the GitHub account that owns the repo (or an account that GitHub has granted access).
-2. Open [https://zenodo.org/account/settings/github/](https://zenodo.org/account/settings/github/). Authorize Zenodo if GitHub asks.
-3. Find `smadduri9/k8s-hpa-benchmark` in the repository list. Flip the switch to on. Zenodo creates a webhook on the repo.
-4. On GitHub, open the repository, then Releases, then Draft a new release. Tag `v1.0.0` (or the next unused version). Title the release. Publish it.
-5. Wait for the webhook. Zenodo will show a new deposit under [https://zenodo.org/deposit](https://zenodo.org/deposit) with a reserved DOI (`10.5281/zenodo.NNNNNNN`).
-6. Open that deposit. Confirm title, author (Sriram Madduri), and license (MIT) match `CITATION.cff`. Publish the deposit.
-7. Copy the DOI. Add it to `CITATION.cff` as `doi: 10.5281/zenodo.NNNNNNN` and to the README citation line, then commit.
+The [v1.1 package](artifacts/v1.1/README.md) is self-contained. Its verifier is authoritative for this publication; the general experiment aggregator does not apply its exclusions. Preserve raw evidence bytes and the [evidence attributes](.gitattributes).
 
-Do not create the Zenodo deposit by uploading a zip by hand. The GitHub release webhook is the integration this file describes. Subsequent tagged releases mint new version DOIs under the same concept DOI.
+The [text generator](scripts/generate_publication_text.py) maintains bounded metric blocks in README, RESULTS and the existing Pages document. The [figure generator](scripts/generate_public_figures.py) reads only canonical summaries. After a deliberate presentation edit, run the text check and inspect the rendered figures. The architecture and measurement-guards SVGs are hand-maintained diagrams, separate from generated measurement figures.
 
-A DOI is not assigned until step 6. Until then, cite the GitHub URL in `CITATION.cff`.
+Do not regenerate evidence checksums merely to make changed inputs pass. Evidence or exclusion changes require an explicit explanation, corresponding summaries and rejection tests. New cloud measurements require the separate rerun workflow and a new publication scope.
+
+## Citation and release records
+
+[CITATION.cff](CITATION.cff) remains the v1.0.0 citation record. A directory named `artifacts/v1.1` is an evidence version, not a release or a new DOI. Release and archive changes are separate maintainer operations. No DOI value is present in the current citation file, so this repository does not display an unverified DOI badge.
+
+Repository code is MIT licensed. Third-party trace derivatives keep their [source terms](artifacts/v1.1/SOURCE_NOTICES.md); they must not be relabeled as MIT.

@@ -1,0 +1,1939 @@
+{
+  "capacity/cpu_samples.csv": {
+    "kind": "derived",
+    "source_or_derivation": "Extract recorded per-step CPU medians; no individual pod readings retained",
+    "sources": [
+      {
+        "local_source": "results/capacity_probe/probe.log",
+        "sha256": "5613bc9bc6c9122eef5648b4e4cc9ad4c8e618206f56fdcaa37fbb610a91f53a"
+      }
+    ],
+    "units": "seconds; millicores per pod"
+  },
+  "capacity/derivation.json": {
+    "kind": "derived",
+    "source_or_derivation": "Retain calibration inputs/result; omit redundant 5000-candidate evaluation table",
+    "sources": [
+      {
+        "local_source": "results/capacity_probe/derivation.json",
+        "sha256": "3c571707237aab24bca2e7a6a873c053f2cf523933318be7b95326de7470518b"
+      },
+      {
+        "local_source": "results/capacity_probe/steps.csv",
+        "sha256": "79b828dbf2d714345391485b2ea73d35c388cefd527e42769b399507224a94b5"
+      }
+    ],
+    "units": "not_applicable"
+  },
+  "capacity/step-1/locust_stats.csv": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/capacity_probe/step-1/locust_stats.csv",
+        "sha256": "9deb792969640ecda555da3ebd35cf6a6dfbcbaff1ce9a09ce5034b5cbf79397"
+      }
+    ],
+    "units": "milliseconds; requests; requests/second; bytes"
+  },
+  "capacity/step-10/locust_stats.csv": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/capacity_probe/step-10/locust_stats.csv",
+        "sha256": "458b78758d6c114387797f580b867a9203b8175c24c886ec01fa16a31a2525d1"
+      }
+    ],
+    "units": "milliseconds; requests; requests/second; bytes"
+  },
+  "capacity/step-11/locust_stats.csv": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/capacity_probe/step-11/locust_stats.csv",
+        "sha256": "f884de7e0282ca4dab32263d3741e202a71d200eca50d674f5e1d1e8250a66ab"
+      }
+    ],
+    "units": "milliseconds; requests; requests/second; bytes"
+  },
+  "capacity/step-12/locust_stats.csv": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/capacity_probe/step-12/locust_stats.csv",
+        "sha256": "0602b3677f11385e4da9b1a6fbbe2685dfa519fdf147ef37e2efda74e8568af1"
+      }
+    ],
+    "units": "milliseconds; requests; requests/second; bytes"
+  },
+  "capacity/step-13/locust_stats.csv": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/capacity_probe/step-13/locust_stats.csv",
+        "sha256": "915cef80e51b8813d44ad9abe24add684f74342de5e2fb2e509e4edabe406844"
+      }
+    ],
+    "units": "milliseconds; requests; requests/second; bytes"
+  },
+  "capacity/step-14/locust_stats.csv": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/capacity_probe/step-14/locust_stats.csv",
+        "sha256": "c7f4bcabe05e933a88da752a9bd9fe4c2f4d00693c43f624eca1116493fc9e3f"
+      }
+    ],
+    "units": "milliseconds; requests; requests/second; bytes"
+  },
+  "capacity/step-15/locust_stats.csv": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/capacity_probe/step-15/locust_stats.csv",
+        "sha256": "d36fa67a1e51e600c7718601bbb891b697cf727f3ae39cfdbd2d2ef616b0f4af"
+      }
+    ],
+    "units": "milliseconds; requests; requests/second; bytes"
+  },
+  "capacity/step-2/locust_stats.csv": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/capacity_probe/step-2/locust_stats.csv",
+        "sha256": "39416801ef741e56557a81bdc6a2e5fcf75fc7c8c7624080ee90e577aa490d7e"
+      }
+    ],
+    "units": "milliseconds; requests; requests/second; bytes"
+  },
+  "capacity/step-3/locust_stats.csv": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/capacity_probe/step-3/locust_stats.csv",
+        "sha256": "9aaf58114b1434d5e959b2fb177c6d1eefc5b195e82b7335bbbe3d3440a2ad2f"
+      }
+    ],
+    "units": "milliseconds; requests; requests/second; bytes"
+  },
+  "capacity/step-4/locust_stats.csv": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/capacity_probe/step-4/locust_stats.csv",
+        "sha256": "75cfb71f6dcadc3c633ab64358171eeec97432081b81d8588c0cc90caeba80dc"
+      }
+    ],
+    "units": "milliseconds; requests; requests/second; bytes"
+  },
+  "capacity/step-5/locust_stats.csv": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/capacity_probe/step-5/locust_stats.csv",
+        "sha256": "9e733f3c99ded000f2e9967eee946b910d969f9e8c9596e8e202d771149c8c6d"
+      }
+    ],
+    "units": "milliseconds; requests; requests/second; bytes"
+  },
+  "capacity/step-6/locust_stats.csv": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/capacity_probe/step-6/locust_stats.csv",
+        "sha256": "c663d263bbffb15233564f172856c48280ab38cdbeb836f6740ca964cfe85923"
+      }
+    ],
+    "units": "milliseconds; requests; requests/second; bytes"
+  },
+  "capacity/step-7/locust_stats.csv": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/capacity_probe/step-7/locust_stats.csv",
+        "sha256": "bc1628bcec9609d68f7ce310b7296615b2a0f7617cd6e7ec619856a3c5b55e30"
+      }
+    ],
+    "units": "milliseconds; requests; requests/second; bytes"
+  },
+  "capacity/step-8/locust_stats.csv": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/capacity_probe/step-8/locust_stats.csv",
+        "sha256": "c7eb59a1817bbef7306f7280064a31eaded8e504e6f2091ec30a7cb352aba98f"
+      }
+    ],
+    "units": "milliseconds; requests; requests/second; bytes"
+  },
+  "capacity/step-9/locust_stats.csv": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/capacity_probe/step-9/locust_stats.csv",
+        "sha256": "05e1cd79b54eb10c3bba71dbf4c2101129c36068ba21a8d3aae690c2ca16c619"
+      }
+    ],
+    "units": "milliseconds; requests; requests/second; bytes"
+  },
+  "capacity/steps.csv": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/capacity_probe/steps.csv",
+        "sha256": "79b828dbf2d714345391485b2ea73d35c388cefd527e42769b399507224a94b5"
+      }
+    ],
+    "units": "users; requests/second; millicores per pod; ready pods"
+  },
+  "metadata/completion.json": {
+    "kind": "derived",
+    "source_or_derivation": "Extract completion markers from private logs; source hashes and line numbers retained",
+    "sources": [],
+    "units": "not_applicable"
+  },
+  "metadata/runs.json": {
+    "kind": "derived",
+    "source_or_derivation": "Whitelist declared configuration and run scope; omit cloud and pod identities",
+    "sources": [
+      {
+        "local_source": "k8s/deployment-fixed.yaml",
+        "sha256": "55ad88b035e88acdea4f550a71f09e426176c178f8dad10cf56000e47106adf8"
+      },
+      {
+        "local_source": "k8s/hpa.yaml",
+        "sha256": "f39f98361602b79708be04f2ed9f894bf54d8a0bc521458af73f0dd1d4c91a13"
+      }
+    ],
+    "units": "not_applicable"
+  },
+  "runs/rr_periodic/STATUS": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-rr_periodic/STATUS",
+        "sha256": "26f5aeea64c07cf2ac533959f59773a39462fdaf868026a02cfd4dc96da455db"
+      }
+    ],
+    "units": "not_applicable"
+  },
+  "runs/rr_periodic/rep-1/fixed/STATUS": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-rr_periodic/rep-1/fixed/STATUS",
+        "sha256": "f7cde1c6f0783117f2eb596160d4eb2b6e7ff4d9b358f4751dc843b92bf7769d"
+      }
+    ],
+    "units": "not_applicable"
+  },
+  "runs/rr_periodic/rep-1/fixed/locust_fixed_stats.csv": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-rr_periodic/rep-1/fixed/locust_fixed_stats.csv",
+        "sha256": "ee601671f655237aa7a13df6d8e97ba723e3a23e297e4217181d42bd45628bba"
+      }
+    ],
+    "units": "milliseconds; requests; requests/second; bytes"
+  },
+  "runs/rr_periodic/rep-1/fixed/replica_series_fixed.csv": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-rr_periodic/rep-1/fixed/replica_series_fixed.csv",
+        "sha256": "c3cbc1586b10f93a0c5c202296e8c5e9cf7f56406d1acfbfbfedf616f31524e8"
+      }
+    ],
+    "units": "UTC timestamps; replica counts"
+  },
+  "runs/rr_periodic/rep-1/fixed/t0.txt": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-rr_periodic/rep-1/fixed/t0.txt",
+        "sha256": "0a43e06bc4b1e6cbcb9eabe8bdb9527e0c37a3cd2ed34d9ab19d757221d8be9e"
+      }
+    ],
+    "units": "UTC timestamp"
+  },
+  "runs/rr_periodic/rep-1/hpa_stock/STATUS": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-rr_periodic/rep-1/hpa_stock/STATUS",
+        "sha256": "f7cde1c6f0783117f2eb596160d4eb2b6e7ff4d9b358f4751dc843b92bf7769d"
+      }
+    ],
+    "units": "not_applicable"
+  },
+  "runs/rr_periodic/rep-1/hpa_stock/locust_hpa_stock_stats.csv": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-rr_periodic/rep-1/hpa_stock/locust_hpa_stock_stats.csv",
+        "sha256": "21e4b6e697fecbe807a618688399169dc9521682db4e0b5174a0fd435c7a5e7a"
+      }
+    ],
+    "units": "milliseconds; requests; requests/second; bytes"
+  },
+  "runs/rr_periodic/rep-1/hpa_stock/replica_series_hpa.csv": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-rr_periodic/rep-1/hpa_stock/replica_series_hpa.csv",
+        "sha256": "d845f7d4182121d6485d69ae23efa479f1b4d3e1ca26cad5366c30220713493e"
+      }
+    ],
+    "units": "UTC timestamps; replica counts"
+  },
+  "runs/rr_periodic/rep-1/hpa_stock/t0.txt": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-rr_periodic/rep-1/hpa_stock/t0.txt",
+        "sha256": "b5c32e05444162550bc85e34cc00f50a26611f2b0a7f6839266c285b3f63fd38"
+      }
+    ],
+    "units": "UTC timestamp"
+  },
+  "runs/rr_periodic/rep-1/hpa_tuned/STATUS": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-rr_periodic/rep-1/hpa_tuned/STATUS",
+        "sha256": "f7cde1c6f0783117f2eb596160d4eb2b6e7ff4d9b358f4751dc843b92bf7769d"
+      }
+    ],
+    "units": "not_applicable"
+  },
+  "runs/rr_periodic/rep-1/hpa_tuned/locust_hpa_tuned_stats.csv": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-rr_periodic/rep-1/hpa_tuned/locust_hpa_tuned_stats.csv",
+        "sha256": "7a9b16ed190fae04074e47c4bba047bb5e129d1590902fe69f0db306d30952db"
+      }
+    ],
+    "units": "milliseconds; requests; requests/second; bytes"
+  },
+  "runs/rr_periodic/rep-1/hpa_tuned/replica_series_hpa.csv": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-rr_periodic/rep-1/hpa_tuned/replica_series_hpa.csv",
+        "sha256": "6e0fb36d8a97e32e0747fcfd2c42bf976fa611d6d0e5af9e70c36fa11c64c035"
+      }
+    ],
+    "units": "UTC timestamps; replica counts"
+  },
+  "runs/rr_periodic/rep-1/hpa_tuned/t0.txt": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-rr_periodic/rep-1/hpa_tuned/t0.txt",
+        "sha256": "875390ac325ed21124b70316218a73905797c4ab2962fa49053916b97cca2325"
+      }
+    ],
+    "units": "UTC timestamp"
+  },
+  "runs/wc98_constant/STATUS": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-wc98_constant/STATUS",
+        "sha256": "26f5aeea64c07cf2ac533959f59773a39462fdaf868026a02cfd4dc96da455db"
+      }
+    ],
+    "units": "not_applicable"
+  },
+  "runs/wc98_constant/rep-1/fixed/STATUS": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-wc98_constant/rep-1/fixed/STATUS",
+        "sha256": "f7cde1c6f0783117f2eb596160d4eb2b6e7ff4d9b358f4751dc843b92bf7769d"
+      }
+    ],
+    "units": "not_applicable"
+  },
+  "runs/wc98_constant/rep-1/fixed/locust_fixed_stats.csv": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-wc98_constant/rep-1/fixed/locust_fixed_stats.csv",
+        "sha256": "485a9c3bc5f8b5174c5a4ca617d405049df61579de7df7e353a6e89713c7bab4"
+      }
+    ],
+    "units": "milliseconds; requests; requests/second; bytes"
+  },
+  "runs/wc98_constant/rep-1/fixed/replica_series_fixed.csv": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-wc98_constant/rep-1/fixed/replica_series_fixed.csv",
+        "sha256": "9f0ad12cdd1dddaf4c014e859312e1a0b3dc27295350ea42edea0b9136ba9e70"
+      }
+    ],
+    "units": "UTC timestamps; replica counts"
+  },
+  "runs/wc98_constant/rep-1/fixed/t0.txt": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-wc98_constant/rep-1/fixed/t0.txt",
+        "sha256": "63163e7fe287c8371cd3d0df555ade739f301d3c7944057441db76c90f0e99e3"
+      }
+    ],
+    "units": "UTC timestamp"
+  },
+  "runs/wc98_constant/rep-1/hpa_stock/STATUS": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-wc98_constant/rep-1/hpa_stock/STATUS",
+        "sha256": "f7cde1c6f0783117f2eb596160d4eb2b6e7ff4d9b358f4751dc843b92bf7769d"
+      }
+    ],
+    "units": "not_applicable"
+  },
+  "runs/wc98_constant/rep-1/hpa_stock/locust_hpa_stock_stats.csv": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-wc98_constant/rep-1/hpa_stock/locust_hpa_stock_stats.csv",
+        "sha256": "91831149db603117e6c8f5f2322ddc10b3b0d4b444dbfceed35d7c65b7666059"
+      }
+    ],
+    "units": "milliseconds; requests; requests/second; bytes"
+  },
+  "runs/wc98_constant/rep-1/hpa_stock/replica_series_hpa.csv": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-wc98_constant/rep-1/hpa_stock/replica_series_hpa.csv",
+        "sha256": "d410f25a0c98710b3fa75d8602fabf1e3c687e0e011c1d2f73dfac6d6d601414"
+      }
+    ],
+    "units": "UTC timestamps; replica counts"
+  },
+  "runs/wc98_constant/rep-1/hpa_stock/t0.txt": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-wc98_constant/rep-1/hpa_stock/t0.txt",
+        "sha256": "8f470f40b546e4ceae9343afa474be23151c753b0c9b9d70240067553040d4dd"
+      }
+    ],
+    "units": "UTC timestamp"
+  },
+  "runs/wc98_constant/rep-1/hpa_tuned/STATUS": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-wc98_constant/rep-1/hpa_tuned/STATUS",
+        "sha256": "f7cde1c6f0783117f2eb596160d4eb2b6e7ff4d9b358f4751dc843b92bf7769d"
+      }
+    ],
+    "units": "not_applicable"
+  },
+  "runs/wc98_constant/rep-1/hpa_tuned/locust_hpa_tuned_stats.csv": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-wc98_constant/rep-1/hpa_tuned/locust_hpa_tuned_stats.csv",
+        "sha256": "20d98c5eeefd02d71acaec18ff9f62f87ff450ef82280807f14eb471abce15df"
+      }
+    ],
+    "units": "milliseconds; requests; requests/second; bytes"
+  },
+  "runs/wc98_constant/rep-1/hpa_tuned/replica_series_hpa.csv": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-wc98_constant/rep-1/hpa_tuned/replica_series_hpa.csv",
+        "sha256": "65771e2b9455d1bbb670fd8d37fc9e1db5bcf212eb76228ea47c2a804b82cd3c"
+      }
+    ],
+    "units": "UTC timestamps; replica counts"
+  },
+  "runs/wc98_constant/rep-1/hpa_tuned/t0.txt": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-wc98_constant/rep-1/hpa_tuned/t0.txt",
+        "sha256": "c13d8ca8aab74470695a2627f1b20a4087284d6a2751493fc1ee4a0875af0a39"
+      }
+    ],
+    "units": "UTC timestamp"
+  },
+  "runs/wc98_flash/STATUS": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-wc98_flash/STATUS",
+        "sha256": "43360eb7717f16661946906e18abb846081e7f2fabd99fdd1a7e05a47f3bea37"
+      }
+    ],
+    "units": "not_applicable"
+  },
+  "runs/wc98_flash/rep-1/fixed/STATUS": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-wc98_flash/rep-1/fixed/STATUS",
+        "sha256": "f7cde1c6f0783117f2eb596160d4eb2b6e7ff4d9b358f4751dc843b92bf7769d"
+      }
+    ],
+    "units": "not_applicable"
+  },
+  "runs/wc98_flash/rep-1/fixed/locust_fixed_stats.csv": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-wc98_flash/rep-1/fixed/locust_fixed_stats.csv",
+        "sha256": "d2557bdc0754534d192d683507d60b79603ef969cbabfdbb2a9f35b07f05bfad"
+      }
+    ],
+    "units": "milliseconds; requests; requests/second; bytes"
+  },
+  "runs/wc98_flash/rep-1/fixed/replica_series_fixed.csv": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-wc98_flash/rep-1/fixed/replica_series_fixed.csv",
+        "sha256": "74c3d826015f65737c4da78b77d230f3bebd6423042ef8a08cf888b7f46fad14"
+      }
+    ],
+    "units": "UTC timestamps; replica counts"
+  },
+  "runs/wc98_flash/rep-1/fixed/t0.txt": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-wc98_flash/rep-1/fixed/t0.txt",
+        "sha256": "1ac6c557f7789e6bfbcadd265c428b688f1cf6d8ad18b5909d972b0f6b907811"
+      }
+    ],
+    "units": "UTC timestamp"
+  },
+  "runs/wc98_flash/rep-1/hpa_stock/STATUS": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-wc98_flash/rep-1/hpa_stock/STATUS",
+        "sha256": "f7cde1c6f0783117f2eb596160d4eb2b6e7ff4d9b358f4751dc843b92bf7769d"
+      }
+    ],
+    "units": "not_applicable"
+  },
+  "runs/wc98_flash/rep-1/hpa_stock/locust_hpa_stock_stats.csv": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-wc98_flash/rep-1/hpa_stock/locust_hpa_stock_stats.csv",
+        "sha256": "1c30e05deabe67a462ba6ea8bf043e495b8131e1e48354722eee8e42177d057e"
+      }
+    ],
+    "units": "milliseconds; requests; requests/second; bytes"
+  },
+  "runs/wc98_flash/rep-1/hpa_stock/replica_series_hpa.csv": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-wc98_flash/rep-1/hpa_stock/replica_series_hpa.csv",
+        "sha256": "73fbe70dd9ae2f5100908d4644919b8a53d17f920efd8b02783c20baef6c6cdc"
+      }
+    ],
+    "units": "UTC timestamps; replica counts"
+  },
+  "runs/wc98_flash/rep-1/hpa_stock/t0.txt": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-wc98_flash/rep-1/hpa_stock/t0.txt",
+        "sha256": "57fe2683e2ce27b041fb7b392fcd6f2657d26642aef3e7e04a1dd561c6bb95d7"
+      }
+    ],
+    "units": "UTC timestamp"
+  },
+  "runs/wc98_flash/rep-1/hpa_tuned/STATUS": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-wc98_flash/rep-1/hpa_tuned/STATUS",
+        "sha256": "f7cde1c6f0783117f2eb596160d4eb2b6e7ff4d9b358f4751dc843b92bf7769d"
+      }
+    ],
+    "units": "not_applicable"
+  },
+  "runs/wc98_flash/rep-1/hpa_tuned/locust_hpa_tuned_stats.csv": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-wc98_flash/rep-1/hpa_tuned/locust_hpa_tuned_stats.csv",
+        "sha256": "91dda1bfad44a55be0298e57b2baf1594c3b29539661d25c0af507d024acad6a"
+      }
+    ],
+    "units": "milliseconds; requests; requests/second; bytes"
+  },
+  "runs/wc98_flash/rep-1/hpa_tuned/replica_series_hpa.csv": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-wc98_flash/rep-1/hpa_tuned/replica_series_hpa.csv",
+        "sha256": "250e944d0851f33a0023260e502f42a3d64f77db743c0fdc0ae5a4f4e2b9ec3d"
+      }
+    ],
+    "units": "UTC timestamps; replica counts"
+  },
+  "runs/wc98_flash/rep-1/hpa_tuned/t0.txt": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-wc98_flash/rep-1/hpa_tuned/t0.txt",
+        "sha256": "2aa2a9bee2f4630d3b913ad056a034eaf16c88bb94c3bffcbf5352c786e44d47"
+      }
+    ],
+    "units": "UTC timestamp"
+  },
+  "runs/wc98_flash/rep-2/fixed/STATUS": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-wc98_flash/rep-2/fixed/STATUS",
+        "sha256": "f7cde1c6f0783117f2eb596160d4eb2b6e7ff4d9b358f4751dc843b92bf7769d"
+      }
+    ],
+    "units": "not_applicable"
+  },
+  "runs/wc98_flash/rep-2/fixed/locust_fixed_stats.csv": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-wc98_flash/rep-2/fixed/locust_fixed_stats.csv",
+        "sha256": "9efeae33c124a39edd7c61ea71800d0198dbb7b8634d8996f7eaececd4855190"
+      }
+    ],
+    "units": "milliseconds; requests; requests/second; bytes"
+  },
+  "runs/wc98_flash/rep-2/fixed/replica_series_fixed.csv": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-wc98_flash/rep-2/fixed/replica_series_fixed.csv",
+        "sha256": "37ad86f24a1434be68d8e6a4eeb5589134ca4e417d36c5620c202c5abfce00ed"
+      }
+    ],
+    "units": "UTC timestamps; replica counts"
+  },
+  "runs/wc98_flash/rep-2/fixed/t0.txt": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-wc98_flash/rep-2/fixed/t0.txt",
+        "sha256": "0729cd9c361e0e49cf14a5a5771899e0ee4bf6eb71c71a6d72d4669aed8aaad2"
+      }
+    ],
+    "units": "UTC timestamp"
+  },
+  "runs/wc98_flash/rep-2/hpa_stock/STATUS": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-wc98_flash/rep-2/hpa_stock/STATUS",
+        "sha256": "f7cde1c6f0783117f2eb596160d4eb2b6e7ff4d9b358f4751dc843b92bf7769d"
+      }
+    ],
+    "units": "not_applicable"
+  },
+  "runs/wc98_flash/rep-2/hpa_stock/locust_hpa_stock_stats.csv": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-wc98_flash/rep-2/hpa_stock/locust_hpa_stock_stats.csv",
+        "sha256": "3997a6f4728c66ef6b49e878a28ef163917e0e23aff7953e68243071d4352bb4"
+      }
+    ],
+    "units": "milliseconds; requests; requests/second; bytes"
+  },
+  "runs/wc98_flash/rep-2/hpa_stock/replica_series_hpa.csv": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-wc98_flash/rep-2/hpa_stock/replica_series_hpa.csv",
+        "sha256": "fa2a61a7aef2bcd2ea9fd82d4793799a2e4b112ad4328af05a4a0263cf62c452"
+      }
+    ],
+    "units": "UTC timestamps; replica counts"
+  },
+  "runs/wc98_flash/rep-2/hpa_stock/t0.txt": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-wc98_flash/rep-2/hpa_stock/t0.txt",
+        "sha256": "1bd81db0426a7b8fb62b2d6b8940ebe77e13d0224c0e88b538befc82e61dcc58"
+      }
+    ],
+    "units": "UTC timestamp"
+  },
+  "runs/wc98_flash/rep-2/hpa_tuned/STATUS": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-wc98_flash/rep-2/hpa_tuned/STATUS",
+        "sha256": "f7cde1c6f0783117f2eb596160d4eb2b6e7ff4d9b358f4751dc843b92bf7769d"
+      }
+    ],
+    "units": "not_applicable"
+  },
+  "runs/wc98_flash/rep-2/hpa_tuned/locust_hpa_tuned_stats.csv": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-wc98_flash/rep-2/hpa_tuned/locust_hpa_tuned_stats.csv",
+        "sha256": "ecac9e0878ebcf2e8f4f2fa6d2f9233067db234c6f87742bb17537b7a622bf84"
+      }
+    ],
+    "units": "milliseconds; requests; requests/second; bytes"
+  },
+  "runs/wc98_flash/rep-2/hpa_tuned/replica_series_hpa.csv": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-wc98_flash/rep-2/hpa_tuned/replica_series_hpa.csv",
+        "sha256": "617244527468208a8e99925bef2f8b9970553307c11cd62afba88287c473da1d"
+      }
+    ],
+    "units": "UTC timestamps; replica counts"
+  },
+  "runs/wc98_flash/rep-2/hpa_tuned/t0.txt": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-wc98_flash/rep-2/hpa_tuned/t0.txt",
+        "sha256": "5932c06343a00526687eb3a8a9c198dec98a2dc8ec1f771dc96cce4cf85e52d6"
+      }
+    ],
+    "units": "UTC timestamp"
+  },
+  "runs/wc98_flash/rep-3/fixed/STATUS": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-wc98_flash/rep-3/fixed/STATUS",
+        "sha256": "f7cde1c6f0783117f2eb596160d4eb2b6e7ff4d9b358f4751dc843b92bf7769d"
+      }
+    ],
+    "units": "not_applicable"
+  },
+  "runs/wc98_flash/rep-3/fixed/locust_fixed_stats.csv": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-wc98_flash/rep-3/fixed/locust_fixed_stats.csv",
+        "sha256": "128aea349d9eddd1796234d5b2a6649b1bd2c3709b42f177c73d40d9dbe3e4b3"
+      }
+    ],
+    "units": "milliseconds; requests; requests/second; bytes"
+  },
+  "runs/wc98_flash/rep-3/fixed/replica_series_fixed.csv": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-wc98_flash/rep-3/fixed/replica_series_fixed.csv",
+        "sha256": "b498c6b2af3eb8c5d9fe4544fffcc78597e3632247de7e64ed6a770ba8c67fc2"
+      }
+    ],
+    "units": "UTC timestamps; replica counts"
+  },
+  "runs/wc98_flash/rep-3/fixed/t0.txt": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-wc98_flash/rep-3/fixed/t0.txt",
+        "sha256": "b5847cabc30695336751150630cb2eda5eae5b9959aff92465aeb0435519de37"
+      }
+    ],
+    "units": "UTC timestamp"
+  },
+  "runs/wc98_flash/rep-3/hpa_stock/STATUS": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-wc98_flash/rep-3/hpa_stock/STATUS",
+        "sha256": "f7cde1c6f0783117f2eb596160d4eb2b6e7ff4d9b358f4751dc843b92bf7769d"
+      }
+    ],
+    "units": "not_applicable"
+  },
+  "runs/wc98_flash/rep-3/hpa_stock/locust_hpa_stock_stats.csv": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-wc98_flash/rep-3/hpa_stock/locust_hpa_stock_stats.csv",
+        "sha256": "dfe14349442e1f63ef9100d8da940a54b7e282a20f65a616f2bc23bcd847635b"
+      }
+    ],
+    "units": "milliseconds; requests; requests/second; bytes"
+  },
+  "runs/wc98_flash/rep-3/hpa_stock/replica_series_hpa.csv": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-wc98_flash/rep-3/hpa_stock/replica_series_hpa.csv",
+        "sha256": "89acc21d5029091eeaefdd03bd01dcab35247cda57ceb2ebec50ef365ce6855f"
+      }
+    ],
+    "units": "UTC timestamps; replica counts"
+  },
+  "runs/wc98_flash/rep-3/hpa_stock/t0.txt": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-wc98_flash/rep-3/hpa_stock/t0.txt",
+        "sha256": "bfc9aca3685204c690bd4b95289f416ebbaf0b53c7b6d263f2b7fb71bc5f6c8f"
+      }
+    ],
+    "units": "UTC timestamp"
+  },
+  "runs/wc98_flash/rep-3/hpa_tuned/STATUS": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-wc98_flash/rep-3/hpa_tuned/STATUS",
+        "sha256": "f7cde1c6f0783117f2eb596160d4eb2b6e7ff4d9b358f4751dc843b92bf7769d"
+      }
+    ],
+    "units": "not_applicable"
+  },
+  "runs/wc98_flash/rep-3/hpa_tuned/locust_hpa_tuned_stats.csv": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-wc98_flash/rep-3/hpa_tuned/locust_hpa_tuned_stats.csv",
+        "sha256": "57ca104fdcdd9260105b9bd63c438f12bb658c9b0fe6056a9de70e52dc0341cb"
+      }
+    ],
+    "units": "milliseconds; requests; requests/second; bytes"
+  },
+  "runs/wc98_flash/rep-3/hpa_tuned/replica_series_hpa.csv": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-wc98_flash/rep-3/hpa_tuned/replica_series_hpa.csv",
+        "sha256": "53c3ac668a66c0e3b7c64c449d12c7b11acc8d53a09d2d7bb5d49774af71d07e"
+      }
+    ],
+    "units": "UTC timestamps; replica counts"
+  },
+  "runs/wc98_flash/rep-3/hpa_tuned/t0.txt": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-wc98_flash/rep-3/hpa_tuned/t0.txt",
+        "sha256": "4a70ede4dedc792df62bf43d75830ec196390507944e5109ba375d702d5cda24"
+      }
+    ],
+    "units": "UTC timestamp"
+  },
+  "runs/wc98_flash/rep-4/fixed/STATUS": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-wc98_flash/rep-4/fixed/STATUS",
+        "sha256": "f7cde1c6f0783117f2eb596160d4eb2b6e7ff4d9b358f4751dc843b92bf7769d"
+      }
+    ],
+    "units": "not_applicable"
+  },
+  "runs/wc98_flash/rep-4/fixed/locust_fixed_stats.csv": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-wc98_flash/rep-4/fixed/locust_fixed_stats.csv",
+        "sha256": "833fff71d758f047780a2970e510863d239f3744e5854576562f77760e5f56ce"
+      }
+    ],
+    "units": "milliseconds; requests; requests/second; bytes"
+  },
+  "runs/wc98_flash/rep-4/fixed/replica_series_fixed.csv": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-wc98_flash/rep-4/fixed/replica_series_fixed.csv",
+        "sha256": "d8c55aa0066054c494ea71d4b4b10f87157ebb95b181279fcc76572dd543c35d"
+      }
+    ],
+    "units": "UTC timestamps; replica counts"
+  },
+  "runs/wc98_flash/rep-4/fixed/t0.txt": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-wc98_flash/rep-4/fixed/t0.txt",
+        "sha256": "4cf2391008912b4b02c855a15eedb4abb75b479e08e99a6f9e8a6fc0b035368c"
+      }
+    ],
+    "units": "UTC timestamp"
+  },
+  "runs/wc98_flash/rep-4/hpa_stock/STATUS": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-wc98_flash/rep-4/hpa_stock/STATUS",
+        "sha256": "f7cde1c6f0783117f2eb596160d4eb2b6e7ff4d9b358f4751dc843b92bf7769d"
+      }
+    ],
+    "units": "not_applicable"
+  },
+  "runs/wc98_flash/rep-4/hpa_stock/locust_hpa_stock_stats.csv": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-wc98_flash/rep-4/hpa_stock/locust_hpa_stock_stats.csv",
+        "sha256": "1180bc3dd616798d937103d5e922a430f45498196c80c14e8a771d79e66002fd"
+      }
+    ],
+    "units": "milliseconds; requests; requests/second; bytes"
+  },
+  "runs/wc98_flash/rep-4/hpa_stock/replica_series_hpa.csv": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-wc98_flash/rep-4/hpa_stock/replica_series_hpa.csv",
+        "sha256": "4d59f7a3b53b54e79b5fbc8be84d13ee5efd18383cc31777a16efd155aae8c1d"
+      }
+    ],
+    "units": "UTC timestamps; replica counts"
+  },
+  "runs/wc98_flash/rep-4/hpa_stock/t0.txt": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-wc98_flash/rep-4/hpa_stock/t0.txt",
+        "sha256": "1c68f91d81cb26f99d044dac1e68cde27ce082fa3a7f2fc5f947c006ce8a255b"
+      }
+    ],
+    "units": "UTC timestamp"
+  },
+  "runs/wc98_flash/rep-4/hpa_tuned/STATUS": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-wc98_flash/rep-4/hpa_tuned/STATUS",
+        "sha256": "f7cde1c6f0783117f2eb596160d4eb2b6e7ff4d9b358f4751dc843b92bf7769d"
+      }
+    ],
+    "units": "not_applicable"
+  },
+  "runs/wc98_flash/rep-4/hpa_tuned/locust_hpa_tuned_stats.csv": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-wc98_flash/rep-4/hpa_tuned/locust_hpa_tuned_stats.csv",
+        "sha256": "2252482a43c4219b0f3ee5923f1c3c3a567bfcd8bcfb6f08e6d2d279fbdfba17"
+      }
+    ],
+    "units": "milliseconds; requests; requests/second; bytes"
+  },
+  "runs/wc98_flash/rep-4/hpa_tuned/replica_series_hpa.csv": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-wc98_flash/rep-4/hpa_tuned/replica_series_hpa.csv",
+        "sha256": "e845485cb6e651e57a0720d2fb1ba8eebfdd7bdc0c86c66f15541222ea188931"
+      }
+    ],
+    "units": "UTC timestamps; replica counts"
+  },
+  "runs/wc98_flash/rep-4/hpa_tuned/t0.txt": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-wc98_flash/rep-4/hpa_tuned/t0.txt",
+        "sha256": "e51a5021fa256108f96015be72ebaff4611cf02e10cdeed5e02862ef72ff6f93"
+      }
+    ],
+    "units": "UTC timestamp"
+  },
+  "runs/wc98_flash/rep-5/fixed/STATUS": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-wc98_flash/rep-5/fixed/STATUS",
+        "sha256": "f7cde1c6f0783117f2eb596160d4eb2b6e7ff4d9b358f4751dc843b92bf7769d"
+      }
+    ],
+    "units": "not_applicable"
+  },
+  "runs/wc98_flash/rep-5/fixed/locust_fixed_stats.csv": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-wc98_flash/rep-5/fixed/locust_fixed_stats.csv",
+        "sha256": "cf9c37036acd1f1e1f904c8b704b9c791cd85a2b1662bd52295e8d9ca6d9672e"
+      }
+    ],
+    "units": "milliseconds; requests; requests/second; bytes"
+  },
+  "runs/wc98_flash/rep-5/fixed/replica_series_fixed.csv": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-wc98_flash/rep-5/fixed/replica_series_fixed.csv",
+        "sha256": "4a8a1ecf1eef026832a7c1cfd55e261324fc09ed4720a479ec12adffe85e7252"
+      }
+    ],
+    "units": "UTC timestamps; replica counts"
+  },
+  "runs/wc98_flash/rep-5/fixed/t0.txt": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-wc98_flash/rep-5/fixed/t0.txt",
+        "sha256": "8954e46c8a7c2595c77256fd4e6c141de79933f802497da7c8abcebc612608dd"
+      }
+    ],
+    "units": "UTC timestamp"
+  },
+  "runs/wc98_flash/rep-5/hpa_stock/STATUS": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-wc98_flash/rep-5/hpa_stock/STATUS",
+        "sha256": "f7cde1c6f0783117f2eb596160d4eb2b6e7ff4d9b358f4751dc843b92bf7769d"
+      }
+    ],
+    "units": "not_applicable"
+  },
+  "runs/wc98_flash/rep-5/hpa_stock/locust_hpa_stock_stats.csv": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-wc98_flash/rep-5/hpa_stock/locust_hpa_stock_stats.csv",
+        "sha256": "f23718f1b48c41555bb5de22d6b028e9d1e298e14b34a346ae30606b22141020"
+      }
+    ],
+    "units": "milliseconds; requests; requests/second; bytes"
+  },
+  "runs/wc98_flash/rep-5/hpa_stock/replica_series_hpa.csv": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-wc98_flash/rep-5/hpa_stock/replica_series_hpa.csv",
+        "sha256": "149fb7588d053113479f90ebcebe9049865c6652cbee4537963763c0b6a37690"
+      }
+    ],
+    "units": "UTC timestamps; replica counts"
+  },
+  "runs/wc98_flash/rep-5/hpa_stock/t0.txt": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-wc98_flash/rep-5/hpa_stock/t0.txt",
+        "sha256": "69da42640429d8ca7e34a2d72f760623768397bc13865e2a32536fd18d6659c9"
+      }
+    ],
+    "units": "UTC timestamp"
+  },
+  "runs/wc98_flash/rep-5/hpa_tuned/STATUS": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-wc98_flash/rep-5/hpa_tuned/STATUS",
+        "sha256": "f7cde1c6f0783117f2eb596160d4eb2b6e7ff4d9b358f4751dc843b92bf7769d"
+      }
+    ],
+    "units": "not_applicable"
+  },
+  "runs/wc98_flash/rep-5/hpa_tuned/locust_hpa_tuned_stats.csv": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-wc98_flash/rep-5/hpa_tuned/locust_hpa_tuned_stats.csv",
+        "sha256": "28899c224a9447015a1d60c9875e0577704ea5ddf253128ce77b9168166c1489"
+      }
+    ],
+    "units": "milliseconds; requests; requests/second; bytes"
+  },
+  "runs/wc98_flash/rep-5/hpa_tuned/replica_series_hpa.csv": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-wc98_flash/rep-5/hpa_tuned/replica_series_hpa.csv",
+        "sha256": "96a83e617f746250b8803cfd435480f1c1b448a46da0fe76e89b6cdb3df252cd"
+      }
+    ],
+    "units": "UTC timestamps; replica counts"
+  },
+  "runs/wc98_flash/rep-5/hpa_tuned/t0.txt": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-wc98_flash/rep-5/hpa_tuned/t0.txt",
+        "sha256": "01ffca0dfaa73b67aaa754cfec7ba4835650c3e6f812b121ff60230bf6ce39d0"
+      }
+    ],
+    "units": "UTC timestamp"
+  },
+  "runs/wc98_flash/rep-6/fixed/STATUS": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-wc98_flash/rep-6/fixed/STATUS",
+        "sha256": "f7cde1c6f0783117f2eb596160d4eb2b6e7ff4d9b358f4751dc843b92bf7769d"
+      }
+    ],
+    "units": "not_applicable"
+  },
+  "runs/wc98_flash/rep-6/fixed/locust_fixed_stats.csv": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-wc98_flash/rep-6/fixed/locust_fixed_stats.csv",
+        "sha256": "198c0c2592d292f9278a46cfbd29cc85f4771606f34237b18f784fee5e4f3ccd"
+      }
+    ],
+    "units": "milliseconds; requests; requests/second; bytes"
+  },
+  "runs/wc98_flash/rep-6/fixed/replica_series_fixed.csv": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-wc98_flash/rep-6/fixed/replica_series_fixed.csv",
+        "sha256": "be9762d55436d02ddae5b377b9b43e1af1ba8054e68174fa6a773eda4043430f"
+      }
+    ],
+    "units": "UTC timestamps; replica counts"
+  },
+  "runs/wc98_flash/rep-6/fixed/t0.txt": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-wc98_flash/rep-6/fixed/t0.txt",
+        "sha256": "0180b6a29d95134732750116e1ab29c9362f63ee85674ffaddf975bc66c880c8"
+      }
+    ],
+    "units": "UTC timestamp"
+  },
+  "runs/wc98_flash/rep-6/hpa_stock/STATUS": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-wc98_flash/rep-6/hpa_stock/STATUS",
+        "sha256": "f7cde1c6f0783117f2eb596160d4eb2b6e7ff4d9b358f4751dc843b92bf7769d"
+      }
+    ],
+    "units": "not_applicable"
+  },
+  "runs/wc98_flash/rep-6/hpa_stock/locust_hpa_stock_stats.csv": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-wc98_flash/rep-6/hpa_stock/locust_hpa_stock_stats.csv",
+        "sha256": "29ffa768216c90c4d6774fe4d5bd3cb8e4a763a07ae67e996ecad4b336323cc8"
+      }
+    ],
+    "units": "milliseconds; requests; requests/second; bytes"
+  },
+  "runs/wc98_flash/rep-6/hpa_stock/replica_series_hpa.csv": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-wc98_flash/rep-6/hpa_stock/replica_series_hpa.csv",
+        "sha256": "628907d13e35f55c9a864ae989e6bdd9308089d57956a05ff63b0999f059386c"
+      }
+    ],
+    "units": "UTC timestamps; replica counts"
+  },
+  "runs/wc98_flash/rep-6/hpa_stock/t0.txt": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-wc98_flash/rep-6/hpa_stock/t0.txt",
+        "sha256": "8efa36242fa599dd48cc7ef4b34e784bb1e996d5577d9ef60b44c678f6d31a91"
+      }
+    ],
+    "units": "UTC timestamp"
+  },
+  "runs/wc98_flash/rep-6/hpa_tuned/STATUS": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-wc98_flash/rep-6/hpa_tuned/STATUS",
+        "sha256": "f7cde1c6f0783117f2eb596160d4eb2b6e7ff4d9b358f4751dc843b92bf7769d"
+      }
+    ],
+    "units": "not_applicable"
+  },
+  "runs/wc98_flash/rep-6/hpa_tuned/locust_hpa_tuned_stats.csv": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-wc98_flash/rep-6/hpa_tuned/locust_hpa_tuned_stats.csv",
+        "sha256": "927402641e7de34f798c1523ecdc91d516c1f8796d6e5db56298973d095df448"
+      }
+    ],
+    "units": "milliseconds; requests; requests/second; bytes"
+  },
+  "runs/wc98_flash/rep-6/hpa_tuned/replica_series_hpa.csv": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-wc98_flash/rep-6/hpa_tuned/replica_series_hpa.csv",
+        "sha256": "78969bbd2f9ad9e2a8df27475b4f5460993a2725029b06ca19a6269d8734c606"
+      }
+    ],
+    "units": "UTC timestamps; replica counts"
+  },
+  "runs/wc98_flash/rep-6/hpa_tuned/t0.txt": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-wc98_flash/rep-6/hpa_tuned/t0.txt",
+        "sha256": "ac24207523946c15e2bb288cfe143d7fc95c04c5e3ac85a5c1086eca1b82c43f"
+      }
+    ],
+    "units": "UTC timestamp"
+  },
+  "runs/wc98_periodic/STATUS": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-wc98_periodic/STATUS",
+        "sha256": "26f5aeea64c07cf2ac533959f59773a39462fdaf868026a02cfd4dc96da455db"
+      }
+    ],
+    "units": "not_applicable"
+  },
+  "runs/wc98_periodic/rep-1/fixed/STATUS": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-wc98_periodic/rep-1/fixed/STATUS",
+        "sha256": "f7cde1c6f0783117f2eb596160d4eb2b6e7ff4d9b358f4751dc843b92bf7769d"
+      }
+    ],
+    "units": "not_applicable"
+  },
+  "runs/wc98_periodic/rep-1/fixed/locust_fixed_stats.csv": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-wc98_periodic/rep-1/fixed/locust_fixed_stats.csv",
+        "sha256": "3762aba60bc4347dedf10e3350e417be033d607275d8ac95f04078a396ef2508"
+      }
+    ],
+    "units": "milliseconds; requests; requests/second; bytes"
+  },
+  "runs/wc98_periodic/rep-1/fixed/replica_series_fixed.csv": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-wc98_periodic/rep-1/fixed/replica_series_fixed.csv",
+        "sha256": "d786f4b85f9e08546b13041b12fc7e7bfdf11a5a7fa0c5c195b43bd85da16015"
+      }
+    ],
+    "units": "UTC timestamps; replica counts"
+  },
+  "runs/wc98_periodic/rep-1/fixed/t0.txt": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-wc98_periodic/rep-1/fixed/t0.txt",
+        "sha256": "1f8e757224304535c933cb1ea2f250076576e0471fc5e22d4bc969536fc2b1d9"
+      }
+    ],
+    "units": "UTC timestamp"
+  },
+  "runs/wc98_periodic/rep-1/hpa_stock/STATUS": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-wc98_periodic/rep-1/hpa_stock/STATUS",
+        "sha256": "f7cde1c6f0783117f2eb596160d4eb2b6e7ff4d9b358f4751dc843b92bf7769d"
+      }
+    ],
+    "units": "not_applicable"
+  },
+  "runs/wc98_periodic/rep-1/hpa_stock/locust_hpa_stock_stats.csv": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-wc98_periodic/rep-1/hpa_stock/locust_hpa_stock_stats.csv",
+        "sha256": "397d825b9298fe0834322850bb05378e9b495e60d981983a52f40cbdae9b71fa"
+      }
+    ],
+    "units": "milliseconds; requests; requests/second; bytes"
+  },
+  "runs/wc98_periodic/rep-1/hpa_stock/replica_series_hpa.csv": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-wc98_periodic/rep-1/hpa_stock/replica_series_hpa.csv",
+        "sha256": "02551a3216d8f27ea9b4a2471c3d898f54fb1ad123cc5d08a048ef78a10c682c"
+      }
+    ],
+    "units": "UTC timestamps; replica counts"
+  },
+  "runs/wc98_periodic/rep-1/hpa_stock/t0.txt": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-wc98_periodic/rep-1/hpa_stock/t0.txt",
+        "sha256": "3ead63c338aea1bb5bb951c23dd2a1faf085eb8584adedf6acaaa5637f919fc6"
+      }
+    ],
+    "units": "UTC timestamp"
+  },
+  "runs/wc98_periodic/rep-1/hpa_tuned/STATUS": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-wc98_periodic/rep-1/hpa_tuned/STATUS",
+        "sha256": "f7cde1c6f0783117f2eb596160d4eb2b6e7ff4d9b358f4751dc843b92bf7769d"
+      }
+    ],
+    "units": "not_applicable"
+  },
+  "runs/wc98_periodic/rep-1/hpa_tuned/locust_hpa_tuned_stats.csv": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-wc98_periodic/rep-1/hpa_tuned/locust_hpa_tuned_stats.csv",
+        "sha256": "e1b3958d7166c62d54d4f390c8d1b718d1a79de1c783abcb63d723a390f98a13"
+      }
+    ],
+    "units": "milliseconds; requests; requests/second; bytes"
+  },
+  "runs/wc98_periodic/rep-1/hpa_tuned/replica_series_hpa.csv": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-wc98_periodic/rep-1/hpa_tuned/replica_series_hpa.csv",
+        "sha256": "f0c180339b07708254e94e1adc025eb3f25e7297d8da50c7581014bc03774725"
+      }
+    ],
+    "units": "UTC timestamps; replica counts"
+  },
+  "runs/wc98_periodic/rep-1/hpa_tuned/t0.txt": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-wc98_periodic/rep-1/hpa_tuned/t0.txt",
+        "sha256": "f80cfa231cbc9f1283684b96ad8727887d85331162d0edb7f4f18f7da7f7d7d5"
+      }
+    ],
+    "units": "UTC timestamp"
+  },
+  "runs/wc98_ramp/STATUS": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-wc98_ramp/STATUS",
+        "sha256": "767c773c4cf399d0771ab109e82cce6d963272aff224a0f1630e10b254da9e68"
+      }
+    ],
+    "units": "not_applicable"
+  },
+  "runs/wc98_ramp/rep-1/fixed/STATUS": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-wc98_ramp/rep-1/fixed/STATUS",
+        "sha256": "f7cde1c6f0783117f2eb596160d4eb2b6e7ff4d9b358f4751dc843b92bf7769d"
+      }
+    ],
+    "units": "not_applicable"
+  },
+  "runs/wc98_ramp/rep-1/fixed/locust_fixed_stats.csv": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-wc98_ramp/rep-1/fixed/locust_fixed_stats.csv",
+        "sha256": "e813c8258602649602e9b04d366e649a9b6e5d3d2dd7c1b386c690b36c0153b8"
+      }
+    ],
+    "units": "milliseconds; requests; requests/second; bytes"
+  },
+  "runs/wc98_ramp/rep-1/fixed/replica_series_fixed.csv": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-wc98_ramp/rep-1/fixed/replica_series_fixed.csv",
+        "sha256": "013de5556271610f2155ec3cad1c3b11a44c288238cf9170c75798b511dad926"
+      }
+    ],
+    "units": "UTC timestamps; replica counts"
+  },
+  "runs/wc98_ramp/rep-1/fixed/t0.txt": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-wc98_ramp/rep-1/fixed/t0.txt",
+        "sha256": "c9649b8cb458232fe91e7b92a85bae8ddbc0b21397f20fbba7ca72e4f9a2ea74"
+      }
+    ],
+    "units": "UTC timestamp"
+  },
+  "runs/wc98_ramp/rep-1/hpa_stock/STATUS": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-wc98_ramp/rep-1/hpa_stock/STATUS",
+        "sha256": "f7cde1c6f0783117f2eb596160d4eb2b6e7ff4d9b358f4751dc843b92bf7769d"
+      }
+    ],
+    "units": "not_applicable"
+  },
+  "runs/wc98_ramp/rep-1/hpa_stock/locust_hpa_stock_stats.csv": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-wc98_ramp/rep-1/hpa_stock/locust_hpa_stock_stats.csv",
+        "sha256": "3325506140a0b298273e6aa21e3513b962aa0f5819e928b9e829fd2d01224f56"
+      }
+    ],
+    "units": "milliseconds; requests; requests/second; bytes"
+  },
+  "runs/wc98_ramp/rep-1/hpa_stock/replica_series_hpa.csv": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-wc98_ramp/rep-1/hpa_stock/replica_series_hpa.csv",
+        "sha256": "e5a324926cdd05a871c74141c502e13a176c3d15941de982c80bb63df2894802"
+      }
+    ],
+    "units": "UTC timestamps; replica counts"
+  },
+  "runs/wc98_ramp/rep-1/hpa_stock/t0.txt": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-wc98_ramp/rep-1/hpa_stock/t0.txt",
+        "sha256": "32b39f6f843e455e2c1b2d5af70ea8a90b2c39c1e182cd37436ee4f1802d8e80"
+      }
+    ],
+    "units": "UTC timestamp"
+  },
+  "runs/wc98_ramp/rep-1/hpa_tuned/STATUS": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-wc98_ramp/rep-1/hpa_tuned/STATUS",
+        "sha256": "f7cde1c6f0783117f2eb596160d4eb2b6e7ff4d9b358f4751dc843b92bf7769d"
+      }
+    ],
+    "units": "not_applicable"
+  },
+  "runs/wc98_ramp/rep-1/hpa_tuned/locust_hpa_tuned_stats.csv": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-wc98_ramp/rep-1/hpa_tuned/locust_hpa_tuned_stats.csv",
+        "sha256": "13095c6ca6b5f1943e9a1ad20117224731a0eaffbe6df1e96f0a8019e116bad1"
+      }
+    ],
+    "units": "milliseconds; requests; requests/second; bytes"
+  },
+  "runs/wc98_ramp/rep-1/hpa_tuned/replica_series_hpa.csv": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-wc98_ramp/rep-1/hpa_tuned/replica_series_hpa.csv",
+        "sha256": "38b069dbd219952d477bd5d50c9a337495cefb97fe743df52b2993f66a4d5692"
+      }
+    ],
+    "units": "UTC timestamps; replica counts"
+  },
+  "runs/wc98_ramp/rep-1/hpa_tuned/t0.txt": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-wc98_ramp/rep-1/hpa_tuned/t0.txt",
+        "sha256": "c79d2b63512cdd599d66c0b3ef1fae93229ec066f82a251662c74a17e06a9c41"
+      }
+    ],
+    "units": "UTC timestamp"
+  },
+  "runs/wc98_ramp/rep-2/fixed/STATUS": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-wc98_ramp/rep-2/fixed/STATUS",
+        "sha256": "f7cde1c6f0783117f2eb596160d4eb2b6e7ff4d9b358f4751dc843b92bf7769d"
+      }
+    ],
+    "units": "not_applicable"
+  },
+  "runs/wc98_ramp/rep-2/fixed/locust_fixed_stats.csv": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-wc98_ramp/rep-2/fixed/locust_fixed_stats.csv",
+        "sha256": "5ed4efe0fd960a26ada4a784906d9214ee19819f7eacfd34f1f629181e182842"
+      }
+    ],
+    "units": "milliseconds; requests; requests/second; bytes"
+  },
+  "runs/wc98_ramp/rep-2/fixed/replica_series_fixed.csv": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-wc98_ramp/rep-2/fixed/replica_series_fixed.csv",
+        "sha256": "452669ac3e7652b411e42f9a65792128e43eb7a436966ef01e3e65f1cae2a65e"
+      }
+    ],
+    "units": "UTC timestamps; replica counts"
+  },
+  "runs/wc98_ramp/rep-2/fixed/t0.txt": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-wc98_ramp/rep-2/fixed/t0.txt",
+        "sha256": "d067ea13154ed1b6078097fac712369ca21eec74fd63b47cc0e4629c9e0f5ac6"
+      }
+    ],
+    "units": "UTC timestamp"
+  },
+  "runs/wc98_ramp/rep-2/hpa_stock/STATUS": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-wc98_ramp/rep-2/hpa_stock/STATUS",
+        "sha256": "f7cde1c6f0783117f2eb596160d4eb2b6e7ff4d9b358f4751dc843b92bf7769d"
+      }
+    ],
+    "units": "not_applicable"
+  },
+  "runs/wc98_ramp/rep-2/hpa_stock/locust_hpa_stock_stats.csv": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-wc98_ramp/rep-2/hpa_stock/locust_hpa_stock_stats.csv",
+        "sha256": "914bda16d4035f4213fef309ee0e980d5bdf6f482ba0ee8c01f9f7528699e589"
+      }
+    ],
+    "units": "milliseconds; requests; requests/second; bytes"
+  },
+  "runs/wc98_ramp/rep-2/hpa_stock/replica_series_hpa.csv": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-wc98_ramp/rep-2/hpa_stock/replica_series_hpa.csv",
+        "sha256": "7bc7cdb1ec1ddc511131fbb29a8442d50373fdf80d2a24379f2e3308b7506211"
+      }
+    ],
+    "units": "UTC timestamps; replica counts"
+  },
+  "runs/wc98_ramp/rep-2/hpa_stock/t0.txt": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-wc98_ramp/rep-2/hpa_stock/t0.txt",
+        "sha256": "10562df3c98f9f6bc426ba6a527b54281c0dd6c08f0ae9cb9ced4d0133676b5d"
+      }
+    ],
+    "units": "UTC timestamp"
+  },
+  "runs/wc98_ramp/rep-2/hpa_tuned/STATUS": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-wc98_ramp/rep-2/hpa_tuned/STATUS",
+        "sha256": "f7cde1c6f0783117f2eb596160d4eb2b6e7ff4d9b358f4751dc843b92bf7769d"
+      }
+    ],
+    "units": "not_applicable"
+  },
+  "runs/wc98_ramp/rep-2/hpa_tuned/locust_hpa_tuned_stats.csv": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-wc98_ramp/rep-2/hpa_tuned/locust_hpa_tuned_stats.csv",
+        "sha256": "ff2dc795909507db7b8d1885d576c143d970badac0eba6d8153cf6f9b3263218"
+      }
+    ],
+    "units": "milliseconds; requests; requests/second; bytes"
+  },
+  "runs/wc98_ramp/rep-2/hpa_tuned/replica_series_hpa.csv": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-wc98_ramp/rep-2/hpa_tuned/replica_series_hpa.csv",
+        "sha256": "2ac9a63fb09b3ccf982f03b138ad2d792f78aabef0320d6c49b80b60e7be332a"
+      }
+    ],
+    "units": "UTC timestamps; replica counts"
+  },
+  "runs/wc98_ramp/rep-2/hpa_tuned/t0.txt": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "results/runs/run-phase5-wc98_ramp/rep-2/hpa_tuned/t0.txt",
+        "sha256": "504c880c87fb2eb7eb572f833e28411db8367ac27507040872e635d237f4d1e1"
+      }
+    ],
+    "units": "UTC timestamp"
+  },
+  "workloads/candidates/retailrocket_periodic_top5.csv": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "docs/shape_candidates/retailrocket_periodic_top5.csv",
+        "sha256": "a588ab1d79f3b86eecef2066ff9a9ac84debcc38bd197b109c0b07cbfb4f4f97"
+      }
+    ],
+    "units": "not_applicable"
+  },
+  "workloads/candidates/wc98_constant_top5.csv": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "docs/shape_candidates/wc98_constant_top5.csv",
+        "sha256": "099b95515350a3f7dc32436cf50c39071346043916694cc4424c58990de8366e"
+      }
+    ],
+    "units": "not_applicable"
+  },
+  "workloads/candidates/wc98_flash_top5.csv": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "docs/shape_candidates/wc98_flash_top5.csv",
+        "sha256": "1812d7010fa2c10fd6f1a4cd0fdab08a7b9fb1126a0cf5dae3b27f0f234a86ef"
+      }
+    ],
+    "units": "not_applicable"
+  },
+  "workloads/candidates/wc98_periodic_top5.csv": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "docs/shape_candidates/wc98_periodic_top5.csv",
+        "sha256": "9c19a83e16cdca243a8206cf09e582d184539fae9cc27c32750af142d76c90b7"
+      }
+    ],
+    "units": "not_applicable"
+  },
+  "workloads/candidates/wc98_ramp_top5.csv": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "docs/shape_candidates/wc98_ramp_top5.csv",
+        "sha256": "67346d90e483646895580765d538468842411e74275a09cdfe46c25585a67675"
+      }
+    ],
+    "units": "not_applicable"
+  },
+  "workloads/extraction/retailrocket.json": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "traces/derived/retailrocket/extraction_summary.json",
+        "sha256": "d4a4e578d0d27be878f6797906cab90e92015dffc2f8d0f465900be54555283b"
+      }
+    ],
+    "units": "not_applicable"
+  },
+  "workloads/extraction/wc98.json": {
+    "kind": "raw",
+    "source_or_derivation": "copy bytes",
+    "sources": [
+      {
+        "local_source": "traces/derived/wc98/extraction_summary.json",
+        "sha256": "df2dbd98c85277f21e62ef880e60bc191b090dcd50cccaaf5fd900807b217642"
+      }
+    ],
+    "units": "not_applicable"
+  },
+  "workloads/provenance/rr_periodic.json": {
+    "kind": "derived",
+    "source_or_derivation": "Preserve numeric provenance; replace unsupported Poisson-arrival prose with measurement-scope statement",
+    "sources": [
+      {
+        "local_source": "docs/shape_provenance/rr_periodic.json",
+        "sha256": "96ec03c6abe0b39b380299ec282956dc190bb8a0dcc3d10e6de0668e57fcc06c"
+      }
+    ],
+    "units": "not_applicable"
+  },
+  "workloads/provenance/wc98_constant.json": {
+    "kind": "derived",
+    "source_or_derivation": "Preserve numeric provenance; replace unsupported Poisson-arrival prose with measurement-scope statement",
+    "sources": [
+      {
+        "local_source": "docs/shape_provenance/wc98_constant.json",
+        "sha256": "ac2d829becf8647dedc22396384e35699e656998adebd1a3181e56d3e1477fdd"
+      }
+    ],
+    "units": "not_applicable"
+  },
+  "workloads/provenance/wc98_flash.json": {
+    "kind": "derived",
+    "source_or_derivation": "Preserve numeric provenance; replace unsupported Poisson-arrival prose with measurement-scope statement",
+    "sources": [
+      {
+        "local_source": "docs/shape_provenance/wc98_flash.json",
+        "sha256": "024b57ad1ac8137ff1509637e0fdbb9494cd33e5da17630d64c7886d807ad18b"
+      }
+    ],
+    "units": "not_applicable"
+  },
+  "workloads/provenance/wc98_periodic.json": {
+    "kind": "derived",
+    "source_or_derivation": "Preserve numeric provenance; replace unsupported Poisson-arrival prose with measurement-scope statement",
+    "sources": [
+      {
+        "local_source": "docs/shape_provenance/wc98_periodic.json",
+        "sha256": "fe81122e106eaaefe553e8021594e9fbe63f5c09c1cf3a27b99607fa09d8b6f2"
+      }
+    ],
+    "units": "not_applicable"
+  },
+  "workloads/provenance/wc98_ramp.json": {
+    "kind": "derived",
+    "source_or_derivation": "Preserve numeric provenance; replace unsupported Poisson-arrival prose with measurement-scope statement",
+    "sources": [
+      {
+        "local_source": "docs/shape_provenance/wc98_ramp.json",
+        "sha256": "eb152c866c22b98b8d8b657cbb8b1f2f5d202f31333de0e69f24551bcf22d91c"
+      }
+    ],
+    "units": "not_applicable"
+  },
+  "workloads/rr_periodic_1s.csv": {
+    "kind": "derived",
+    "source_or_derivation": "Extract selected aggregate count window using recorded offset; dense zeros follow documented extraction semantics",
+    "sources": [
+      {
+        "local_source": "traces/derived/retailrocket/events_1s.csv",
+        "sha256": "df5579c72cc1efe7157307af03856c9186bc2c48946bd8f018d9f25c3b1d089e"
+      },
+      {
+        "local_source": "docs/shape_candidates/retailrocket_periodic_top5.csv",
+        "sha256": "a588ab1d79f3b86eecef2066ff9a9ac84debcc38bd197b109c0b07cbfb4f4f97"
+      }
+    ],
+    "units": "seconds from selected window start; requests/events per second"
+  },
+  "workloads/wc98_constant_1s.csv": {
+    "kind": "derived",
+    "source_or_derivation": "Extract selected aggregate count window using recorded offset; dense zeros follow documented extraction semantics",
+    "sources": [
+      {
+        "local_source": "traces/derived/wc98/series/server_064_1998-06-30.csv",
+        "sha256": "bc7116de8c9a798c820bdd54e3193fea9b6d908104a33962e829b2438a664893"
+      },
+      {
+        "local_source": "docs/shape_candidates/wc98_constant_top5.csv",
+        "sha256": "099b95515350a3f7dc32436cf50c39071346043916694cc4424c58990de8366e"
+      }
+    ],
+    "units": "seconds from selected window start; requests/events per second"
+  },
+  "workloads/wc98_flash_1s.csv": {
+    "kind": "derived",
+    "source_or_derivation": "Extract selected aggregate count window using recorded offset; dense zeros follow documented extraction semantics",
+    "sources": [
+      {
+        "local_source": "traces/derived/wc98/series/server_003_1998-06-09.csv",
+        "sha256": "3f48484a5e78f0ee83a6a7c732446506256f79eb8d98a95659b5f8af3361307c"
+      },
+      {
+        "local_source": "docs/shape_candidates/wc98_flash_top5.csv",
+        "sha256": "1812d7010fa2c10fd6f1a4cd0fdab08a7b9fb1126a0cf5dae3b27f0f234a86ef"
+      }
+    ],
+    "units": "seconds from selected window start; requests/events per second"
+  },
+  "workloads/wc98_periodic_1s.csv": {
+    "kind": "derived",
+    "source_or_derivation": "Extract selected aggregate count window using recorded offset; dense zeros follow documented extraction semantics",
+    "sources": [
+      {
+        "local_source": "traces/derived/wc98/series/server_003_1998-07-05.csv",
+        "sha256": "fba294aed66ce19791024194dc35c03f0c6d5067ba1fb05a2daeb750b70c70c5"
+      },
+      {
+        "local_source": "docs/shape_candidates/wc98_periodic_top5.csv",
+        "sha256": "9c19a83e16cdca243a8206cf09e582d184539fae9cc27c32750af142d76c90b7"
+      }
+    ],
+    "units": "seconds from selected window start; requests/events per second"
+  },
+  "workloads/wc98_ramp_1s.csv": {
+    "kind": "derived",
+    "source_or_derivation": "Extract selected aggregate count window using recorded offset; dense zeros follow documented extraction semantics",
+    "sources": [
+      {
+        "local_source": "traces/derived/wc98/series/server_072_1998-07-08.csv",
+        "sha256": "0002d23b76f760359b34b773f3fe4b57f976c674257ff6a29ab24f6ba3b304dd"
+      },
+      {
+        "local_source": "docs/shape_candidates/wc98_ramp_top5.csv",
+        "sha256": "67346d90e483646895580765d538468842411e74275a09cdfe46c25585a67675"
+      }
+    ],
+    "units": "seconds from selected window start; requests/events per second"
+  }
+}

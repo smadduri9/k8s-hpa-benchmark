@@ -1,202 +1,161 @@
-# k8s-hpa-benchmark
+# Kubernetes Autoscaling Benchmark
 
-Personal benchmark project that evaluates Kubernetes Horizontal Pod Autoscaler (HPA) behavior on bursty traffic patterns.
+[![CI](https://github.com/smadduri9/k8s-hpa-benchmark/actions/workflows/ci.yml/badge.svg)](https://github.com/smadduri9/k8s-hpa-benchmark/actions/workflows/ci.yml) [![License: MIT](https://img.shields.io/badge/Code-MIT-blue.svg)](LICENSE)
 
-## Phase 5 results (measurement of record)
+## When does Kubernetes Horizontal Pod Autoscaling actually help?
 
-Published page: [smadduri9.github.io/k8s-hpa-benchmark](https://smadduri9.github.io/k8s-hpa-benchmark/). Full write-up and per-rep tables: [RESULTS.md](RESULTS.md#phase-5-findings-measurement-of-record).
+A controlled Google Kubernetes Engine benchmark comparing fixed capacity, stock Kubernetes Horizontal Pod Autoscaler (HPA), and tuned HPA using traffic shapes derived from real HTTP access logs and retail event traces.
 
-Trace-derived WorldCup98 `wc98_flash`, n=6, three arms (`fixed`, `hpa_tuned`, `hpa_stock`), `SHAPE_MEAN_USERS=69`, HPA 4–12.
+HPA adjusts the number of application replicas as demand changes. Here it watches CPU utilization: adding replicas can reduce request delays, while keeping those replicas ready uses more capacity over time.
 
-**Finding 1.** Client p95 medians: fixed 510 ms, hpa_tuned 400 ms, hpa_stock 380 ms (`analysis/aggregate_runs.py` on `results/runs/run-phase5-wc98_flash`). Both HPA arms beat fixed at p=0.031250, the n=6 Wilcoxon floor, in 6 of 6 reps. hpa_tuned vs hpa_stock p=0.093750. Tuning the `behavior:` block made no detectable difference to latency. That is a null result that closes a confound the project had previously only disclosed. Tuned pod-hours use n=5 (1.78361) because `rep-1/hpa_tuned/replica_series_hpa.csv` is a leaked sampler (96.64138888888888 pod-hours over 21 hours). Fixed 1.18556 and stock 2.23514 remain n=6.
+## Key results
 
-**Finding 2.** At `SHAPE_MEAN_USERS=69`, peak `spec_replicas` was 10–12 for flash, 8 then 4–5 for ramp, 5 for periodic, 5 for `rr_periodic`, and 4 for constant. Peak-to-mean ratio determines whether CPU-target HPA engages. Only flash-crowd bursts move it off its floor. Predicted in `514048c` before those runs. The prediction matched.
+<!-- BEGIN V1.1 GENERATED FINDINGS -->
 
-**Finding 3.** Identical `wc98_ramp` config produced peak `spec_replicas` 8 on one GKE cluster and 4–5 on the next. Locust request counts were 34283 vs 33835. Warm-up CPU for the same 37-user hold was 154–240 millicores vs 73–166. GKE e2 CPU generation is not selectable. A marginal shape can change behaviour between deployments of the same spec. Marginal-shape results are therefore n=1.
+**Flash workload · 6 paired repetitions · median client p95**
 
-Cold-start collection was dropped after five attempts with no usable rows. The collector was a passive observer. Locust, replica, and metrics results are unaffected. `declared_replicas=5` from live spec is a known issue.
+| Fixed capacity | Tuned HPA | Stock HPA |
+|---:|---:|---:|
+| **510 ms** | **400 ms** | **380 ms** |
 
-CI on GitHub Actions runs unit-level checks only (Wilcoxon self-test, metrics contract on fixtures, repo-path quoting audit, analysis imports). Shape validation and the benchmark itself require a cluster.
+Tuned HPA beat fixed in **6/6** repetitions. Stock HPA beat fixed in **6/6** repetitions.
 
-Cite via [CITATION.cff](CITATION.cff). A Zenodo DOI is minted from a GitHub release. Steps are in [CONTRIBUTING.md](CONTRIBUTING.md#zenodo-archive-doi). GitHub Pages is the `docs/` directory on `main`. Enable it under Settings, Pages, Deploy from a branch, `main`, `/docs`.
+<!-- END V1.1 GENERATED FINDINGS -->
 
-## Calibrated results (minReplicas=3 both arms), superseded
+![Median client p95 response time for fixed, tuned HPA and stock HPA](docs/assets/figures/latency_p95_medians.svg)
 
-**Superseded by Phase 5** (synthetic shapes, two arms, `minReplicas=3`). Tables below are preserved in place. Full write-up: [RESULTS.md](RESULTS.md#calibrated-results-minreplicas3-both-arms-superseded). SLO and error-budget analysis: [RESULTS.md § SLO](RESULTS.md#slo-and-error-budget-calibrated-runs); incident write-up: [POSTMORTEM.md](POSTMORTEM.md); policy: [docs/error-budget-policy.md](docs/error-budget-policy.md).
+Both HPA configurations lowered flash-workload latency. The evidence does not establish that tuning improved on stock HPA.
 
-### hybrid — `run-20260905T220046Z-hybrid` (n=6)
+[Technical report](RESULTS.md) · [Verify the evidence](REPRODUCE.md#verify-published-results) · [Failure investigation](POSTMORTEM.md)
 
-| Metric | Fixed (median) | HPA (median) | HPA slower | p (two-sided) |
-|--------|---------------:|-------------:|-----------:|--------------:|
-| client_p50_ms | 895 | 370 | 0/6 | 0.031250 |
-| client_p95_ms | 3250 | 1950 | 0/6 | 0.062500 (n=5, one tie) |
-| client_p99_ms | 4200 | 2800 | 1/6 | 0.062500 |
-| failure_rate | 0.000124 | 0.000163 | — | 0.562500 (not significant) |
-| pod_hours | 0.890417 | 2.493750 | — | 0.031250 |
-| cost_per_1k | 0.000147246 | 0.000339106 | — | 0.031250 |
+## What was tested
 
-`P_FLOOR n=6 min_attainable_two_sided_p=0.031250` — p=0.031250 is the floor at n=6, not a finer significance claim.
+The same FastAPI CPU-bound application ran under three capacity policies. Each measured arm lasted 18 minutes, following a separate warm-up.
 
-### constant — `run-20260906T050515Z-constant` (n=3)
+| Policy | Declared replicas | CPU target | Scaling behavior |
+|---|---|---|---|
+| Fixed | 4 | None | Static capacity |
+| Stock HPA | 4–12 | 60% of CPU request | Kubernetes defaults |
+| Tuned HPA | 4–12 | 60% of CPU request | Explicit scale-up policies and 60-second scale-down stabilization |
 
-| Metric | Fixed (median) | HPA (median) | HPA slower | p (two-sided) |
-|--------|---------------:|-------------:|-----------:|--------------:|
-| client_p50_ms | 450 | 270 | 0/3 | 0.250000 |
-| client_p95_ms | 1500 | 1100 | 0/3 | 0.250000 |
-| client_p99_ms | 2100 | 1600 | 0/3 | 0.250000 |
-| failure_rate | 0 | 0.00010008 | — | 0.250000 |
-| pod_hours | 0.891667 | 2.723060 | — | 0.250000 |
-| cost_per_1k | 0.000125359 | 0.000363458 | — | 0.250000 |
+Application pods request 500m CPU and have a 1000m limit. Load comes from WorldCup98 and RetailRocket trace-derived user-count envelopes. The retained scope contains 33 completed arms across five workloads. See the [declared configuration](artifacts/v1.1/metadata/runs.json) and [HPA manifests](k8s/).
 
-`P_FLOOR n=3 min_attainable_two_sided_p=0.250000` — every p-value in this table is the floor at n=3; no row can reach significance by construction.
+## Why this project changed direction
 
-### flash — `run-20260906T201803Z-flash` (n=2 of 3)
+The original benchmark reported a dramatic failure-rate improvement. Verification later found that the supposedly three-replica fixed baseline had actually been running with one replica. That invalidated the comparison, and the result was withdrawn.
 
-**STATUS: PARTIAL** — 2 of 3 repetitions executed; rep-3 never started. rep-2's Prometheus-derived cells are all `MISSING` because the TSDB was wiped before recovery. Locust data is valid. No aggregates published in this pass.
+The measurement system was rebuilt to reject mismatched replica observations, mixed-arm metrics and incomplete runs. The project now pairs each supported finding with retained inputs and an offline verifier. The [postmortem](POSTMORTEM.md) explains the original failure and a later unequal-floor comparison.
 
-## Superseded — run-20260904T230444Z
+## Measurement safeguards
 
-This was the published headline. It is not a fair comparison: HPA ran at `minReplicas=1` while the fixed arm was declared at 3. Superseded by the calibrated minReplicas=3 runs above. Table and figures preserved verbatim.
+![Declared configuration passes replica, isolation, coverage, artifact and exclusion checks; failed checks stop publication](docs/assets/figures/measurement_guards.svg)
 
-**Status: PARTIAL** — fixed arm collapsed under burst; metrics gaps are measured, not hidden.
+Failed checks stop the affected result from being published. Missing measurements stay `MISSING`; exclusions apply to the affected metric explicitly.
 
-| Arm | Requests | Failures | Failure rate | Client p50 / p95 / p99 (ms) | Replicas | Source |
-|-----|---------:|---------:|-------------:|----------------------------|----------|--------|
-| **Fixed** (declared 3) | 10,193 | 1,230 | **12.07%** | **1,200 / 21,000 / 40,000** (12.07% failures) | ready hit **0** during collapse | `locust_fixed_stats.csv` |
-| **HPA** (1–10) | 20,820 | 63 | **0.30%** | **310 / 1,300 / 2,200** (0.30% failures) | peak **spec=10**, peak **ready=10** | `locust_hpa_stats.csv` |
+The diagram combines implemented collector gates and publication checks. The v1.1 package verifies retained artifacts, exclusions and calculations; it omits Prometheus CSVs and cannot certify historical coverage outcomes. [Guard implementation and scope](docs/MEASUREMENT_GUARDS.md) explains that boundary, including the serving-row coverage denominator and workload-specific no-scale policy.
 
-Client-observed response time includes queueing, connection setup, and failures (Locust). Prometheus in-handler service time (~239 ms mean p95) is a separate metric — see [RESULTS.md](RESULTS.md#latency--two-metrics-never-merged).
+## Architecture
 
-Fixed availability (73 rows): **14 UNAVAILABLE** / **40 DEGRADED** / **19 AVAILABLE**. HPA successful-request throughput **2.32×** fixed (20757 ÷ 8963). **Cost:** HPA **$0.000311** vs fixed **$0.000133** per 1k successful requests (**2.33×** premium) — reliability (0.30% vs 12.07% failures) at higher compute cost per success.
+![Locust sends traffic through a GKE Service to FastAPI; HPA controls replicas while metrics and replica observations feed publication validation](docs/assets/figures/architecture.svg)
 
-### Client-observed response time (Locust, run-level)
+Client latency comes from Locust. HPA uses metrics-server CPU measurements; Prometheus and the replica sampler provide separate observations for collection and analysis.
 
-![Client-observed response time — run-level p50/p95/p99](docs/figures/run-20260904T230444Z/latency_client_run_level.png)
+## Workload behavior
 
-### Client-observed response time (10-second sliding window)
+![Observed peak desired replica counts across all five workloads](docs/assets/figures/replica_scaling.svg)
 
-![Client-observed response time over time](docs/figures/run-20260904T230444Z/latency_client_window.png)
+Flash traffic produced the strongest scale-out. Periodic workloads moved only one replica above the minimum, constant traffic did not scale, and ramp behavior varied across repetitions.
 
-### Service time (in-handler, Prometheus)
+<!-- BEGIN V1.1 GENERATED SCALING -->
 
-![Service time — in-handler compute duration](docs/figures/run-20260904T230444Z/latency_comparison.png)
+| Workload | Observed HPA peak replicas | Repetitions |
+|---|---:|---:|
+| Constant | 4 | 1 |
+| WC98 periodic | 5 | 1 |
+| RetailRocket periodic | 5 | 1 |
+| Ramp | 4–8 | 2 |
+| Flash | 10–12 | 6 |
 
-### Throughput (RPS)
+<!-- END V1.1 GENERATED SCALING -->
 
-![Throughput comparison](docs/figures/run-20260904T230444Z/throughput_comparison.png)
+The floor was 4 replicas. These are observed in-window peaks of desired replicas, not ready-replica counts. Non-flash samples are descriptive. Trace windows become 30-second user-count plateaus; periodic windows compress 24 hours into 18 minutes. Individual source arrivals are not replayed. [Workload methodology](RESULTS.md#trace-derived-load-shapes)
 
-### CPU and replica count (HPA arm)
+## Resource tradeoff
 
-![CPU and replicas](docs/figures/run-20260904T230444Z/cpu_replicas.png)
+![Median ready-pod time for the flash workload](docs/assets/figures/ready_pod_hours.svg)
 
-### Cost vs performance
+Lower flash latency came with more ready-pod time: the integral of ready replicas over sampled time, expressed in pod-hours. This measures provisioned readiness over time; it does not measure CPU usage or billing.
 
-![Cost performance](docs/figures/run-20260904T230444Z/cost_performance.png)
+<!-- BEGIN V1.1 GENERATED RESOURCES -->
 
-Paths above are relative to repo root. Run artifacts live under `results/runs/run-20260904T230444Z/rep-1/` (gitignored locally).
+| Policy | Median ready-pod time | Repetitions | Ratio of medians vs fixed |
+|---|---:|---:|---:|
+| Fixed | 1.18556 pod-hours | 6 | Reference |
+| Tuned HPA | 1.78361 pod-hours | 5 | +50.445% |
+| Stock HPA | 2.23514 pod-hours | 6 | +88.531% |
 
----
+<!-- END V1.1 GENERATED RESOURCES -->
 
-## Quick Start
+One tuned repetition is excluded from ready-pod time because its replica series extends beyond the benchmark window. Its latency remains included. The source CSV is preserved unchanged and the [exclusion is executable](artifacts/v1.1/exclusions.csv).
 
-See [HANDOFF.md](HANDOFF.md) for the full reproducible runbook.
+## Technical findings
 
-**Smoke validation (kind, not performance-comparable to GKE):**
-```bash
-bash scripts/smoke_test.sh --check harness
-bash scripts/smoke_test.sh --full
-```
+![Client p95 response times in each of the six paired flash repetitions](docs/assets/figures/latency_p95_by_rep.svg)
 
-**GKE benchmark:**
-```bash
-bash scripts/preflight.sh --env-file .env --require-gke
-nohup bash scripts/run_benchmark.sh --env-file .env --repetitions 1 > results/latest.nohup.log 2>&1 &
-```
+Both HPA arms had lower client p95 than fixed in every retained flash repetition. The stock-versus-tuned difference is less conclusive.
 
-Prior committed artifacts were superseded to `superseded/sample_data-2026-03/` (see `DATA_PROVENANCE.md`).
+<!-- BEGIN V1.1 GENERATED TESTS -->
 
-## Overview
+| Flash comparison | Exact two-sided Wilcoxon p |
+|---|---:|
+| Fixed vs tuned HPA | 0.03125 |
+| Fixed vs stock HPA | 0.03125 |
+| Tuned vs stock HPA | 0.09375 |
 
-This project compares deployment strategies for the same FastAPI workload.
+<!-- END V1.1 GENERATED TESTS -->
 
-**Phase 5 (measurement of record):** static **4** replicas vs HPA **4–12** at 60% CPU, with a stock Kubernetes `behavior:` arm and a tuned `behavior:` arm, on trace-derived load.
+Tests are unadjusted and arm order was fixed. The tuned-versus-stock result establishes neither equivalence nor a tuning benefit. Client p95 includes failures and both workload endpoints; each headline is a median of run-level p95 values.
 
-**Phase 1 calibrated runs (superseded):** static **3** replicas vs HPA **3–10**, synthetic shapes.
+Ramp scale-out varied across two repetitions. Paired hardware inventories and warm-up CPU comparisons are `MISSING`, so the evidence cannot attribute that variation to CPU generation. [Detailed findings and limitations](RESULTS.md)
 
-The benchmark measures reliability, latency, throughput, scaling behavior, and cost efficiency.
+## Reproduce / verify
 
-## Stack
-
-- Kubernetes + HPA (`autoscaling/v2`)
-- FastAPI workload service
-- Locust phased load test
-- Prometheus metrics collection
-- Python analysis pipeline (NumPy + Matplotlib)
-- GKE and Minikube deployment scripts
-
-## Repository Layout
-
-- `app/` FastAPI service and Docker image definition
-- `k8s/` namespace, deployments, services, HPA, Prometheus manifests
-- `locust/` workload generator with phased traffic shape
-- `analysis/` metric collection and report plotting scripts
-- `docs/` published figures and investigation tables for completed runs
-- `scripts/` local and GKE deployment + experiment orchestration
-
-## Tooling setup (required)
-
-All analysis and Locust commands use the repo virtualenv — do not install tooling globally.
+No cloud is needed to reproduce the headline calculations. From the repository root, with Python 3.14 installed:
 
 ```bash
+export REPO_ROOT="$PWD"
 python3 -m venv .venv
-".venv/bin/python" -m pip install -r requirements-tooling.txt
-bash scripts/preflight.sh
+"${REPO_ROOT}/.venv/bin/python" -m pip install -r requirements-tooling.txt
+"${REPO_ROOT}/.venv/bin/python" -B artifacts/v1.1/verify.py
+"${REPO_ROOT}/.venv/bin/python" -B -m unittest discover -s tests -p test_publication.py
 ```
 
-## Quick Start (Local, Minikube)
+The verifier checks package integrity and recomputes medians, paired tests, ready-pod time and replica peaks. The tests exercise calculations and rejection of altered or incomplete evidence. [REPRODUCE.md](REPRODUCE.md) includes the pytest command, figure regeneration and a separate GKE rerun path. The original cloud cluster was deleted.
 
-```bash
-bash scripts/preflight.sh
-bash scripts/deploy_local.sh
-```
+## Repository map
 
-Get service endpoint:
+| Path | Purpose |
+|---|---|
+| [app/](app/) | FastAPI benchmark application |
+| [k8s/](k8s/) | Deployments, services, HPA and Prometheus manifests |
+| [locust/](locust/) | Workload drivers and trace-derived shapes |
+| [scripts/](scripts/) | Experiment orchestration and publication tooling |
+| [analysis/](analysis/) | Collection, metric contracts and analysis utilities |
+| [artifacts/v1.1/](artifacts/v1.1/README.md) | Public evidence, exclusions, summaries and verifier |
+| [docs/](docs/README.md) | Methodology, figures and existing website |
+| [tests/](tests/) | Publication verification tests |
+| [docs/archive/](docs/archive/README.md) | Historical results and development records |
 
-```bash
-MINIKUBE_IP=$(minikube ip)
-HPA_PORT=$(kubectl get svc hpa-eval-hpa-svc -n hpa-eval -o jsonpath='{.spec.ports[0].nodePort}')
-export HPA_HOST="http://${MINIKUBE_IP}:${HPA_PORT}"
-```
+## Limitations
 
-Run phased load test:
+- Six flash repetitions support the main comparison. Ramp has two; each other workload has one. The planned non-flash matrix was not completed.
+- One application, one cloud setup and fixed arm order limit generalization. New deployments may produce different performance.
+- Load ran from an external client. Client latency includes the network path and queueing.
+- The bundle does not establish a cold-start distribution, client SLO compliance, delivered arrival statistics or a hardware cause for variation.
+- Hashes establish internal consistency, not independent attestation of the experiments. [Full limitations](RESULTS.md#measurement-limitations)
 
-```bash
-".venv/bin/locust" -f locust/locustfile.py --host "$HPA_HOST" --headless --run-time 18m
-```
+## Citation / release
 
-Collect and analyze metrics:
+**Release version: v1.1.0.** Use [CITATION.cff](CITATION.cff) for citation metadata. The [Zenodo concept DOI](https://doi.org/10.5281/zenodo.22697396) identifies all versions; it is not a version-specific v1.1.0 DOI. [Release history](https://github.com/smadduri9/k8s-hpa-benchmark/releases)
 
-```bash
-kubectl port-forward svc/prometheus 9090:9090 -n hpa-eval
-".venv/bin/python" analysis/collect_metrics.py --mode fixed --prometheus-url http://localhost:9090
-".venv/bin/python" analysis/collect_metrics.py --mode hpa --prometheus-url http://localhost:9090
-".venv/bin/python" analysis/analyze_results.py
-```
-
-## Full GKE Run
-
-```bash
-bash scripts/deploy_gke.sh YOUR_PROJECT_ID us-central1
-bash scripts/run_experiment.sh
-```
-
-## Reproducible Demo Path
-
-If you do not want to provision a cluster immediately, generate synthetic benchmark data and plots:
-
-```bash
-".venv/bin/python" synthetic/generate_synthetic_data.py
-".venv/bin/python" analysis/analyze_results.py
-```
-
-Synthetic data is quarantined and not comparable to measured GKE runs — see `DATA_PROVENANCE.md`.
+Code is [MIT licensed](LICENSE). Trace derivatives retain their [source terms](artifacts/v1.1/SOURCE_NOTICES.md), including CC BY-NC-SA 4.0 for RetailRocket-derived material.

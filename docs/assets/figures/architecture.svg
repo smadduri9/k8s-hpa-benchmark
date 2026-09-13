@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 760" width="100%" role="img" aria-labelledby="title desc">
+<title id="title">Benchmark architecture</title>
+<desc id="desc">Locust sends HTTP traffic through a GKE LoadBalancer Service to a FastAPI CPU-bound workload. Kubernetes HPA controls workload replicas using metrics-server CPU. Prometheus collects application metrics, and a separate sampler records desired and ready replicas. Locust stats and replica observations feed publication validation and the artifacts/v1.1 evidence package. Prometheus coverage evidence is not bundled.</desc>
+<defs>
+  <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 Z" fill="#475569"/></marker>
+  <marker id="stop-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M 0 0 L 10 5 L 0 10 Z" fill="#a12634"/></marker>
+</defs>
+<rect width="960" height="760" fill="#ffffff"/>
+<g font-family="Arial, Helvetica, sans-serif" fill="#172b4d">
+
+<text x="40" y="35" font-size="24" font-weight="600" fill="#172b4d" text-anchor="start">Benchmark architecture</text>
+<text x="40" y="61" font-size="17" font-weight="400" fill="#475569" text-anchor="start">Traffic, scaling control and retained evidence</text>
+<rect x="315" y="90" width="330" height="68" rx="8" fill="#f1f5f9" stroke="#94a3b8" stroke-width="1.5"/>
+<text x="480.0" y="119" font-size="20" font-weight="600" fill="#172b4d" text-anchor="middle">Locust load generator</text>
+<text x="480.0" y="143" font-size="16" font-weight="400" fill="#172b4d" text-anchor="middle">Client-observed response times</text>
+<path d="M480 158 V190" fill="none" stroke="#475569" stroke-width="2" marker-end="url(#arrow)"/>
+<rect x="315" y="190" width="330" height="68" rx="8" fill="#f1f5f9" stroke="#94a3b8" stroke-width="1.5"/>
+<text x="480.0" y="219" font-size="20" font-weight="600" fill="#172b4d" text-anchor="middle">GKE LoadBalancer / Service</text>
+<text x="480.0" y="243" font-size="16" font-weight="400" fill="#172b4d" text-anchor="middle">HTTP traffic to the active arm</text>
+<path d="M480 258 V295" fill="none" stroke="#475569" stroke-width="2" marker-end="url(#arrow)"/>
+<rect x="315" y="295" width="330" height="76" rx="8" fill="#f1f5f9" stroke="#94a3b8" stroke-width="1.5"/>
+<text x="480.0" y="324" font-size="20" font-weight="600" fill="#172b4d" text-anchor="middle">FastAPI CPU-bound workload</text>
+<text x="480.0" y="348" font-size="16" font-weight="400" fill="#172b4d" text-anchor="middle">Fixed capacity or autoscaled replicas</text>
+<rect x="30" y="295" width="235" height="76" rx="8" fill="#f1f5f9" stroke="#94a3b8" stroke-width="1.5"/>
+<text x="147.5" y="324" font-size="20" font-weight="600" fill="#172b4d" text-anchor="middle">Kubernetes HPA</text>
+<text x="147.5" y="348" font-size="16" font-weight="400" fill="#172b4d" text-anchor="middle">CPU from metrics-server</text>
+<path d="M265 333 H315" fill="none" stroke="#475569" stroke-width="2" marker-end="url(#arrow)"/>
+<text x="290" y="286" font-size="15" font-weight="400" fill="#172b4d" text-anchor="middle">scale</text>
+<path d="M480 371 V400 H335 V432" fill="none" stroke="#475569" stroke-width="2" marker-end="url(#arrow)"/>
+<path d="M480 400 H685 V432" fill="none" stroke="#475569" stroke-width="2" marker-end="url(#arrow)"/>
+<rect x="185" y="432" width="300" height="76" rx="8" fill="#f1f5f9" stroke="#94a3b8" stroke-width="1.5"/>
+<text x="335.0" y="461" font-size="20" font-weight="600" fill="#172b4d" text-anchor="middle">Prometheus / metrics</text>
+<text x="335.0" y="485" font-size="16" font-weight="400" fill="#172b4d" text-anchor="middle">Application metrics and checks</text>
+<rect x="550" y="432" width="270" height="76" rx="8" fill="#f1f5f9" stroke="#94a3b8" stroke-width="1.5"/>
+<text x="685.0" y="461" font-size="20" font-weight="600" fill="#172b4d" text-anchor="middle">Replica sampler</text>
+<text x="685.0" y="485" font-size="16" font-weight="400" fill="#172b4d" text-anchor="middle">Desired and ready counts</text>
+<path d="M645 124 H889 V596 H645" fill="none" stroke="#475569" stroke-width="2" stroke-dasharray="6 5" marker-end="url(#arrow)"/>
+<text x="880" y="554" font-size="16" font-weight="400" fill="#172b4d" text-anchor="end">Stats CSVs</text>
+<path d="M685 508 V536 H550 V560" fill="none" stroke="#475569" stroke-width="2" marker-end="url(#arrow)"/>
+<rect x="315" y="560" width="330" height="76" rx="8" fill="#f1f5f9" stroke="#94a3b8" stroke-width="1.5"/>
+<text x="480.0" y="589" font-size="20" font-weight="600" fill="#172b4d" text-anchor="middle">Publication validation</text>
+<text x="480.0" y="613" font-size="16" font-weight="400" fill="#172b4d" text-anchor="middle">Retained inputs and exclusions</text>
+<text x="335" y="540" font-size="15" font-weight="400" fill="#475569" text-anchor="middle">Collection evidence is separate</text>
+<path d="M480 636 V665" fill="none" stroke="#475569" stroke-width="2" marker-end="url(#arrow)"/>
+<rect x="315" y="665" width="330" height="65" rx="8" fill="#e9f4ef" stroke="#49866d" stroke-width="1.5"/>
+<text x="480.0" y="694" font-size="20" font-weight="600" fill="#172b4d" text-anchor="middle">artifacts/v1.1</text>
+<text x="480.0" y="718" font-size="16" font-weight="400" fill="#172b4d" text-anchor="middle">Evidence, summaries and verifier</text>
+</g></svg>

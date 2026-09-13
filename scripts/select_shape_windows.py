@@ -415,7 +415,8 @@ def main() -> int:
                 "N_windows_eligible": n_eligible,
                 "N_rankable": len(rankable),
                 "thin_pool": False,
-                "top5_path": str(out_path),
+                "top5_path": out_path.resolve().relative_to(REPO_ROOT).as_posix()
+                if out_path.resolve().is_relative_to(REPO_ROOT) else out_path.name,
             }
 
     summary_path = args.out_dir / "scoring_summary.json"

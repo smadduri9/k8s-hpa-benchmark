@@ -1,0 +1,87 @@
+{
+  "actual_cpu_platforms": "MISSING",
+  "arm_order": [
+    "hpa_tuned",
+    "hpa_stock",
+    "fixed"
+  ],
+  "arm_order_scope": "Runner order; resumed ramp runs did not preserve chronological repetition order",
+  "config_scope": "Declared repository settings; complete per-arm deployed configuration snapshots were not retained",
+  "declared_config": {
+    "fixed_replicas": 4,
+    "floor_replicas": 4,
+    "hpa_cpu_target_fraction": 0.6,
+    "max_replicas": 12,
+    "pod_cpu_request_cores": 0.5
+  },
+  "paired_hardware_inventory": "MISSING",
+  "runs": [
+    {
+      "completed_repetitions": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ],
+      "duration_seconds": 1080,
+      "hpa_no_scale_policy": "abort",
+      "matrix_repetitions_defined": 6,
+      "matrix_repetitions_requested": 6,
+      "shape": "wc98_flash",
+      "shape_mean_users": 69,
+      "source_manifest_sha256": "713f5eda7852e39d78af2eedf74f6f1a6bc27bee9803155084b2c0fcc92b2782"
+    },
+    {
+      "completed_repetitions": [
+        1,
+        2
+      ],
+      "duration_seconds": 1080,
+      "hpa_no_scale_policy": "warn",
+      "matrix_repetitions_defined": 3,
+      "matrix_repetitions_requested": 2,
+      "shape": "wc98_ramp",
+      "shape_mean_users": 69,
+      "source_manifest_sha256": "1c7fb1d27b557737b2ef7c6fe8cc051a8b67b44d3e63146c78970841cb22b52d"
+    },
+    {
+      "completed_repetitions": [
+        1
+      ],
+      "duration_seconds": 1080,
+      "hpa_no_scale_policy": "warn",
+      "matrix_repetitions_defined": 3,
+      "matrix_repetitions_requested": 1,
+      "shape": "wc98_constant",
+      "shape_mean_users": 69,
+      "source_manifest_sha256": "b3eea93e84196c0e922ca322e513121f6f34fb161c33b253905a9b18762bd318"
+    },
+    {
+      "completed_repetitions": [
+        1
+      ],
+      "duration_seconds": 1080,
+      "hpa_no_scale_policy": "warn",
+      "matrix_repetitions_defined": 3,
+      "matrix_repetitions_requested": 1,
+      "shape": "wc98_periodic",
+      "shape_mean_users": 69,
+      "source_manifest_sha256": "41b4ac22e001c17524f95940f9b768f0eeeb838e73bbb38cf274648b17e6520b"
+    },
+    {
+      "completed_repetitions": [
+        1
+      ],
+      "duration_seconds": 1080,
+      "hpa_no_scale_policy": "warn",
+      "matrix_repetitions_defined": 3,
+      "matrix_repetitions_requested": 1,
+      "shape": "rr_periodic",
+      "shape_mean_users": 69,
+      "source_manifest_sha256": "c4bc8a286dbc0ba421575ade8fff9c491e5ad5820cf6fdc1555cd1f50ca38245"
+    }
+  ],
+  "warmup_cpu_comparison_source_logs": "MISSING"
+}

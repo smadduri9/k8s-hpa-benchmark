@@ -1,0 +1,150 @@
+{
+  "artifacts": [
+    {
+      "bytes": 136724,
+      "exclusions": "Inherited from artifacts/v1.1/exclusions.csv via summaries",
+      "kind": "derived",
+      "path": "latency_p95_by_rep.png",
+      "sha256": "40d277bb22d70c07c6355d02d73fa791377a23edb2dc9179b940d7bc72e9229b",
+      "source_or_derivation": "scripts/generate_public_figures.py from canonical summaries",
+      "sources": {
+        "artifacts/v1.1/summary/flash_repetitions.csv": "3b427f3d0f8d647757b2e4ca58451f9baaa1b9052476e2656b9f859e4911c7f2",
+        "artifacts/v1.1/summary/headline.json": "6319deb13e8acccb394446aab4ff8022c9f802a95ce20f96ae26ea9981fc1d42",
+        "artifacts/v1.1/summary/latency.csv": "99e8bfb70c1bb023c3598c81162a4070041cf32f11a2b8a677df9b654eacbd91",
+        "artifacts/v1.1/summary/pod_hours.csv": "51482cddd68b51031323455e3675cfc1d041731114e52804a7d8e3f4a7cc7510",
+        "artifacts/v1.1/summary/replica_peaks.csv": "91005a64a6c239f9a312477442d951816e8d64ff198049e5b42840d609ae4d57",
+        "artifacts/v1.1/summary/statistical_tests.csv": "1b8ed10a1b7743365b0708c0b02de9be5eeaa4a2c4bc8818e46d6426997beae0",
+        "scripts/generate_public_figures.py": "1aabbbbaea13a59351836758695552813333b6bf6c3fa288ab4f4863b49be9a6"
+      },
+      "units": "milliseconds"
+    },
+    {
+      "bytes": 168479,
+      "exclusions": "Inherited from artifacts/v1.1/exclusions.csv via summaries",
+      "kind": "derived",
+      "path": "latency_p95_by_rep.svg",
+      "sha256": "3f61d432de5460844ad524998618387d69018916f90a8e176112dbea173c01a9",
+      "source_or_derivation": "scripts/generate_public_figures.py from canonical summaries",
+      "sources": {
+        "artifacts/v1.1/summary/flash_repetitions.csv": "3b427f3d0f8d647757b2e4ca58451f9baaa1b9052476e2656b9f859e4911c7f2",
+        "artifacts/v1.1/summary/headline.json": "6319deb13e8acccb394446aab4ff8022c9f802a95ce20f96ae26ea9981fc1d42",
+        "artifacts/v1.1/summary/latency.csv": "99e8bfb70c1bb023c3598c81162a4070041cf32f11a2b8a677df9b654eacbd91",
+        "artifacts/v1.1/summary/pod_hours.csv": "51482cddd68b51031323455e3675cfc1d041731114e52804a7d8e3f4a7cc7510",
+        "artifacts/v1.1/summary/replica_peaks.csv": "91005a64a6c239f9a312477442d951816e8d64ff198049e5b42840d609ae4d57",
+        "artifacts/v1.1/summary/statistical_tests.csv": "1b8ed10a1b7743365b0708c0b02de9be5eeaa4a2c4bc8818e46d6426997beae0",
+        "scripts/generate_public_figures.py": "1aabbbbaea13a59351836758695552813333b6bf6c3fa288ab4f4863b49be9a6"
+      },
+      "units": "milliseconds"
+    },
+    {
+      "bytes": 104627,
+      "exclusions": "Inherited from artifacts/v1.1/exclusions.csv via summaries",
+      "kind": "derived",
+      "path": "latency_p95_medians.png",
+      "sha256": "8d3ca9de3359f2f4b8fb848c5925b6b63e36b77734608a56bce8b47895324579",
+      "source_or_derivation": "scripts/generate_public_figures.py from canonical summaries",
+      "sources": {
+        "artifacts/v1.1/summary/flash_repetitions.csv": "3b427f3d0f8d647757b2e4ca58451f9baaa1b9052476e2656b9f859e4911c7f2",
+        "artifacts/v1.1/summary/headline.json": "6319deb13e8acccb394446aab4ff8022c9f802a95ce20f96ae26ea9981fc1d42",
+        "artifacts/v1.1/summary/latency.csv": "99e8bfb70c1bb023c3598c81162a4070041cf32f11a2b8a677df9b654eacbd91",
+        "artifacts/v1.1/summary/pod_hours.csv": "51482cddd68b51031323455e3675cfc1d041731114e52804a7d8e3f4a7cc7510",
+        "artifacts/v1.1/summary/replica_peaks.csv": "91005a64a6c239f9a312477442d951816e8d64ff198049e5b42840d609ae4d57",
+        "artifacts/v1.1/summary/statistical_tests.csv": "1b8ed10a1b7743365b0708c0b02de9be5eeaa4a2c4bc8818e46d6426997beae0",
+        "scripts/generate_public_figures.py": "1aabbbbaea13a59351836758695552813333b6bf6c3fa288ab4f4863b49be9a6"
+      },
+      "units": "milliseconds"
+    },
+    {
+      "bytes": 159102,
+      "exclusions": "Inherited from artifacts/v1.1/exclusions.csv via summaries",
+      "kind": "derived",
+      "path": "latency_p95_medians.svg",
+      "sha256": "2107c17438d8697845a2dbb2c2e24fcd5ba8b0247cd1f5fc8d5872b0a89d280c",
+      "source_or_derivation": "scripts/generate_public_figures.py from canonical summaries",
+      "sources": {
+        "artifacts/v1.1/summary/flash_repetitions.csv": "3b427f3d0f8d647757b2e4ca58451f9baaa1b9052476e2656b9f859e4911c7f2",
+        "artifacts/v1.1/summary/headline.json": "6319deb13e8acccb394446aab4ff8022c9f802a95ce20f96ae26ea9981fc1d42",
+        "artifacts/v1.1/summary/latency.csv": "99e8bfb70c1bb023c3598c81162a4070041cf32f11a2b8a677df9b654eacbd91",
+        "artifacts/v1.1/summary/pod_hours.csv": "51482cddd68b51031323455e3675cfc1d041731114e52804a7d8e3f4a7cc7510",
+        "artifacts/v1.1/summary/replica_peaks.csv": "91005a64a6c239f9a312477442d951816e8d64ff198049e5b42840d609ae4d57",
+        "artifacts/v1.1/summary/statistical_tests.csv": "1b8ed10a1b7743365b0708c0b02de9be5eeaa4a2c4bc8818e46d6426997beae0",
+        "scripts/generate_public_figures.py": "1aabbbbaea13a59351836758695552813333b6bf6c3fa288ab4f4863b49be9a6"
+      },
+      "units": "milliseconds"
+    },
+    {
+      "bytes": 122190,
+      "exclusions": "Inherited from artifacts/v1.1/exclusions.csv via summaries",
+      "kind": "derived",
+      "path": "ready_pod_hours.png",
+      "sha256": "d3ce7e0641b07fba4a13b18142d930906cadad26e3b8f03920a5754bb760b71b",
+      "source_or_derivation": "scripts/generate_public_figures.py from canonical summaries",
+      "sources": {
+        "artifacts/v1.1/summary/flash_repetitions.csv": "3b427f3d0f8d647757b2e4ca58451f9baaa1b9052476e2656b9f859e4911c7f2",
+        "artifacts/v1.1/summary/headline.json": "6319deb13e8acccb394446aab4ff8022c9f802a95ce20f96ae26ea9981fc1d42",
+        "artifacts/v1.1/summary/latency.csv": "99e8bfb70c1bb023c3598c81162a4070041cf32f11a2b8a677df9b654eacbd91",
+        "artifacts/v1.1/summary/pod_hours.csv": "51482cddd68b51031323455e3675cfc1d041731114e52804a7d8e3f4a7cc7510",
+        "artifacts/v1.1/summary/replica_peaks.csv": "91005a64a6c239f9a312477442d951816e8d64ff198049e5b42840d609ae4d57",
+        "artifacts/v1.1/summary/statistical_tests.csv": "1b8ed10a1b7743365b0708c0b02de9be5eeaa4a2c4bc8818e46d6426997beae0",
+        "scripts/generate_public_figures.py": "1aabbbbaea13a59351836758695552813333b6bf6c3fa288ab4f4863b49be9a6"
+      },
+      "units": "ready-pod hours"
+    },
+    {
+      "bytes": 159032,
+      "exclusions": "Inherited from artifacts/v1.1/exclusions.csv via summaries",
+      "kind": "derived",
+      "path": "ready_pod_hours.svg",
+      "sha256": "793283056fc57b0198e759005dcc975e02453a5632467d3fe1bc8bfd7021e9b5",
+      "source_or_derivation": "scripts/generate_public_figures.py from canonical summaries",
+      "sources": {
+        "artifacts/v1.1/summary/flash_repetitions.csv": "3b427f3d0f8d647757b2e4ca58451f9baaa1b9052476e2656b9f859e4911c7f2",
+        "artifacts/v1.1/summary/headline.json": "6319deb13e8acccb394446aab4ff8022c9f802a95ce20f96ae26ea9981fc1d42",
+        "artifacts/v1.1/summary/latency.csv": "99e8bfb70c1bb023c3598c81162a4070041cf32f11a2b8a677df9b654eacbd91",
+        "artifacts/v1.1/summary/pod_hours.csv": "51482cddd68b51031323455e3675cfc1d041731114e52804a7d8e3f4a7cc7510",
+        "artifacts/v1.1/summary/replica_peaks.csv": "91005a64a6c239f9a312477442d951816e8d64ff198049e5b42840d609ae4d57",
+        "artifacts/v1.1/summary/statistical_tests.csv": "1b8ed10a1b7743365b0708c0b02de9be5eeaa4a2c4bc8818e46d6426997beae0",
+        "scripts/generate_public_figures.py": "1aabbbbaea13a59351836758695552813333b6bf6c3fa288ab4f4863b49be9a6"
+      },
+      "units": "ready-pod hours"
+    },
+    {
+      "bytes": 102261,
+      "exclusions": "Inherited from artifacts/v1.1/exclusions.csv via summaries",
+      "kind": "derived",
+      "path": "replica_scaling.png",
+      "sha256": "f953ed0ed3c2007eaac6c374b099b442071cae0676aef800a6e9ee8c540165aa",
+      "source_or_derivation": "scripts/generate_public_figures.py from canonical summaries",
+      "sources": {
+        "artifacts/v1.1/summary/flash_repetitions.csv": "3b427f3d0f8d647757b2e4ca58451f9baaa1b9052476e2656b9f859e4911c7f2",
+        "artifacts/v1.1/summary/headline.json": "6319deb13e8acccb394446aab4ff8022c9f802a95ce20f96ae26ea9981fc1d42",
+        "artifacts/v1.1/summary/latency.csv": "99e8bfb70c1bb023c3598c81162a4070041cf32f11a2b8a677df9b654eacbd91",
+        "artifacts/v1.1/summary/pod_hours.csv": "51482cddd68b51031323455e3675cfc1d041731114e52804a7d8e3f4a7cc7510",
+        "artifacts/v1.1/summary/replica_peaks.csv": "91005a64a6c239f9a312477442d951816e8d64ff198049e5b42840d609ae4d57",
+        "artifacts/v1.1/summary/statistical_tests.csv": "1b8ed10a1b7743365b0708c0b02de9be5eeaa4a2c4bc8818e46d6426997beae0",
+        "scripts/generate_public_figures.py": "1aabbbbaea13a59351836758695552813333b6bf6c3fa288ab4f4863b49be9a6"
+      },
+      "units": "replica counts"
+    },
+    {
+      "bytes": 17018,
+      "exclusions": "Inherited from artifacts/v1.1/exclusions.csv via summaries",
+      "kind": "derived",
+      "path": "replica_scaling.svg",
+      "sha256": "a1ba32f4ae67b52f14eb70b4e2a1bda9df1b51a3fc92cbfb42897a89213c0926",
+      "source_or_derivation": "scripts/generate_public_figures.py from canonical summaries",
+      "sources": {
+        "artifacts/v1.1/summary/flash_repetitions.csv": "3b427f3d0f8d647757b2e4ca58451f9baaa1b9052476e2656b9f859e4911c7f2",
+        "artifacts/v1.1/summary/headline.json": "6319deb13e8acccb394446aab4ff8022c9f802a95ce20f96ae26ea9981fc1d42",
+        "artifacts/v1.1/summary/latency.csv": "99e8bfb70c1bb023c3598c81162a4070041cf32f11a2b8a677df9b654eacbd91",
+        "artifacts/v1.1/summary/pod_hours.csv": "51482cddd68b51031323455e3675cfc1d041731114e52804a7d8e3f4a7cc7510",
+        "artifacts/v1.1/summary/replica_peaks.csv": "91005a64a6c239f9a312477442d951816e8d64ff198049e5b42840d609ae4d57",
+        "artifacts/v1.1/summary/statistical_tests.csv": "1b8ed10a1b7743365b0708c0b02de9be5eeaa4a2c4bc8818e46d6426997beae0",
+        "scripts/generate_public_figures.py": "1aabbbbaea13a59351836758695552813333b6bf6c3fa288ab4f4863b49be9a6"
+      },
+      "units": "replica counts"
+    }
+  ],
+  "hash_scope": "Images; SHA256SUMS also hashes this manifest",
+  "schema_version": 1
+}

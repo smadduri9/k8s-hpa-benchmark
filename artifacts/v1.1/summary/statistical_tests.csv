@@ -1,0 +1,7 @@
+metric,arm_a,arm_b,n_pairs,n_effective,zero_differences,statistic,p_two_sided,p_floor,method
+client_p95_ms,fixed,hpa_tuned,6,6,0,0.0,0.03125,0.03125,exact_signed_rank
+ready_pod_hours,fixed,hpa_tuned,5,5,0,0.0,0.0625,0.0625,exact_signed_rank
+client_p95_ms,fixed,hpa_stock,6,6,0,0.0,0.03125,0.03125,exact_signed_rank
+ready_pod_hours,fixed,hpa_stock,6,6,0,0.0,0.03125,0.03125,exact_signed_rank
+client_p95_ms,hpa_tuned,hpa_stock,6,6,0,1.5,0.09375,0.03125,exact_signed_rank
+ready_pod_hours,hpa_tuned,hpa_stock,5,5,0,0.0,0.0625,0.0625,exact_signed_rank

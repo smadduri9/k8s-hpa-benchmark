@@ -1,122 +1,67 @@
-# Postmortem: unfair HPA vs fixed comparison from unequal starting capacity
+# Postmortem: a fixed baseline that was not fixed as declared
 
-**Authors:** Sriram Madduri (sole maintainer)  
-**Status:** resolved  
-**Publication:** initial README claim in commit `951b89e` (2026-05-12)  
-**Detection:** Detected during a verification pass roughly five months after the initial publication. Nothing alerted; the check was manual and self-initiated.
+**Status:** original comparison withdrawn; measurement safeguards implemented.
+
+**Author:** Sriram Madduri
+
+**Scope:** historical benchmark failures. Current results are in [RESULTS.md](RESULTS.md).
 
 ## Summary
 
-The repository initially published an HPA-vs-fixed comparison that treated **51.7% failure (fixed) vs 0.97% (HPA)** from `sample_data/` as a fair headline (`951b89e` README). A later GKE run (`run-20260904T230444Z`) repeated the pattern at **12.07% vs 0.30%** and was promoted to the README front page. In both cases the HPA arm ran at **`minReplicas: 1`** while the fixed arm was declared at **3 replicas**, so the HPA arm started at one third the capacity and incurred scale-up queueing the fixed arm never paid. The harness did not assert equal starting capacity, and **`HPA_NEVER_SCALED` only verified that peak `spec_replicas` exceeded `minReplicas`** — so scaling from 1→10 still passed the guard while the comparison remained unfair.
+The original README claimed that HPA reduced the failure rate from **51.7% to 0.97%**. **This is the withdrawn original claim.** Verification later showed that the supposedly three-replica fixed baseline had actually been running with one replica. The comparison did not test the declared capacity policies and could not support the published conclusion.
 
-Resolution: `k8s/hpa.yaml` now sets **`minReplicas: 3`**; calibrated runs (hybrid n=6, constant n=3) compare both arms from equal floor capacity; the superseded run and README table are preserved with an explicit fairness disclaimer; SLO and error-budget analysis is in [`RESULTS.md`](RESULTS.md#slo-and-error-budget-calibrated-runs).
+The result was withdrawn. The project then rebuilt its measurement path around observed replica counts, isolated metrics, explicit coverage gates and required artifacts. The current publication has a separate evidence package and metric-specific exclusions.
 
-## Impact
+## What failed
 
-Readers of the README and RESULTS treated the published failure-rate gap as evidence that HPA improved reliability on the same workload under the same starting conditions. The gap was real in the Locust artifacts, but the arms were not equally provisioned at run start. Anyone reproducing the benchmark from the old manifests would inherit the same confound.
+The original workflow trusted configuration intent without validating the replicas that actually served the workload. Its fixed-arm metrics also used unscoped queries and an unreliable replica proxy. HPA evidence had warm-start and cross-arm contamination problems, and the paired HPA Locust evidence was missing from the original sample package.
 
-Downstream effects in this repo:
+Those defects made a dramatic failure-rate gap look like a comparison of deployment strategies. It was not a valid estimate of an HPA benefit under the declared conditions. The [original sample files](docs/archive/superseded/sample_data-2026-03/) remain archived with a [provenance warning](DATA_PROVENANCE.md#historical-and-synthetic-material). Their incomplete replica fields cannot independently reconstruct the original deployment.
 
-- Headline figures and PNGs under `docs/figures/run-20260904T230444Z/` reflected the unequal baseline until demoted to a superseded section.
-- `run-20260905T160157Z` is documented as non-comparable for the same reason (`replica_series_hpa.csv` minimum `spec_replicas` of **1**).
+## A later, distinct fairness error
 
-## Root causes
+A subsequent September run declared fixed capacity at three replicas while HPA had a minimum of one. Its **12.07% versus 0.30% failure-rate comparison is also superseded**. It had unequal declared starting capacity, a different defect from the original fixed baseline running below its declaration.
 
-1. **Unequal declared floor capacity.** HPA `minReplicas: 1` vs fixed deployment at 3. Documented in [`RESULTS.md`](RESULTS.md#superseded--run-20260904t230444z) and [`k8s/hpa.yaml`](k8s/hpa.yaml) (now corrected to 3).
+The scale-out check alone did not detect this problem: an HPA going above its own minimum says nothing about whether that minimum matches the fixed arm. Historical calibrated reruns later raised the HPA floor to three. Current manifests declare four for both fixed capacity and the HPA minimum.
 
-2. **No assertion that both arms start at equal declared capacity.** The runner records declared replicas for the fixed arm but did not require the HPA floor to match before treating results as comparable.
+The [historical tables and figures](docs/archive/SUPERSEDED_RESULTS.md) preserve the later experiments. Their raw run inputs are not part of the v1.1 package, and they do not support its current findings.
 
-3. **`HPA_NEVER_SCALED` guard is necessary but insufficient for fairness.** Collection aborts only when peak in-window `spec_replicas` never **exceeds** `minReplicas`:
+## Detection and impact
 
-```435:442:analysis/collect_metrics.py
-    if mode == "hpa" and min_replicas is not None:
-        if peak_spec <= min_replicas:
-            if hpa_no_scale_policy == HPA_NO_SCALE_ABORT:
-                msg = (
-                    f"HPA_NEVER_SCALED peak_observed={peak_spec} minReplicas={min_replicas}"
-                )
-                print(msg, file=sys.stderr)
-                raise RuntimeError(msg)
-```
+Detection came from manual verification of measurement output and configuration, rather than an alert. The exact detection timestamp is `MISSING`. Earlier prose attributed both incidents to the unequal HPA floor and gave an imprecise detection lag; that account conflated separate failures.
 
-   With `minReplicas=1`, peak **10** passes (`10 > 1`) even though the fixed arm held **3** from the first sample. The guard proves scaling occurred, not that the arms began equally sized.
+The public README overstated what the evidence demonstrated. Readers could have interpreted the failure-rate difference as a fair comparison or reproduced the same confound from old manifests. No downstream adoption or operational impact is established by the retained record.
 
-4. **Headline used Locust Aggregated failure rates without disclosing the replica confound** until the A8 write-up and Phase 1 calibrated publication.
+## Changes to the measurement system
 
-## Trigger
+| Failure mode | Implemented response | Boundary |
+|---|---|---|
+| Declared replicas differ from observations | Readiness checks before load; in-window fixed-arm ready-replica validation | The fixed collection check requires the observed peak to reach the declaration; mid-run dips are recorded separately |
+| Warm-up changes the starting state | Check each arm remains at its declared floor after warm-up | Per-arm checks do not independently prove equal policy settings across arms |
+| Metrics mix traffic from both arms | Experiment labels and opposite-arm traffic checks | Requires retained Prometheus evidence to verify a historical outcome |
+| Missing or sparse data looks complete | Required-column coverage of at least 95% over serving rows | Rate columns exclude the first two serving rows; unavailable rows are classified separately |
+| Locust exit status is mistaken for completion | Require stats CSVs and measured-shape completion | Warm-up has no shape and validates nonzero requests only |
+| A replica series extends beyond its arm | Explicit publication exclusion for affected ready-pod time | Latency is retained; the contaminated raw series remains unchanged |
+| Public tables drift from evidence | Offline verifier, calculation/rejection tests and generated-text checks | Hashes establish consistency within the package, not independent attestation |
 
-Detected during a verification pass roughly five months after the initial publication. Nothing alerted; the check was manual and self-initiated. The maintainer re-read replica series and manifest defaults while preparing calibrated reruns.
+See the [guard implementation map](docs/MEASUREMENT_GUARDS.md) for source links and policy exceptions. The original GKE cluster has been deleted; these safeguards were not rerun against that environment during publication cleanup.
 
-## Resolution
+## Historical milestones
 
-| Step | When | What |
-|------|------|------|
-| Manifest fix | 2026-09-05 (`2439a8d`) | `minReplicas: 3` in `k8s/hpa.yaml` |
-| Write-up | 2026-09-05 (`d3eba8f`) | A8 baseline calibration and non-comparable run called out in RESULTS |
-| Calibrated runs | 2026-09-05–06 | `run-20260905T220046Z-hybrid` (n=6), `run-20260906T050515Z-constant` (n=3) |
-| Publication fix | 2026-09-07 (`43f9d19`–`07a7236`) | Calibrated tables promoted; superseded run demoted; README updated |
-| SLO framing | 2026-09-07 | Approximate `/cpu` SLI and error budget in RESULTS; policy in `docs/error-budget-policy.md` (Step 5) |
+| Record | Change |
+|---|---|
+| Initial publication (`951b89e`) | Original failure-rate claim published |
+| Reproducibility remediation (`12b2f1c`) | Sample data quarantined and results replaced with a rerun scaffold |
+| Later September comparison | Unequal declared floors remained a confound |
+| Floor correction (`2439a8d`) | Historical HPA minimum raised to three |
+| Current publication evidence (`1aa381b`) | Retained inputs, executable exclusions, summaries and standalone verifier published in the repository |
 
-Calibrated comparison shows HPA with lower client p50 medians but **neither arm meets a 99% / 500 ms `/cpu` SLO** in any repetition — see [`RESULTS.md`](RESULTS.md#slo-and-error-budget-calibrated-runs).
+The [development archive](docs/archive/README.md) retains implementation notes and earlier acceptance records. Historical SLO and cost-model calculations are not current publication claims.
 
-## Detection
+## Remaining lessons
 
-- **How:** manual re-verification of replica series and HPA manifest defaults; no monitor or CI rule fired.
-- **When:** roughly five months after initial publication (`951b89e`, 2026-05-12); no precise detection timestamp is recorded in the repo.
-- **Lag:** the unequal baseline was present from the first published headline through `run-20260904T230444Z` until `minReplicas` was raised and calibrated runs completed.
+Validate observed state before interpreting an outcome. A correct-looking manifest is insufficient evidence of the tested baseline.
 
-## Action items
+Treat each safeguard as a specific assertion. Scale-out, equal starting capacity, metric isolation and data completeness are different properties.
 
-| Action | Owner | Status |
-|--------|-------|--------|
-| Assert both arms start at equal declared capacity before recording a comparison as calibrated | Sriram Madduri | open |
-| Raise HPA `minReplicas` to match fixed floor (3) | Sriram Madduri | done (`2439a8d`) |
-| Publish calibrated results with superseded section preserved | Sriram Madduri | done (Phase 1) |
-| Document approximate `/cpu` SLI and error budget | Sriram Madduri | done (`RESULTS.md`) |
-| Phase 5: store raw histogram bucket counts for exact SLI | Sriram Madduri | planned (`docs/phase5-bucket-schema.md`) |
-| Add a Prometheus PersistentVolumeClaim before Phase 5 (GKE only; does not extend 2h retention) | Sriram Madduri | open |
-
-## Lessons learned
-
-### What went well
-
-- Locust `*_stats.csv` files were retained on disk; client percentiles and per-endpoint rows were recoverable without re-running the cluster (`a0-1`, 2026-09-04).
-- `replica_series_<arm>.csv` sampling made the 1-vs-3 floor visible once someone looked.
-- Superseded artifacts were kept verbatim rather than deleted, so the confound remains auditable.
-
-### What went wrong
-
-- **Detection lag:** no automated check compared HPA `minReplicas` to the fixed arm's declared count before publishing.
-- **Headline before calibration:** README promoted failure-rate deltas before equal-capacity runs existed.
-- **Guard semantics misunderstood:** `HPA_NEVER_SCALED` was treated as sufficient proof of a fair scaling experiment.
-- **SLO placeholder:** latency tail compliance was not defined until Phase 2; Aggregated p50 masked `/cpu` tail behavior.
-
-### Where we got lucky
-
-- Locust percentile columns (`50%` … `100%`) were on disk the entire time, enabling retroactive approximate SLI brackets without a new benchmark run.
-- Prometheus `--storage.tsdb.retention.time=2h` (`k8s/prometheus/deployment.yaml`) expired most historical samples before the `active_requests` backfill ran at approximately **21:52** on **2026-09-06** — at 2h retention only data after ~**19:52** that day still existed. Hybrid (`run-20260905T220046Z-hybrid`, 2026-09-05 22:00 to ~01:40) and constant (`run-20260906T050515Z-constant`, 2026-09-06 05:05 to 07:00) had already aged out **hours before** any reset. **`reset_prometheus_deployment`** destroyed the remainder (flash window only). Retention was never revisited. A PVC would not have saved samples already expired by retention. Other Prometheus-derived columns survived only because collection runs **immediately after each arm** rather than retroactively. Had the pipeline depended on querying Prometheus later, every metric from every run would have been lost the same way, not just `active_requests`. That is luck, not design.
-
-## Timeline
-
-| Date | Event |
-|------|-------|
-| 2026-05-12 | `951b89e` — initial commit; README claims **51.7% vs 0.97%** from `sample_data/` |
-| 2026-09-02 | `12b2f1c` — RESULTS scaffold, provenance, superseded sample_data |
-| 2026-09-04 | `d02ee7c` — `run-20260904T230444Z` published; **12.07% vs 0.30%** headline |
-| 2026-09-04 | `a0-1` — Locust percentile recovery verified on 230444Z artifacts |
-| 2026-09-05 | `2439a8d` — `minReplicas: 3` in HPA manifest |
-| 2026-09-05 | `d3eba8f` — A8 documents baseline calibration; `run-20260905T160157Z` marked non-comparable |
-| 2026-09-05–06 | Calibrated hybrid and constant runs executed |
-| 2026-09-07 | Phase 1 — calibrated RESULTS and README promotion; superseded section retained |
-| ~2026-09 (qualitative) | Manual verification detects 1-vs-3 confound; no repo timestamp |
-| 2026-09-07 | Phase 2 — SLO/error-budget section and this postmortem |
-
-## Supporting information
-
-- [`RESULTS.md`](RESULTS.md) — calibrated tables, superseded `run-20260904T230444Z`, SLO section
-- [`DATA_PROVENANCE.md`](DATA_PROVENANCE.md) — artifact lineage
-- [`k8s/hpa.yaml`](k8s/hpa.yaml) — current `minReplicas: 3`
-- `results/runs/run-20260904T230444Z/rep-1/replica_series_hpa.csv` — `HPA_SCALE_FLOOR_CHECK peak=10 minReplicas=1`
-- `results/runs/run-20260905T160157Z/rep-1/replica_series_hpa.csv` — minimum `spec_replicas` **1**
-- `analysis/collect_metrics.py` — `HPA_NEVER_SCALED` guard
-- `analysis/sli_locust_grid.py` — approximate `/cpu` SLI brackets
+Preserve failed evidence and narrow exclusions to the affected claim. A withdrawn result should remain understandable, while current results should lead readers to independently checkable inputs.

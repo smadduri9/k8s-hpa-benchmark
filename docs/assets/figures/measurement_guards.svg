@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 850" width="100%" role="img" aria-labelledby="title desc">
+<title id="title">Measurement guards and publication path</title>
+<desc id="desc">Declared configuration flows through observed replica validation, metric-arm isolation, at least 95 percent required-column coverage over serving rows, required artifacts, and explicit exclusions to a publishable result. Mismatch, contamination, insufficient data, missing or altered artifacts, and unresolved exclusions lead to STOP PUBLICATION for the affected result. This combines implemented collection gates and offline checks; v1.1 does not bundle Prometheus coverage evidence.</desc>
+<defs>
+  <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 Z" fill="#475569"/></marker>
+  <marker id="stop-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M 0 0 L 10 5 L 0 10 Z" fill="#a12634"/></marker>
+</defs>
+<rect width="960" height="850" fill="#ffffff"/>
+<g font-family="Arial, Helvetica, sans-serif" fill="#172b4d">
+
+<text x="40" y="35" font-size="24" font-weight="600" fill="#172b4d" text-anchor="start">Measurement guards</text>
+<text x="40" y="61" font-size="17" font-weight="400" fill="#475569" text-anchor="start">Implemented collection gates + offline publication checks</text>
+<rect x="40" y="90" width="480" height="72" rx="8" fill="#f1f5f9" stroke="#94a3b8" stroke-width="1.5"/>
+<text x="280.0" y="119" font-size="20" font-weight="600" fill="#172b4d" text-anchor="middle">Declared configuration</text>
+<text x="280.0" y="143" font-size="16" font-weight="400" fill="#172b4d" text-anchor="middle">Replica settings and measurement window</text>
+<path d="M280 162 V194" fill="none" stroke="#475569" stroke-width="2" marker-end="url(#arrow)"/>
+<rect x="40" y="194" width="480" height="72" rx="8" fill="#f1f5f9" stroke="#94a3b8" stroke-width="1.5"/>
+<text x="280.0" y="223" font-size="20" font-weight="600" fill="#172b4d" text-anchor="middle">Observed replica validation</text>
+<text x="280.0" y="247" font-size="16" font-weight="400" fill="#172b4d" text-anchor="middle">Readiness, warm-up floor and anchored samples</text>
+<path d="M280 266 V298" fill="none" stroke="#475569" stroke-width="2" marker-end="url(#arrow)"/>
+<rect x="40" y="298" width="480" height="72" rx="8" fill="#f1f5f9" stroke="#94a3b8" stroke-width="1.5"/>
+<text x="280.0" y="327" font-size="20" font-weight="600" fill="#172b4d" text-anchor="middle">Metric-arm isolation</text>
+<text x="280.0" y="351" font-size="16" font-weight="400" fill="#172b4d" text-anchor="middle">Experiment labels and opposite-arm checks</text>
+<path d="M280 370 V402" fill="none" stroke="#475569" stroke-width="2" marker-end="url(#arrow)"/>
+<rect x="40" y="402" width="480" height="72" rx="8" fill="#f1f5f9" stroke="#94a3b8" stroke-width="1.5"/>
+<text x="280.0" y="431" font-size="20" font-weight="600" fill="#172b4d" text-anchor="middle">≥95% data coverage</text>
+<text x="280.0" y="455" font-size="16" font-weight="400" fill="#172b4d" text-anchor="middle">Required columns over serving rows</text>
+<path d="M280 474 V506" fill="none" stroke="#475569" stroke-width="2" marker-end="url(#arrow)"/>
+<rect x="40" y="506" width="480" height="72" rx="8" fill="#f1f5f9" stroke="#94a3b8" stroke-width="1.5"/>
+<text x="280.0" y="535" font-size="20" font-weight="600" fill="#172b4d" text-anchor="middle">Required artifacts present</text>
+<text x="280.0" y="559" font-size="16" font-weight="400" fill="#172b4d" text-anchor="middle">Stats, completion, replica series and integrity</text>
+<path d="M280 578 V610" fill="none" stroke="#475569" stroke-width="2" marker-end="url(#arrow)"/>
+<rect x="40" y="610" width="480" height="72" rx="8" fill="#f1f5f9" stroke="#94a3b8" stroke-width="1.5"/>
+<text x="280.0" y="639" font-size="20" font-weight="600" fill="#172b4d" text-anchor="middle">Explicit exclusions applied</text>
+<text x="280.0" y="663" font-size="16" font-weight="400" fill="#172b4d" text-anchor="middle">Exclude affected metrics; preserve source data</text>
+<path d="M280 682 V714" fill="none" stroke="#475569" stroke-width="2" marker-end="url(#arrow)"/>
+<rect x="40" y="714" width="480" height="72" rx="8" fill="#e9f4ef" stroke="#49866d" stroke-width="1.5"/>
+<text x="280.0" y="743" font-size="20" font-weight="600" fill="#172b4d" text-anchor="middle">Publishable result</text>
+<text x="280.0" y="767" font-size="16" font-weight="400" fill="#172b4d" text-anchor="middle">Supported findings with traceable inputs</text>
+<path d="M520 230 H705" fill="none" stroke="#a12634" stroke-width="2"/>
+<text x="532" y="218" font-size="15" font-weight="400" fill="#a12634" text-anchor="start">Mismatch</text>
+<path d="M520 334 H705" fill="none" stroke="#a12634" stroke-width="2"/>
+<text x="532" y="322" font-size="15" font-weight="400" fill="#a12634" text-anchor="start">Contamination</text>
+<path d="M520 438 H705" fill="none" stroke="#a12634" stroke-width="2"/>
+<text x="532" y="426" font-size="15" font-weight="400" fill="#a12634" text-anchor="start">Insufficient data</text>
+<path d="M520 542 H705" fill="none" stroke="#a12634" stroke-width="2"/>
+<text x="532" y="530" font-size="15" font-weight="400" fill="#a12634" text-anchor="start">Missing / altered</text>
+<path d="M520 646 H705" fill="none" stroke="#a12634" stroke-width="2"/>
+<text x="532" y="634" font-size="15" font-weight="400" fill="#a12634" text-anchor="start">Unresolved policy</text>
+<path d="M705 230 V646" fill="none" stroke="#a12634" stroke-width="2"/>
+<path d="M705 438 H730" fill="none" stroke="#a12634" stroke-width="2" marker-end="url(#stop-arrow)"/>
+<rect x="730" y="370" width="200" height="138" rx="8" fill="#fff1f2" stroke="#a12634" stroke-width="2"/>
+<text x="830" y="410" font-size="24" font-weight="600" fill="#8c1d2c" text-anchor="middle">STOP</text>
+<text x="830" y="440" font-size="22" font-weight="600" fill="#8c1d2c" text-anchor="middle">PUBLICATION</text>
+<text x="830" y="476" font-size="16" font-weight="400" fill="#8c1d2c" text-anchor="middle">Affected result only</text>
+<text x="40" y="822" font-size="16" font-weight="400" fill="#475569" text-anchor="start">Coverage excludes the first two serving rows for rate columns. v1.1 omits Prometheus CSVs.</text>
+</g></svg>

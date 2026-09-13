@@ -1,5 +1,10 @@
 # Cold-start waterfall
 
+**Current publication scope:** no Phase 5 GKE cold-start distribution is published.
+The retained output is insufficient. This document describes collector behavior
+and the separate kind calibration, not a successful GKE performance result.
+See [RESULTS](https://github.com/smadduri9/k8s-hpa-benchmark/blob/main/RESULTS.md#measurement-limitations).
+
 Watch-based collector: `scripts/lib/cold_start_events.py`. Kind calibration harness: `scripts/calibrate_cold_start_collector.sh`. Committed calibration rows: `docs/cold-start-calibration/`.
 
 ## Waterfall stages

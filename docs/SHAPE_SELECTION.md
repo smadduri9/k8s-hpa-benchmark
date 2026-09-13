@@ -2,6 +2,8 @@
 
 **Version:** `shape_selection_rule_v2`
 
+Publication clarification: the frozen selection criteria below are unchanged. The current measurement uses the model-derived amplitude 69. [Public aggregate windows and provenance](https://github.com/smadduri9/k8s-hpa-benchmark/blob/main/artifacts/v1.1/workloads/) permit plateau regeneration; the full candidate search requires the original datasets.
+
 **Supersedes:** `shape_selection_rule_v1` (commit `6efd008`).
 
 ### What changed in v2 (committed before any v2 scoring)
@@ -127,7 +129,7 @@ Why Euclidean RMSE on unit-mean plateau vectors, not DTW or shape-based distance
 2. **DTW alignment is largely redundant here.** The 60 s sliding stride already covers time shift; the same paper notes DTW and Euclidean are equivalent at window size 0.
 3. **DTW duration warping is wrong for autoscaling.** It treats a 3-minute spike and a 6-minute spike as similar. For HPA, burst duration relative to ~60 s reaction time matters; penalising duration mismatch is desired behaviour.
 4. **DTW cost.** The same paper reports 32 days on a 40-core machine for its largest datasets. This repo scores on the order of **240,000** candidate windows.
-5. **Shape-based distance z-normalizes** and is scale-invariant, which would erase `peak_to_mean` — the property that determines how hard the autoscaler is driven. Unit-mean normalisation removes absolute scale while preserving relative amplitude, which is what we want.
+5. **Shape-based distance z-normalizes** and is scale-invariant, which would erase `peak_to_mean` — a relative-amplitude property relevant to the load envelope. Unit-mean normalisation removes absolute scale while preserving relative amplitude, which is what we want.
 
 ## Tie-break (lower wins first)
 
@@ -157,7 +159,7 @@ If any archetype has **fewer than 5** eligible rankable candidates, **stop and r
 
 These shapes derive the load **envelope** from a production trace — the user-count curve over time — not the trace's arrival statistics within any plateau.
 
-Locust (`locust/locustfile.py` and all trace-derived shape files) sets `wait_time = between(1, 3)`. Each simulated user loops: request, wait uniform(1,3) seconds, request. The arrival process at the server is a superposition of N independent renewal processes. By the Palm-Khintchine theorem that superposition converges to Poisson; at default `SHAPE_MEAN_USERS=45` we are already in that regime. **Delivered traffic is approximately Poisson within each plateau regardless of the source trace.**
+Locust (`locust/locustfile.py` and all trace-derived shape files) sets `wait_time = between(1, 3)`. Each simulated user loops: request, wait uniform(1,3) seconds, request. The delivered arrivals depend on response times, concurrency and waits. No measurement in this bundle establishes Poisson arrivals within plateaus or preservation of source arrival statistics.
 
 **Deferred (not a parameter change):** reproducing the source self-similar or bursty arrival process would require an **open-loop** generator issuing requests on a schedule, not a closed-loop user model. That is a different load generator.
 
@@ -188,7 +190,7 @@ SHAPE_MEAN_USERS = int(os.environ.get("SHAPE_MEAN_USERS", "45"))
 users(t) = max(1, round(UNIT_MEAN_PLATEAUS[i] * SHAPE_MEAN_USERS))
 ```
 
-Default **45** matches the current 3×`e2-standard-2` cluster. Phase 5 sets this from measured capacity. **Absolute amplitude is a deployment parameter, not a trace property.**
+Default **45** is a historical tooling reference amplitude. Completed Phase 5 runs explicitly used **69**, selected by the capacity-probe model. **Absolute amplitude is a deployment parameter, not a trace property.**
 
 ## Scoring interpretation (v2 results)
 
@@ -238,7 +240,7 @@ v2 scoring found **zero** eligible RetailRocket `constant` windows (`N_windows_e
 
 **Outcome**
 
-RetailRocket serves as the **modern-provenance control on the periodic archetype only**. State this limitation wherever RetailRocket is cited. See `docs/shape_provenance/rr_periodic.json`.
+RetailRocket serves as the **modern-provenance control on the periodic archetype only**. State this limitation wherever RetailRocket is cited. See [RetailRocket provenance](https://github.com/smadduri9/k8s-hpa-benchmark/blob/main/artifacts/v1.1/workloads/provenance/rr_periodic.json).
 
 ## Archetypes per dataset (selection pass)
 

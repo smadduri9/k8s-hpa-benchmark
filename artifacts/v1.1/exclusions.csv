@@ -1,0 +1,4 @@
+shape,repetition,arm,metric,action,reason
+wc98_flash,1,hpa_tuned,ready_pod_hours,EXCLUDE,Replica series contaminated; series duration is incompatible with the benchmark measurement window; historical process origin is not independently evidenced
+wc98_flash,1,hpa_tuned,latency,KEEP,Measured Locust stats and shape completion retained; replica contamination does not invalidate this latency measurement
+wc98_ramp,3,*,all,EXCLUDE,Incomplete experiment; not included in the current result set

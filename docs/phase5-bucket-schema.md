@@ -1,10 +1,12 @@
-# Phase 5 — histogram bucket columns for exact `/cpu` SLI
+# Phase 5 — histogram bucket columns for server-side `/cpu` SLI
 
-**NOT IMPLEMENTED.** This document is a **specification for Phase 5**. The collector (`analysis/collect_metrics.py`) does **not** write these columns today. Existing metrics CSVs contain `histogram_quantile` results only (`latency_p50_ms`, `latency_p95_ms`, `latency_p99_ms`). **`histogram_quantile` cannot be inverted into counts**, so the exact SLI was not computable retroactively for any existing run.
+**Implemented in the current collector.** The seven columns below are in `analysis/collect_metrics.py` and registered in `analysis/metrics_contract.py`. Earlier CSVs without them cannot recover counts from quantiles. The v1.1 bundle omits Prometheus CSVs and publishes no exact SLI or metrics-coverage result.
+
+These are Prometheus `increase()` estimates over lookback windows, not integer raw counters. Successive 30-second windows sampled every 15 seconds overlap; summing rows double-counts observations. They measure handler duration, not the client-observed SLO. Run-level aggregation with explicit boundaries and separate client instrumentation would be required for those claims.
 
 ## Why this is needed
 
-Prometheus-derived latency in published CSVs is a quantile estimate per row. A count-based SLI (for example **99% faster than 500 ms** on `/cpu`) requires cumulative histogram bucket counts. Phase 2 used approximate Locust percentile brackets instead; Phase 5 adds the bucket columns below so the SLI can be computed exactly from Prometheus at collection time.
+Quantiles cannot be inverted into counts. Bucket increases support an estimated fraction of handler observations at or below a threshold in each lookback window. Phase 2 used approximate Locust percentile brackets, a different measurement scope.
 
 ## Scope
 
@@ -49,11 +51,11 @@ Each column stores the **increase** in the cumulative bucket counter over the ra
 
 **Denominator:** `latency_le_inf_count` (`le="+Inf"`) is the total `/cpu` request count in the window. All other bucket columns are numerators at or below the stated threshold.
 
-**Headline SLO threshold (500 ms):** use `latency_le_500ms_count` / `latency_le_inf_count` when both are populated.
+**Server-side threshold (500 ms):** `latency_le_500ms_count` / `latency_le_inf_count` estimates the fraction at or below 500 ms when both are populated and the denominator is positive. This is not a client SLO measurement; an inclusive bucket also differs from a strict faster-than threshold.
 
 **General SLI at threshold T (seconds):** use the column whose `le` equals T (for example `le="0.5"` → `latency_le_500ms_count`) divided by `latency_le_inf_count`.
 
-Column order in `FIELDNAMES` (after implementation): insert the seven bucket columns immediately after `latency_p99_ms` and before `rps`, preserving existing columns otherwise.
+The seven bucket columns follow `latency_p99_ms` and precede `rps` in `FIELDNAMES`.
 
 ## Coverage and availability (no new rules)
 
@@ -61,7 +63,7 @@ Bucket columns are **rate-derived**. They inherit the existing contract in `anal
 
 1. **Serving rows only.** Coverage is assessed over rows with `ready_replicas > 0` (`AVAILABLE` and `DEGRADED`). Rows with `ready_replicas == 0` are `UNAVAILABLE`; bucket cells on those rows are `TARGET_UNAVAILABLE`, same as `rps` and `error_rate`.
 
-2. **Burst-onset MISSING.** The first **`BURST_ONSET_RATE_ROW_EXCLUSIONS`** serving rows (**2**) are excluded from rate-column coverage, same as `rps`, `error_rate`, and `latency_p50_ms` / `p95` / `p99`. Add the seven bucket column names to `RATE_DERIVED_COLUMNS` when implemented.
+2. **Burst-onset MISSING.** The first **`BURST_ONSET_RATE_ROW_EXCLUSIONS`** serving rows (**2**) are excluded from rate-column coverage, same as `rps`, `error_rate`, and `latency_p50_ms` / `p95` / `p99`. The seven bucket columns are in `RATE_DERIVED_COLUMNS`.
 
 3. **Coverage gate.** `METRICS_COLUMN_COVERAGE` uses `MIN_COLUMN_COVERAGE_RATIO` (**0.95**) over the eligible serving rows per column, identical to other required rate-derived columns.
 
@@ -69,13 +71,13 @@ Bucket columns are **rate-derived**. They inherit the existing contract in `anal
 
 ## Implementation checklist (Phase 5)
 
-- [ ] Add columns to `FIELDNAMES` in `analysis/collect_metrics.py`
-- [ ] Add queries to `build_queries()` (or a sibling builder) using the PromQL above
-- [ ] Register columns in `RATE_DERIVED_COLUMNS` and `METRIC_VALUE_COLUMNS` in `metrics_contract.py`
-- [ ] Add a Prometheus **PersistentVolumeClaim** before long Phase 5 runs (see [`POSTMORTEM.md`](../POSTMORTEM.md))
-- [ ] Analysis module to aggregate row increases into run-level exact SLI (separate from this schema doc)
+- [x] Columns in `FIELDNAMES` in `analysis/collect_metrics.py`
+- [x] Queries in `build_queries()` using the PromQL above
+- [x] Columns registered in `RATE_DERIVED_COLUMNS` and `METRIC_VALUE_COLUMNS`
+- [x] GKE Prometheus PVC manifests (`k8s/prometheus/pvc.yaml`, `deployment-gke.yaml`)
+- [ ] Run-level SLI analysis with explicit non-overlapping boundaries; do not sum overlapping row increases
 
 ## Related documents
 
-- [`RESULTS.md`](../RESULTS.md#slo-and-error-budget-calibrated-runs) — approximate SLI on existing runs
-- [`docs/error-budget-policy.md`](error-budget-policy.md) — SLO target and deferred meet-vs-revise decision
+- [`RESULTS.md`](https://github.com/smadduri9/k8s-hpa-benchmark/blob/main/RESULTS.md#measurement-limitations) — current publication limitations
+- [`docs/error-budget-policy.md`](https://github.com/smadduri9/k8s-hpa-benchmark/blob/main/docs/error-budget-policy.md) — proposed client SLO and missing compliance series
