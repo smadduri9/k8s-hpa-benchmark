@@ -156,6 +156,6 @@ The verifier checks package integrity and recomputes medians, paired tests, read
 
 ## Citation / release
 
-**Release version: v1.1.0.** Use [CITATION.cff](CITATION.cff) for citation metadata. The [Zenodo concept DOI](https://doi.org/10.5281/zenodo.22697396) identifies all versions; it is not a version-specific v1.1.0 DOI. [Release history](https://github.com/smadduri9/k8s-hpa-benchmark/releases)
+**Current release: [v1.1.0](https://github.com/smadduri9/k8s-hpa-benchmark/releases/tag/v1.1.0).** Cite the [v1.1.0 Zenodo archive](https://doi.org/10.5281/zenodo.22730865) using [CITATION.cff](CITATION.cff). The separate [Zenodo concept DOI](https://doi.org/10.5281/zenodo.22697396) identifies all versions.
 
 Code is [MIT licensed](LICENSE). Trace derivatives retain their [source terms](artifacts/v1.1/SOURCE_NOTICES.md), including CC BY-NC-SA 4.0 for RetailRocket-derived material.
