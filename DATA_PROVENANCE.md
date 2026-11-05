@@ -14,6 +14,10 @@ Workload windows contain aggregate counts, not individual source records. The [b
 
 Active [candidate metadata](docs/shape_candidates/scoring_summary.json) uses portable repository-relative paths. The selection script emits repository-relative paths for outputs inside the checkout, or a filename relative to the scoring summary for an external output directory. No local machine identity is needed to interpret the selection.
 
+## Source trace scale
+
+The [WorldCup98 trace](https://ita.ee.lbl.gov/html/contrib/WorldCup.html) contains 1,352,804,107 requests received over 88 days (April 30 to July 26, 1998). RetailRocket is an e-commerce event trace. Neither trace's individual requests were replayed: only derived aggregate load *shapes* drove closed-loop Locust users, and each of the 33 completed arms measured 33,508 to 34,872 requests (Aggregated `Request Count` in each arm's `locust_*_stats.csv` under [artifacts/v1.1/runs/](artifacts/v1.1/runs/)).
+
 ## Historical and synthetic material
 
 | Material | Status | Reason |
